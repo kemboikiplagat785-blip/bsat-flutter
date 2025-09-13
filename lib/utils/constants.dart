@@ -1,0 +1,206 @@
+import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
+// measurements
+const kPagePadding = 20.0;
+const kAdDividerHeight = 16.0;
+const kInputElementHeight = 48.0;
+const kBorderRadius = 6.0;
+
+const kPagePaddingInsets = EdgeInsets.all(kPagePadding);
+
+// colors
+const kPrimaryColor = Color.fromARGB(255, 83, 235, 113);
+
+const kDarkerGreen = Color.fromARGB(255, 0, 137, 0);
+
+const kBgColor = Color(0xFFF3F3F3);
+const kGrayColor = Color.fromARGB(55, 141, 146, 154);
+const kGrayColorLight = Color.fromARGB(255, 242, 244, 245);
+const kPurpleGrayColor = Color.fromARGB(255, 231, 234, 244);
+const kIndigoColor = Color.fromARGB(255, 73, 89, 172);
+const kLightBlueColor = Color.fromARGB(255, 89, 180, 254);
+const kAquaColor = Color.fromARGB(255, 146, 250, 245);
+
+const kPrimaryColorLight = Color.fromARGB(41, 117, 239, 131);
+const kSecondaryColor = Color.fromARGB(255, 29, 29, 29);
+const kLightColor = Color.fromARGB(255, 255, 255, 255);
+const kWarningColor = Color.fromARGB(255, 228, 190, 2);
+const kWarningColorLight = Color.fromARGB(128, 255, 216, 19);
+const kErrorColor = Color.fromARGB(255, 202, 47, 47);
+const kErrorColorLight = Color.fromARGB(72, 202, 47, 47);
+const kDullColor = Color.fromARGB(116, 0, 0, 0);
+const kDullColorLight = Color.fromARGB(68, 0, 0, 0);
+// const kLightBlueColor = Color.fromARGB(255, 0, 187, 255);
+
+const kBrownBackground = Color(0xFF3D1C0B);
+
+// string constants
+const interpunct = '·';
+const sampleText =
+    "SD456NE9M1 confirmed. Ksh50.00 sent to AIRTEL MONEY for account +254738804508 on 4/4/24 at 10:19 PM New M-PESA balance is Ksh125.87. Transaction cost, Ksh0.00.";
+const String kSPCostAware = "cost-aware";
+
+// Misc
+
+TextStyle kTitleText = TextStyle(
+  // color: Colors.black.withOpacity(0.8),
+  fontWeight: FontWeight.bold,
+  // fontSize: 22,
+);
+
+class TransactionStatuses {
+  static const done = "transaction-done";
+  static const error = "transaction-error";
+  static const secondAttempt = "transaction-duplicate";
+  static const unavailableOffer = "unavailable-offer";
+  static const timedOut = "transaction-timed-out";
+  static const blacklisted = "transaction-blacklisted";
+  static const paused = "transaction-paused";
+  static const advancedUssd = "transaction-advanced-ussd";
+  static const hasOkoa = "transaction-has-okoa";
+  static const advancedQueue = "transaction-advanced-queue";
+  static const doneConfirmed = "transaction-confirmed";
+  static const forwarded = "transaction-forwarded";
+
+  static const doneMap = {0: done};
+  static const errorMap = {1: error};
+  static const secondAttemptMap = {2: secondAttempt};
+  static const unavailableOfferMap = {3: unavailableOffer};
+  static const timedOutMap = {4: timedOut};
+  static const blacklistedMap = {5: blacklisted};
+  static const pausedMap = {6: paused};
+  static const advancedUssdMap = {7: advancedUssd};
+  static const hasOkoaMap = {8: hasOkoa};
+  static const advancedQueueMap = {9: advancedQueue};
+  static const doneConfirmedMap = {10: doneConfirmed};
+  static const forwardedMap = {11: forwarded};
+
+  static const statuses = {
+    0: done,
+    1: error,
+    2: secondAttempt,
+    3: unavailableOffer,
+    4: timedOut,
+    5: blacklisted,
+    6: paused,
+    7: advancedUssd,
+    8: hasOkoa,
+    9: advancedQueue,
+    10: doneConfirmed,
+    11: forwarded,
+  };
+}
+
+List<Map<String, dynamic>> kSubscriptions = [
+  {
+    "id": 0,
+    "durationString": "day",
+    "durationDays": 1,
+    "discount": 0,
+    "value": 10,
+    "details": "- 1 day",
+  },
+  {
+    "id": 1,
+    "durationString": "week",
+    "durationDays": 5,
+    "discount": 0,
+    "value": 50,
+    "details": "- 5 days",
+  },
+  {
+    "id": 2,
+    "durationString": "month",
+    "durationDays": 30,
+    "discount": 0,
+    "value": 300,
+    "details": "- 30 days",
+  }
+];
+
+List<Map<String, dynamic>> kTokens = [
+  {
+    "id": 0,
+    "amount": 200,
+    "value": 15,
+    "details": "10 tokens",
+  },
+  {
+    "id": 1,
+    "amount": 450,
+    "value": 30,
+    "details": "20 tokens",
+  },
+  {
+    "id": 2,
+    "amount": 1000,
+    "value": 90,
+    "details": "50 tokens",
+  }
+];
+
+List<Map<String, dynamic>> kInitialCodes = [
+  {'code': '*180*5*2*n*8*1#', 'amount': 55},
+  {'code': '*180*5*2*n*8*1#', 'amount': 58},
+  {'code': '*180*5*2*n*8*1#', 'amount': 60},
+
+  {'code': '*180*5*2*n*7*1#', 'amount': 99},
+  {'code': '*180*5*2*n*7*1#', 'amount': 100},
+
+  {'code': '*180*5*2*n*6*1#', 'amount': 20},
+  {'code': '*180*5*2*n*6*1#', 'amount': 25},
+
+  {'code': '*180*5*2*n*5*1#', 'amount': 19},
+  {'code': '*180*5*2*n*2*1#', 'amount': 49},
+];
+
+List<Map<String, dynamic>> kNoAutoretryCodes = [
+  {'code': '*100*0*9*1*n*1*1#', 'amount': 130},
+  {'code': '*100*0*9*1*n*1*1#', 'amount': 120},
+  {'code': '*100*0*9*2*n*1*1#', 'amount': 23},
+  {'code': '*456*1*12*2*n*1*1#', 'amount': 21},
+  {'code': '*100*0*9*3*n*1*1#', 'amount': 53},
+  {'code': '*456*1*13*6*7*3*n*2*1#', 'amount': 50},
+
+  {'code': '*188*8*2*2*n*1*2#', 'amount': 30},
+  {'code': '*188*8*1*2*n*1*2#', 'amount': 10},
+  {'code': '*188*8*1*1*n*1*2#', 'amount': 5},
+
+  {'code': '*188*9*#*n*1*1*1#', 'amount': 22},
+  {'code': '*444*5*1*n*1*1*1#', 'amount': 22},
+
+  // {'code': '*444*#*3*1*n*1*1#', 'amount': 22},
+  // {'code': '*444*#*3*1*n*3*1#', 'amount': 51},
+  {'code': '*456*1*13*6*7*3*n*2*1#', 'amount': 51},
+  // {'code': '*188*7*2*1*n*1*1#', 'amount': 20},
+];
+
+List<Color> colors = [
+  kPrimaryColor,
+  kIndigoColor,
+  kWarningColor,
+  kErrorColor,
+  kDullColor,
+  kPrimaryColor,
+  kErrorColor,
+];
+
+List<Color> kSectionColors = [
+  kPrimaryColor,
+  kIndigoColor,
+  kWarningColor,
+  kErrorColor,
+  kDullColor,
+  kPrimaryColor.withOpacity(0.7),
+  kIndigoColor.withOpacity(0.7),
+  kWarningColor.withOpacity(0.7),
+  kErrorColor.withOpacity(0.7),
+  kDullColor.withOpacity(0.7),
+];
+
+Future<String> getAppVersion() async {
+  PackageInfo packageInfo = await PackageInfo.fromPlatform();
+  // print(packageInfo.version);
+  return packageInfo.version;
+}

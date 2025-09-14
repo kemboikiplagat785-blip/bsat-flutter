@@ -145,7 +145,20 @@ class _OffersPageState extends State<OffersPage> {
     }
 
     if (cards.isEmpty) {
-      return Text("No sim cards found");
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: kPagePadding / 5,
+          // vertical: kPagePadding / 4,
+        ),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey),
+          borderRadius: BorderRadius.circular(kBorderRadius / 2),
+        ),
+        child: Text(
+          "Default (1st)",
+          style: TextStyle(fontSize: 14),
+        ),
+      );
     }
 
     return Row(
@@ -420,6 +433,9 @@ class _OffersPageState extends State<OffersPage> {
                     Text(
                       " $amount",
                       style: textTheme.titleLarge,
+                      // !.merge(
+                      //   const TextStyle(color: kPrimaryColor),
+                      // ),
                     ),
                   ],
                 ),
@@ -443,12 +459,21 @@ class _OffersPageState extends State<OffersPage> {
                   ],
                 ),
                 const SizedBox(height: kPagePadding / 1.5),
-                Text(
-                  code,
-                  style: TextStyle(
-                    fontSize: 14,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: kPagePadding / 3,
                   ),
-                  overflow: TextOverflow.ellipsis,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).indicatorColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(kBorderRadius / 2),
+                  ),
+                  child: Text(
+                    code,
+                    style: TextStyle(
+                      fontSize: 14,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),
@@ -457,14 +482,17 @@ class _OffersPageState extends State<OffersPage> {
               children: [
                 Switch(
                   value: isEnabled,
-                  activeColor: Theme.of(context).indicatorColor,
+                  // activeColor: Theme.of(context).indicatorColor,
                   onChanged: (value) {
                     enableOffer(value, id);
                     getAllUSSDCodes();
                   },
                 ),
                 const SizedBox(height: kPagePadding),
-                Icon(Icons.edit),
+                Icon(
+                  Icons.edit,
+                  color: kPrimaryColor,
+                ),
               ],
             ),
           ],

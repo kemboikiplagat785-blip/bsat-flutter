@@ -715,15 +715,6 @@ class TransactionController {
   ) async {
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
 
-    String initialMessage = (await _sqliteService.queryCustom(
-          'transactions',
-          'id = ?',
-          [id],
-          columns: ['initialMessage'],
-        ))
-            .first['initialMessage'] ??
-        '';
-
     Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
       'transactions',
       'id = ?',
@@ -731,9 +722,15 @@ class TransactionController {
     ))
         .first;
 
+    String initialMessage = transaction['initialMessage'] ??
+        '';
+
+        int compoundedAmount = transaction['amount'] ?? 0;
+
     if (transaction.isEmpty) {
       return;
     }
+    
     bool hasPaid = await _paymentOps.hasActiveSubscription();
 
     bool isUsingToken = false;
@@ -774,6 +771,10 @@ class TransactionController {
       amount = transaction['amount'] ?? 0;
     }
 
+    if(compoundedAmount > 0){
+      amount = compoundedAmount;
+    }
+
     print("New number: $number, amount: $amount, ussdCode: $ussdCode");
 
     List lecodes = (await _sqliteService.queryCustom(
@@ -786,6 +787,8 @@ class TransactionController {
     if (lecodes.isEmpty) {
       return;
     }
+
+    print("Redoing transaction $id with code $ussdCode on sim $simSubId");
 
     ussdCode = lecodes.first['code'];
 
@@ -826,6 +829,8 @@ class TransactionController {
     }
 
     canRetry = canRetry + 2;
+
+    print("Response: $response, canRetry: $canRetry");
 
     await _sqliteService.updateOnly(
       "UPDATE transactions SET ussdDialed=?, date=?, time=?, ussdReply=?, status=?, timeStamp=?, canRetry=? WHERE id=?",

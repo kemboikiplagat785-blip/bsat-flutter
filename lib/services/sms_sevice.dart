@@ -190,6 +190,8 @@ int extract9DigitNumber(String messageBody) {
 String getReferenceCode(String messageBody) {
   RegExp referenceCodeRegex = RegExp(r'^[\w]*');
 
+  
+
   Match? referenceCodeMatch = referenceCodeRegex.firstMatch(messageBody);
   String referenceCode = referenceCodeMatch?.group(0) ?? "";
 
@@ -228,7 +230,9 @@ String getReferenceCode(String messageBody) {
 // only get the value "50"(might be 500, 5, etc)
 
 int getAmount(String? smsBody) {
-  final cleaned = smsBody!.replaceAll(',', '').toLowerCase();
+  String cleaned = smsBody!.replaceAll(',', '').toLowerCase();
+  // remove the first 10 characters of the message, the Trasaction code
+  cleaned = cleaned.length > 10 ? cleaned.substring(10) : cleaned;
   RegExp amountRegex = RegExp(
     // r'(?:(((K?)sh(s?)[\s:]?)|kes[\s:]?)(\d{1,6}(?:,\d{3})*(?:\.\d+)?))|(\d{1,6}(?:,\d{3})*(?:\.\d+)?)[\s:]?((K?)sh(s?)|kes)',
     // r'Ksh(\d{1,3}(?:,\d{3})*)',

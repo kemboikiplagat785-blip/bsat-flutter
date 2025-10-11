@@ -82,6 +82,16 @@ class TransactionController {
         source: getName(smsMessage.body ?? ""),
       );
 
+      processReply(
+        number,
+        TransactionStatuses.paused,
+        name.split(' ')[0],
+        name.trim().split(RegExp(r'\s+')).length > 1
+            ? name.trim().split(RegExp(r'\s+'))[1]
+            : '',
+        amount,
+      );
+
       return;
     }
 
@@ -100,6 +110,16 @@ class TransactionController {
         reply: 'Invalid number',
         canRetry: false,
         source: name,
+      );
+
+      processReply(
+        number,
+        TransactionStatuses.unavailableOffer,
+        name.split(' ')[0],
+        name.trim().split(RegExp(r'\s+')).length > 1
+            ? name.trim().split(RegExp(r'\s+'))[1]
+            : '',
+        amount,
       );
 
       return;
@@ -415,6 +435,8 @@ class TransactionController {
     }
 
     if (TransactionStatuses.secondAttempt == requestResponse[1]) {
+      USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = await unavailableAmountCanCompound(amount, number);
+      
       return;
     }
 

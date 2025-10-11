@@ -302,6 +302,16 @@ class TransactionController {
         source: name,
       );
 
+      processReply(
+        number,
+        TransactionStatuses.paused,
+        name.split(' ')[0],
+        name.trim().split(RegExp(r'\s+')).length > 1
+            ? name.trim().split(RegExp(r'\s+'))[1]
+            : '',
+        amount,
+      );
+
       if (autoSaveContacts) {
         await contactService.addNewContact(
           name,

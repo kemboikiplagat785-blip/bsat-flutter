@@ -1305,6 +1305,11 @@ class TransactionController {
       return TransactionStatuses.doneConfirmed;
     }
 
+    if (RegExp(r'bundle activation request has failed|okoa|pool state|Authentication failure', caseSensitive: false)
+        .hasMatch(response[0].toString())) {
+      return TransactionStatuses.hasOkoa;
+    }
+
     if (RegExp(
       r'USSD session already in progress',
       caseSensitive: false,
@@ -1312,24 +1317,14 @@ class TransactionController {
       return TransactionStatuses.advancedUssd;
     }
 
-    if (RegExp(r'Invaid choice', caseSensitive: false)
+    if (RegExp(r'Invalid choice', caseSensitive: false)
         .hasMatch(response[0].toString())) {
       return TransactionStatuses.error;
-    }
-
-    if (RegExp(r'bundle activation request has failed', caseSensitive: false)
-        .hasMatch(response[0].toString())) {
-      return TransactionStatuses.hasOkoa;
     }
 
     if (RegExp(r'connection code error|one minute', caseSensitive: false)
         .hasMatch(response[0].toString())) {
       return TransactionStatuses.timedOut;
-    }
-
-    if (RegExp(r'okoa|pool state|Authentication failure', caseSensitive: false)
-        .hasMatch(response[0].toString())) {
-      return TransactionStatuses.hasOkoa;
     }
 
     if (RegExp(r'queue', caseSensitive: false)

@@ -65,7 +65,7 @@ class PhoneService {
       //   return [res, TransactionStatuses.advancedQueue];
       // }
       if (res!.contains(
-          RegExp(r'USSD session already in progress', caseSensitive: false))) {
+          RegExp(r'USSD session already in progress|duplicate sessions. rejecting new one', caseSensitive: false))) {
         return [res, TransactionStatuses.error];
       }
 

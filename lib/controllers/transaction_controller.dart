@@ -445,7 +445,7 @@ class TransactionController {
     }
 
     if (TransactionStatuses.secondAttempt == requestResponse[1]) {
-      USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = await unavailableAmountCanCompound(amount, number);
+      // USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = await unavailableAmountCanCompound(amount, number);
       
       return;
     }

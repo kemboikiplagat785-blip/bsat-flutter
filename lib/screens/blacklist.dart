@@ -122,6 +122,7 @@ class _BlacklistPageState extends State<BlacklistPage> {
                 },
               ),
             ),
+            const SizedBox(height: kPagePadding * 2),
           ],
         ),
       ),

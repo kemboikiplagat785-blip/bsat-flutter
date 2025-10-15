@@ -100,7 +100,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                           isExpired ? "No Active Plan" : expDate,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: isExpired ? kErrorColor : kPrimaryColor,
+                            color: (isExpired || tokenBalance < 1) ? kErrorColor : kPrimaryColor,
                           ),
                         ),
                       ),
@@ -113,7 +113,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                           "Token balance: $tokenBalance",
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: isExpired ? kErrorColor : kPrimaryColor,
+                            color: (isExpired || tokenBalance < 1) ? kErrorColor : kPrimaryColor,
                           ),
                         ),
                       ),

@@ -97,10 +97,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                     children: [
                       Flexible(
                         child: Text(
-                          isExpired ? "No Active Plan" : expDate,
+                          (isExpired ) ? "No Daily Active Plan" : expDate,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: (isExpired || tokenBalance < 1) ? kErrorColor : kPrimaryColor,
+                            color: (!isExpired) ? kPrimaryColor : kErrorColor,
                           ),
                         ),
                       ),
@@ -113,7 +113,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                           "Token balance: $tokenBalance",
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: (isExpired || tokenBalance < 1) ? kErrorColor : kPrimaryColor,
+                            color: (tokenBalance > 0) ? kPrimaryColor : kErrorColor,
                           ),
                         ),
                       ),

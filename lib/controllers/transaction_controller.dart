@@ -221,12 +221,14 @@ class TransactionController {
 
     print("makeTransaction - compounded amount:");
 // I/flutter (31950): [, 38, false, false, false, true]
-    print(USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive);
+    print(USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive.length);
 
     List canCompound = await unavailableAmountCanCompound(
       amount,
       number,
     );
+    print("makeTransaction - compounded amount 2");
+    print(canCompound);
 
     if (canCompound[3]) {
       USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = canCompound;
@@ -571,8 +573,22 @@ class TransactionController {
       fromSim,
     ));
 
+    bool canForward = (await _sqliteService.getCount(
+          'forwarded',
+          args: [
+            '[$amount,%',
+            '%,$amount,%',
+            '%,$amount]',
+            '[$amount]',
+          ],
+          appendQuery:
+              'WHERE (amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)',
+        )) >
+        0;
+
     // delete the entries from transactions
-    if (rawStuff.isNotEmpty && reply[3]) {
+    if (rawStuff.isNotEmpty && (reply[3] || canForward)) {
+      reply[3] = true;
       await _sqliteService.deleteWhere(
         'transactions',
         'id IN (${rawStuff.map((e) => e['id']).join(',')})',
@@ -841,7 +857,10 @@ class TransactionController {
 
     List<dynamic> response = [];
 
-    if (await isAdvanced(ussdCode)) {
+    // print("Is Adv 0: ${await isAdvanced(ussdCode)}");
+    // print("is adv ${USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]}");
+
+    if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]) {
       bool isActive =
           await _sharedPreferencesService.getAppIsActiveState() ?? false;
 
@@ -1326,7 +1345,7 @@ class TransactionController {
       return TransactionStatuses.advancedUssd;
     }
 
-    if (RegExp(r'Invalid choice', caseSensitive: false)
+    if (RegExp(r'Invalid choice|max number of menu', caseSensitive: false)
         .hasMatch(response[0].toString())) {
       return TransactionStatuses.error;
     }

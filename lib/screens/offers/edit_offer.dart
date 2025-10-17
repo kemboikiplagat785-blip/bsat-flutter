@@ -129,6 +129,37 @@ class _EditOfferPageState extends State<EditOfferPage> {
         _errorDialSim = "";
       });
     }
+    if (usesBongaPoints) {
+      if (_balanceCheckCodeTextController.text == '') {
+        // toast
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Balance check USSD code is required when using bonga points.'),
+          ),
+        );
+        return false;
+      }
+      if (_bongaPointsPerTransactionTextController.text == '' ||
+          int.tryParse(_bongaPointsPerTransactionTextController.text) == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Valid bonga points per transaction is required when using bonga points.'),
+          ),
+        );
+        return false;
+      }
+      if (_fallbackCodeTextController.text == '') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Fallback USSD code is required when using bonga points.'),
+          ),
+        );
+        return false;
+      }
+    }
     addCodeToDatabase(
       _codeTextController.text,
       int.parse(_amountTextController.text),
@@ -215,7 +246,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
       _bongaPointsPerTransactionTextController.text =
           (value[0]['bongaPointsPerTransaction'] != null)
               ? value[0]['bongaPointsPerTransaction'].toString()
-              : '0';
+              : '60';
     });
   }
 
@@ -509,23 +540,93 @@ class _EditOfferPageState extends State<EditOfferPage> {
                         ),
 
                         // const SizedBox(height: kPagePadding / 2),
-                        CheckboxListTile(
-                          value: usesBongaPoints,
-                          activeColor: kPrimaryColor,
-                          contentPadding: EdgeInsets.zero,
-                          onChanged: (val) async {
-                            setState(() {
-                              usesBongaPoints = val!;
-                            });
-                          },
-                          title: Text('Uses bonga points'),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: CheckboxListTile(
+                                value: usesBongaPoints,
+                                activeColor: kPrimaryColor,
+                                contentPadding: EdgeInsets.zero,
+                                onChanged: (val) async {
+                                  setState(() {
+                                    usesBongaPoints = val!;
+                                  });
+                                },
+                                title: Text('Uses bonga points'),
+                              ),
+                            ),
+                            const SizedBox(width: kPagePadding),
+                            GestureDetector(
+                              onTap: () {
+                                showDialog(
+                                    context: context,
+                                    builder: (context) {
+                                      return AlertDialog(
+                                        title: Text('Using Bonga Points'),
+                                        content: Text(
+                                            'When this option is enabled, the app will first attempt to use your bonga points for the USSD transaction. \nIf you run out of bonga points, it will then use the fallback USSD code you provided.\n\n Make sure to provide a valid balance check USSD code and specify how many bonga points are used per transaction (e.g. 60).'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                            },
+                                            child: Text('OK'),
+                                          ),
+                                        ],
+                                      );
+                                    });
+                              },
+                              child: Icon(
+                                Icons.info_outline,
+                                size: 18,
+                                color: Theme.of(context).indicatorColor,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: kPagePadding / 2),
                         if (usesBongaPoints) ...[
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('When I run out of bonga points, use:'),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                      child: Text(
+                                          'When I run out of bonga points, '
+                                          'use this USSD code:')),
+                                  const SizedBox(width: kPagePadding / 2),
+                                  GestureDetector(
+                                    onTap: () {
+                                      showDialog(
+                                          context: context,
+                                          builder: (context) {
+                                            return AlertDialog(
+                                              title:
+                                                  Text('Emergency USSD Code'),
+                                              content: Text(
+                                                  'Type the USSD code to use when you run out of bonga points (switch to using airtime), e.g. *188*10*#*n*2*1*1#.'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () {
+                                                    Navigator.pop(context);
+                                                  },
+                                                  child: Text('OK'),
+                                                ),
+                                              ],
+                                            );
+                                          });
+                                    },
+                                    child: Icon(
+                                      Icons.info_outline,
+                                      size: 18,
+                                      color: Theme.of(context).indicatorColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
                               TextField(
                                 controller: _fallbackCodeTextController,
                                 decoration: InputDecoration(
@@ -537,7 +638,43 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                 ),
                               ),
                               const SizedBox(height: kPagePadding / 2),
-                              Text('To check my bonga points balance, dial:'),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                      child: Text(
+                                          'To check my bonga points balance, dial:')),
+                                  const SizedBox(width: kPagePadding / 2),
+                                  GestureDetector(
+                                    onTap: () {
+                                      showDialog(
+                                          context: context,
+                                          builder: (context) {
+                                            return AlertDialog(
+                                              title: Text(
+                                                  'Balance Check USSD Code'),
+                                              content: Text(
+                                                  'Specify the USSD code used to check your bonga points balance. Default: *126*7*1#.'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () {
+                                                    Navigator.pop(context);
+                                                  },
+                                                  child: Text('OK'),
+                                                ),
+                                              ],
+                                            );
+                                          });
+                                    },
+                                    child: Icon(
+                                      Icons.info_outline,
+                                      size: 18,
+                                      color: Theme.of(context).indicatorColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
                               TextField(
                                 controller: _balanceCheckCodeTextController,
                                 decoration: InputDecoration(
@@ -549,7 +686,43 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                 ),
                               ),
                               const SizedBox(height: kPagePadding / 2),
-                              Text('Bonga points used per transaction:'),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                      child: Text(
+                                          'Bonga points used per transaction (e.g.60):')),
+                                  const SizedBox(width: kPagePadding / 2),
+                                  GestureDetector(
+                                    onTap: () {
+                                      showDialog(
+                                          context: context,
+                                          builder: (context) {
+                                            return AlertDialog(
+                                              title: Text(
+                                                  'Bonga Points per Transaction'),
+                                              content: Text(
+                                                  'Specify how many bonga points are deducted for each USSD transaction. For example, if each transaction uses 60 bonga points (e.g. for 45min 3hrs), enter 60 here.'),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () {
+                                                    Navigator.pop(context);
+                                                  },
+                                                  child: Text('OK'),
+                                                ),
+                                              ],
+                                            );
+                                          });
+                                    },
+                                    child: Icon(
+                                      Icons.info_outline,
+                                      size: 18,
+                                      color: Theme.of(context).indicatorColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
                               TextField(
                                 keyboardType: TextInputType.number,
                                 controller:

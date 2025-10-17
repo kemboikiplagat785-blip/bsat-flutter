@@ -380,7 +380,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               ),
             ),
           ),
-          const SizedBox(height: kPagePadding),
+          const SizedBox(height: kPagePadding * 3),
         ],
       ),
     );

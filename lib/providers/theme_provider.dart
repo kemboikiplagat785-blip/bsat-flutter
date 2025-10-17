@@ -33,12 +33,12 @@ class ThemeProvider with ChangeNotifier {
     } else if (selectedTheme == "blackAndWhite") {
       _currentTheme = blackAndWhiteTheme;
     } else {
-      var brightness = WidgetsBinding.instance.window.platformBrightness;
-      if (brightness == Brightness.dark) {
-        _currentTheme = darkTheme;
-      } else {
-        _currentTheme = lightTheme;
-      }
+      // var brightness = WidgetsBinding.instance.window.platformBrightness;
+      // if (brightness == Brightness.dark) {
+      _currentTheme = blackAndWhiteTheme;
+      // } else {
+      //   _currentTheme = lightTheme;
+      // }
     }
 
     notifyListeners();

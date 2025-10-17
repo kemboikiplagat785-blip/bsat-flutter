@@ -167,6 +167,7 @@ class _RepliesPageState extends State<RepliesPage> {
                       },
                     ),
             ),
+            const SizedBox(height: kPagePadding * 2),
           ],
         ),
       ),

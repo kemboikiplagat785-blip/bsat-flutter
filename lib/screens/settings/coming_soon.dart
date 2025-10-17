@@ -25,15 +25,10 @@ class _ComingSoonPageState extends State<ComingSoonPage> {
           Container(
             // padding: const EdgeInsets.only(bottom: kPagePadding),
             decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage('assets/images/card_bg.png'),
-                fit: BoxFit.cover,
-              ),
               borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(kBorderRadius),
                 bottomRight: Radius.circular(kBorderRadius),
               ),
-              color: kLightColor,
             ),
             child: Column(
               children: [

@@ -460,6 +460,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: kPagePadding * 2),
                   ],
                 ),
               ),

@@ -149,7 +149,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                           ),
                           child: Text(
                             _details["status"] == TransactionStatuses.done
-                                ? "Successful"
+                                ? "Successful(pending)"
                                 : _details["status"] ==
                                         TransactionStatuses.doneConfirmed
                                     ? "Successful (confirmed)"
@@ -173,9 +173,13 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                                         ? "forwarded"
                                                         : _details["status"] ==
                                                                 TransactionStatuses
-                                                                    .secondAttempt
-                                                            ? "Second Attempt"
-                                                            : "[]",
+                                                                    .unavailableOffer
+                                                            ? "Unavailable"
+                                                            : _details["status"] ==
+                                                                    TransactionStatuses
+                                                                        .secondAttempt
+                                                                ? "Second Attempt"
+                                                                : "[]",
                             style: TextStyle(
                               color: _details["status"] ==
                                       TransactionStatuses.done

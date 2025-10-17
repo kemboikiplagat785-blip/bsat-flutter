@@ -326,6 +326,7 @@ class _OffersPageState extends State<OffersPage> {
                           ).toList(),
                         ),
                       ),
+                      const SizedBox(height: kPagePadding * 2),
               ],
             ),
           ),

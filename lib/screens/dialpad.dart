@@ -164,6 +164,7 @@ class _DialPadScreenState extends State<DialPadScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: kPagePadding * 2),
           ],
         ),
       ),

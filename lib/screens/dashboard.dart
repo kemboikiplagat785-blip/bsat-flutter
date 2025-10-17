@@ -37,6 +37,7 @@ import '../services/phone_service.dart';
 import '../services/shared_preferences_service.dart';
 
 import '../data/fake.dart';
+import 'settings/coming_soon.dart';
 import 'settings/settings.dart';
 
 // import 'dart:async';
@@ -1466,8 +1467,8 @@ class StatelessDashboard extends StatelessWidget {
                           PageRouteBuilder(
                             pageBuilder:
                                 (context, animation, secondaryAnimation) =>
-                                    const OnlineManagementScreen(),
-                            // ComingSoonPage(),
+                                    // const OnlineManagementScreen(),
+                            ComingSoonPage(),
                             transitionsBuilder: (context, animation,
                                 secondaryAnimation, child) {
                               return CupertinoPageTransition(

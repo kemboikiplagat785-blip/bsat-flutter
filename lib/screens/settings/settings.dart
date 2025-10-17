@@ -170,7 +170,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Retry failed requests for (minutes):'),
+                            Text('Retry failed requests the following number of times'),
                             SizedBox(height: kPagePadding / 2),
                             Row(
                               children: [
@@ -178,7 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                   child: TextField(
                                     controller: _retryTimeoutController,
                                     decoration: InputDecoration(
-                                      label: Text('minutes'),
+                                      label: Text('retry'),
                                       border: const OutlineInputBorder(),
                                     ),
                                   ),
@@ -634,6 +634,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
             ),
+            SizedBox(height: kPagePadding * 2),
           ],
         ),
       ),

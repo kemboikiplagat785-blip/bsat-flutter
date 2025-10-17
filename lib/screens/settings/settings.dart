@@ -245,7 +245,10 @@ class _SettingsPageState extends State<SettingsPage> {
                           color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(kBorderRadius),
                         ),
-                        child: Row(
+                        child: Wrap(
+                          spacing: kPagePadding / 2,
+                          runSpacing: kPagePadding / 2,
+                          alignment: WrapAlignment.center,
                           children: [
                             GestureDetector(
                               onTap: () {
@@ -253,6 +256,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               },
                               child: Container(
                                 padding: kPagePaddingInsets,
+                                width: kPagePadding * 2,
                                 decoration: BoxDecoration(
                                   borderRadius:
                                       BorderRadius.circular(kBorderRadius),
@@ -267,13 +271,13 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ),
                               ),
                             ),
-                            SizedBox(width: kPagePadding / 2),
                             GestureDetector(
                               onTap: () {
                                 themeProvider.setDarkTheme();
                               },
                               child: Container(
                                 padding: kPagePaddingInsets,
+                                width: kPagePadding * 2,
                                 decoration: BoxDecoration(
                                   borderRadius:
                                       BorderRadius.circular(kBorderRadius),
@@ -288,13 +292,14 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ),
                               ),
                             ),
-                            SizedBox(width: kPagePadding / 2),
                             GestureDetector(
                               onTap: () {
                                 themeProvider.setBrownTheme();
                               },
                               child: Container(
+
                                 padding: kPagePaddingInsets,
+                                width: kPagePadding * 2,
                                 decoration: BoxDecoration(
                                   borderRadius:
                                       BorderRadius.circular(kBorderRadius),
@@ -309,13 +314,13 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ),
                               ),
                             ),
-                            SizedBox(width: kPagePadding / 2),
                             GestureDetector(
                               onTap: () {
                                 themeProvider.setPinkTheme();
                               },
                               child: Container(
                                 padding: kPagePaddingInsets,
+                                width: kPagePadding * 2,
                                 decoration: BoxDecoration(
                                   borderRadius:
                                       BorderRadius.circular(kBorderRadius),
@@ -330,13 +335,13 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ),
                               ),
                             ),
-                            SizedBox(width: kPagePadding / 2),
                             GestureDetector(
                               onTap: () {
                                 themeProvider.setIndigoColor();
                               },
                               child: Container(
                                 padding: kPagePaddingInsets,
+                                width: kPagePadding * 2,
                                 decoration: BoxDecoration(
                                   borderRadius:
                                       BorderRadius.circular(kBorderRadius),
@@ -351,19 +356,40 @@ class _SettingsPageState extends State<SettingsPage> {
                                 ),
                               ),
                             ),
-                            SizedBox(width: kPagePadding / 2),
                             GestureDetector(
                               onTap: () {
                                 themeProvider.setDarkPurpleTheme();
                               },
                               child: Container(
                                 padding: kPagePaddingInsets,
+                                width: kPagePadding * 2,
                                 decoration: BoxDecoration(
                                   borderRadius:
                                       BorderRadius.circular(kBorderRadius),
                                   color: Color(0xFF190b28),
                                   border: themeProvider.currentTheme ==
                                           darkPurpleTheme
+                                      ? Border.all(
+                                          color: kPrimaryColor,
+                                          width: 2.0,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                themeProvider.setBlackAndWhiteTheme();
+                              },
+                              child: Container(
+                                padding: kPagePaddingInsets,
+                                width: kPagePadding * 2,
+                                decoration: BoxDecoration(
+                                  borderRadius:
+                                      BorderRadius.circular(kBorderRadius),
+                                  color: Colors.black,
+                                  border: themeProvider.currentTheme ==
+                                          blackAndWhiteTheme
                                       ? Border.all(
                                           color: kPrimaryColor,
                                           width: 2.0,

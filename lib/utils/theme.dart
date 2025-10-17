@@ -88,3 +88,20 @@ var pinkTheme = ThemeData(
       .apply(bodyColor: kLightColor.withOpacity(.7)),
   brightness: Brightness.dark,
 );
+
+// black background. force everything to white or black
+var blackAndWhiteTheme = ThemeData(
+  // colorScheme: ColorScheme.fromSeed(seedColor: kIndigoColor),
+  fontFamily: GoogleFonts.karla().fontFamily,
+  useMaterial3: true,
+  scaffoldBackgroundColor: Colors.black,
+  primaryColor: Colors.white,
+  indicatorColor: Colors.white,
+  cardColor: Colors.black,
+  hintColor: Colors.white.withOpacity(.7),
+  focusColor: Colors.white.withOpacity(.7),
+
+  textTheme:
+      GoogleFonts.karlaTextTheme().apply(bodyColor: Colors.white.withOpacity(.7)),
+  brightness: Brightness.dark,
+);

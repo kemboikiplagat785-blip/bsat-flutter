@@ -223,29 +223,39 @@ class TransactionController {
 // I/flutter (31950): [, 38, false, false, false, true]
     print(USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive);
 
+    List canCompound = await unavailableAmountCanCompound(
+      amount,
+      number,
+    );
+
+    if (canCompound[3]) {
+      USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = canCompound;
+      amount = canCompound[6];
+    }
+
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0]
         .toString()
         .isEmpty) {
-      USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive =
-          await unavailableAmountCanCompound(
-        amount,
-        number,
-      );
+      // USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive =
+      //     await unavailableAmountCanCompound(
+      //   amount,
+      //   number,
+      // );
 
-      print("makeTransaction - compounded amount:");
-      print(USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive);
-
-      if (await forwardIfNeeded(
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6],
-        trimmedBody,
-        alterMpesaMessage(smsMessage.body ?? "",
-            USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6]),
-        transactionId,
-        number,
-        name,
-        autoSaveContacts,
-      )) {
-        return;
+      // check if the 6th element exists
+      if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive.length > 6) {
+        if (await forwardIfNeeded(
+          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6],
+          trimmedBody,
+          alterMpesaMessage(smsMessage.body ?? "",
+              USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6]),
+          transactionId,
+          number,
+          name,
+          autoSaveContacts,
+        )) {
+          return;
+        }
       }
 
       if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0]
@@ -562,7 +572,7 @@ class TransactionController {
     ));
 
     // delete the entries from transactions
-    if (rawStuff.isNotEmpty && reply[1].toString().isNotEmpty) {
+    if (rawStuff.isNotEmpty && reply[3]) {
       await _sqliteService.deleteWhere(
         'transactions',
         'id IN (${rawStuff.map((e) => e['id']).join(',')})',
@@ -753,15 +763,14 @@ class TransactionController {
     ))
         .first;
 
-    String initialMessage = transaction['initialMessage'] ??
-        '';
+    String initialMessage = transaction['initialMessage'] ?? '';
 
-        int compoundedAmount = transaction['amount'] ?? 0;
+    int compoundedAmount = transaction['amount'] ?? 0;
 
     if (transaction.isEmpty) {
       return;
     }
-    
+
     bool hasPaid = await _paymentOps.hasActiveSubscription();
 
     bool isUsingToken = false;
@@ -802,7 +811,7 @@ class TransactionController {
       amount = transaction['amount'] ?? 0;
     }
 
-    if(compoundedAmount > 0){
+    if (compoundedAmount > 0) {
       amount = compoundedAmount;
     }
 
@@ -812,7 +821,6 @@ class TransactionController {
       'ussdCodes',
       'amount = ?',
       [amount],
-      columns: ['code'],
     ));
 
     if (lecodes.isEmpty) {
@@ -820,8 +828,6 @@ class TransactionController {
     }
 
     print("Redoing transaction $id with code $ussdCode on sim $simSubId");
-
-    ussdCode = lecodes.first['code'];
 
     List<dynamic> USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive =
         await get0USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive(
@@ -932,7 +938,8 @@ class TransactionController {
     );
 
     if (ussdCodes.isNotEmpty) {
-      rawUSSD = ussdCodes.first['code'];
+      doesExist = true;
+      rawUSSD = await selectBongaUssdCode(ussdCodes.first['id']);
       sim = ussdCodes.first['dialSim'];
       ussdToDial = rawUSSD.replaceAll(RegExp(r'n'), '0$number');
       canRetry = ussdCodes.first['canRetry'] == 1;
@@ -1305,7 +1312,9 @@ class TransactionController {
       return TransactionStatuses.doneConfirmed;
     }
 
-    if (RegExp(r'bundle activation request has failed|okoa|pool state|Authentication failure', caseSensitive: false)
+    if (RegExp(
+            r'bundle activation request has failed|okoa|pool state|Authentication failure',
+            caseSensitive: false)
         .hasMatch(response[0].toString())) {
       return TransactionStatuses.hasOkoa;
     }
@@ -1648,5 +1657,33 @@ class TransactionController {
 
       await clientService.insertClient(newClient);
     }
+  }
+
+  Future<String> selectBongaUssdCode(int id) async {
+    List<Map<String, dynamic>> ussdCodeItem = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'id = ?',
+      [id],
+    );
+
+    if (ussdCodeItem.first['usesBongaPoints'] == null ||
+        ussdCodeItem.first['usesBongaPoints'] == 0) {
+      return ussdCodeItem.first['code'];
+    }
+
+    List<dynamic> reply = await _phoneService.makeMyRequest(
+      ussdCodeItem.first['balanceCheckCode'],
+      ussdCodeItem.first['dialSim'],
+    );
+
+    int bongaBalance = await getBongaBalance(reply[0]);
+
+    print("Bonga balance: $bongaBalance");
+
+    if (bongaBalance > ussdCodeItem.first['bongaPointsPerTransaction']) {
+      return ussdCodeItem.first['code'];
+    }
+
+    return ussdCodeItem.first['fallbackCode'];
   }
 }

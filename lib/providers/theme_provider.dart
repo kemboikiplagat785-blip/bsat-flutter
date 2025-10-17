@@ -11,7 +11,7 @@ class ThemeProvider with ChangeNotifier {
     _loadTheme();
   }
 
-  var _sharedPreferenceService = SharedPreferencesService();
+  final _sharedPreferenceService = SharedPreferencesService();
 
   void _loadTheme() async {
     var selectedTheme = await _sharedPreferenceService.getThemeMode();
@@ -30,6 +30,8 @@ class ThemeProvider with ChangeNotifier {
       _currentTheme = darkPurpleTheme;
     } else if (selectedTheme == "pink") {
       _currentTheme = pinkTheme;
+    } else if (selectedTheme == "blackAndWhite") {
+      _currentTheme = blackAndWhiteTheme;
     } else {
       var brightness = WidgetsBinding.instance.window.platformBrightness;
       if (brightness == Brightness.dark) {
@@ -75,6 +77,12 @@ class ThemeProvider with ChangeNotifier {
   void setPinkTheme() async {
     _currentTheme = pinkTheme;
     await _sharedPreferenceService.setThemeMode("pink");
+    notifyListeners();
+  }
+
+  void setBlackAndWhiteTheme() async {
+    _currentTheme = blackAndWhiteTheme;
+    await _sharedPreferenceService.setThemeMode("blackAndWhite");
     notifyListeners();
   }
 }

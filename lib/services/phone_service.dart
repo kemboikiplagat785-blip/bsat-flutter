@@ -15,6 +15,9 @@ class PhoneService {
 
   final SQLiteService _sqLiteService = SQLiteService();
 
+  /// return `[ussdResponseMessage, TransactionStatuses.done];`
+  /// 
+  /// or [errorMessage, TransactionStatuses.error];
   Future<List> makeMyRequest(String code, int subscriptionId,
       {int? triesParam = 0}) async {
 

@@ -26,6 +26,12 @@ class EditOfferPage extends StatefulWidget {
 class _EditOfferPageState extends State<EditOfferPage> {
   final TextEditingController _amountTextController = TextEditingController();
   final TextEditingController _codeTextController = TextEditingController();
+  final TextEditingController _fallbackCodeTextController =
+      TextEditingController();
+  final TextEditingController _balanceCheckCodeTextController =
+      TextEditingController();
+  final TextEditingController _bongaPointsPerTransactionTextController =
+      TextEditingController();
 
   final _sqliteService = SQLiteService();
 
@@ -41,6 +47,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
   String _errorFromSim = '';
 
   bool isAdvanced = false;
+  bool usesBongaPoints = false;
 
   bool _fromBothSims = true;
   bool _canRetry = false;
@@ -140,6 +147,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
           'dialSim': _dialSim,
           'canRetry': _canRetry ? 1 : 0,
           'isAdvanced': isAdvanced ? 1 : 0,
+          'usesBongaPoints': usesBongaPoints ? 1 : 0,
+          'fallbackCode': _fallbackCodeTextController.text,
+          'balanceCheckCode': _balanceCheckCodeTextController.text,
+          'bongaPointsPerTransaction':
+              int.tryParse(_bongaPointsPerTransactionTextController.text) ?? 0,
         },
         'id = ?',
         [widget.ruleId],
@@ -157,11 +169,18 @@ class _EditOfferPageState extends State<EditOfferPage> {
         'canRetry': _canRetry ? 1 : 0,
         'isAdvanced': isAdvanced ? 1 : 0,
         'enabled': 1,
+        'usesBongaPoints': usesBongaPoints ? 1 : 0,
+        'fallbackCode': _fallbackCodeTextController.text,
+        'balanceCheckCode': _balanceCheckCodeTextController.text,
+        'bongaPointsPerTransaction':
+            int.tryParse(_bongaPointsPerTransactionTextController.text) ?? 0,
       },
       'ussdCodes',
     ).then((value) {
       _codeTextController.clear();
       _amountTextController.clear();
+      _fallbackCodeTextController.clear();
+      _balanceCheckCodeTextController.clear();
     });
   }
 
@@ -187,6 +206,16 @@ class _EditOfferPageState extends State<EditOfferPage> {
           : false;
 
       _fromBothSims = _fromSim < 0 ? true : false;
+      usesBongaPoints = (value[0]['usesBongaPoints'] != null)
+          ? value[0]['usesBongaPoints'] == 1
+          : false;
+      _fallbackCodeTextController.text = value[0]['fallbackCode'] ?? '';
+      _balanceCheckCodeTextController.text =
+          value[0]['balanceCheckCode'] ?? '*126*7*1#';
+      _bongaPointsPerTransactionTextController.text =
+          (value[0]['bongaPointsPerTransaction'] != null)
+              ? value[0]['bongaPointsPerTransaction'].toString()
+              : '0';
     });
   }
 
@@ -402,19 +431,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: kPagePadding / 2),
-                        CheckboxListTile(
-                          value: isAdvanced,
-                          onChanged: (val) async {
-                            if (val!) {
-                              showAccessibilityPermissionDialog(context);
-                            }
-                            setState(() {
-                              isAdvanced = val;
-                            });
-                          },
-                          title: Text('Advanced USSD'),
-                        ),
                         const SizedBox(height: kPagePadding),
                         Row(
                           children: [
@@ -464,9 +480,25 @@ class _EditOfferPageState extends State<EditOfferPage> {
                             );
                           }).toList(),
                         ),
+                        const SizedBox(height: kPagePadding),
+                        CheckboxListTile(
+                          value: isAdvanced,
+                          contentPadding: EdgeInsets.zero,
+                          onChanged: (val) async {
+                            if (val!) {
+                              showAccessibilityPermissionDialog(context);
+                            }
+                            setState(() {
+                              isAdvanced = val;
+                            });
+                          },
+                          title: Text('Advanced USSD'),
+                        ),
+                        // const SizedBox(height: kPagePadding / 2),
                         CheckboxListTile(
                           activeColor: kPrimaryColor,
                           value: _canRetry,
+                          contentPadding: EdgeInsets.zero,
                           title: Text(
                               'Automatically retry after error (Not recommended for SMS)'),
                           onChanged: (value) {
@@ -475,6 +507,64 @@ class _EditOfferPageState extends State<EditOfferPage> {
                             });
                           },
                         ),
+
+                        // const SizedBox(height: kPagePadding / 2),
+                        CheckboxListTile(
+                          value: usesBongaPoints,
+                          activeColor: kPrimaryColor,
+                          contentPadding: EdgeInsets.zero,
+                          onChanged: (val) async {
+                            setState(() {
+                              usesBongaPoints = val!;
+                            });
+                          },
+                          title: Text('Uses bonga points'),
+                        ),
+                        const SizedBox(height: kPagePadding / 2),
+                        if (usesBongaPoints) ...[
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('When I run out of bonga points, use:'),
+                              TextField(
+                                controller: _fallbackCodeTextController,
+                                decoration: InputDecoration(
+                                  hintText: 'Emergency USSD Code',
+                                  border: OutlineInputBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(kBorderRadius),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: kPagePadding / 2),
+                              Text('To check my bonga points balance, dial:'),
+                              TextField(
+                                controller: _balanceCheckCodeTextController,
+                                decoration: InputDecoration(
+                                  hintText: 'Balance Check USSD Code',
+                                  border: OutlineInputBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(kBorderRadius),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: kPagePadding / 2),
+                              Text('Bonga points used per transaction:'),
+                              TextField(
+                                keyboardType: TextInputType.number,
+                                controller:
+                                    _bongaPointsPerTransactionTextController,
+                                decoration: InputDecoration(
+                                  hintText: 'Bonga Points per Transaction',
+                                  border: OutlineInputBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(kBorderRadius),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        ],
                       ],
                     ),
                   ),
@@ -494,7 +584,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                         ),
                       ),
                       const SizedBox(width: kPagePadding),
-                      TextButton(
+                      ElevatedButton(
                         onPressed: () {
                           checkForErrorsAndProceed().then(
                             (value) => value ? Navigator.pop(context) : value,
@@ -504,6 +594,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: kPagePadding * 2),
                 ],
               ),
             ),

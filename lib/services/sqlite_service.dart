@@ -6,6 +6,7 @@ import 'package:path/path.dart';
 
 class SQLiteService {
   static Database? _database;
+  static bool _isInitializing = false;
 
   // List<Map<String, dynamic>> initialCodes = [
   //   {'code': '*180*5*2*n*7*1#', 'amount': 99},
@@ -15,8 +16,9 @@ class SQLiteService {
   // ];
 
   Future<Database> get database async {
+
     // Prevent concurrent initialization
-    if (_database != null) return _database!;
+    if (_database != null && _database!.isOpen) return _database!;
     // Use a lock to ensure only one isolate initializes the database at a time
     return await _initializeDatabaseSafely();
   }
@@ -38,6 +40,7 @@ class SQLiteService {
       version: 2, // Incremented database version
       onCreate: onCreate,
       onUpgrade: onUpgrade,
+      singleInstance: true
     );
   }
 
@@ -74,7 +77,11 @@ class SQLiteService {
         dialSim INTEGER,
         canRetry INTEGER,
         isAdvanced INTEGER,
-        enabled INTEGER
+        enabled INTEGER,
+        usesBongaPoints INTEGER DEFAULT 0,
+        fallbackCode TEXT,
+        balanceCheckCode TEXT,
+        bongaPointsPerTransaction INTEGER DEFAULT 0
       )''',
     );
 
@@ -192,11 +199,41 @@ class SQLiteService {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(firstName, lastName)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_last_bought ON clients(lastBought)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_purchases ON clients(noOfPurchases)');
+
+
+      // Add new columns to ussdCodes table
+          try {
+      await db.execute('ALTER TABLE ussdCodes ADD COLUMN usesBongaPoints INTEGER DEFAULT 0');
+    } catch (e) {
+      print('Column usesBongaPoints already exists or error: $e');
+    }
+    
+    try {
+      await db.execute('ALTER TABLE ussdCodes ADD COLUMN fallbackCode TEXT');
+    } catch (e) {
+      print('Column fallbackCode already exists or error: $e');
+    }
+    
+    try {
+      await db.execute('ALTER TABLE ussdCodes ADD COLUMN balanceCheckCode TEXT');
+    } catch (e) {
+      print('Column balanceCheckCode already exists or error: $e');
+    }
+    
+    try {
+      await db.execute('ALTER TABLE ussdCodes ADD COLUMN bongaPointsPerTransaction INTEGER DEFAULT 0');
+    } catch (e) {
+      print('Column bongaPointsPerTransaction already exists or error: $e');
+    }
     }
   }
 
   Future<int> insertStuff(Map<String, dynamic> row, String table) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     return await db.insert(table, row);
   }
 
@@ -207,6 +244,10 @@ class SQLiteService {
     int? offset,
   }) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     return await db.query(
       table,
       limit: limit,
@@ -217,6 +258,10 @@ class SQLiteService {
 
   Future<Map<String, dynamic>> queryOne(String table, int id) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     var response = await db.query(
       table,
       where: 'id = ?',
@@ -232,6 +277,10 @@ class SQLiteService {
     String? appendQuery,
   }) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     var result = await db.rawQuery(
       'SELECT COUNT(*) FROM $table $appendQuery',
       args,
@@ -247,6 +296,10 @@ class SQLiteService {
     String? orderBy,
   }) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     return await db.query(
       table,
       orderBy: orderBy ?? 'id DESC',
@@ -262,6 +315,10 @@ class SQLiteService {
     DateTime end,
   ) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     final result = await db.query(
       'transactions',
       where: 'date || " " || time BETWEEN ? AND ?',
@@ -279,6 +336,10 @@ class SQLiteService {
     String? orderBy,
   }) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     return await db.query(
       table,
       where:
@@ -307,6 +368,11 @@ class SQLiteService {
   }) async {
     Database db = await database;
 
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
+
     // debugPrint('Executing query: $query with arguments: $whereArgs');
 
     return await db.query(
@@ -320,22 +386,38 @@ class SQLiteService {
     String table,
   ) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     return await db.update(table, row, where: where, whereArgs: whereArgs);
   }
 
   Future<void> updateOnly(String query, List<dynamic> args) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     await db.rawQuery(query, args);
   }
 
   Future<int> deleteStuff(int id, String table) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     return await db.delete(table, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<int> deleteWhere(
       String table, String where, List<dynamic> whereArgs) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     return await db.delete(table, where: where, whereArgs: whereArgs);
   }
 
@@ -346,6 +428,10 @@ class SQLiteService {
     dynamic defaultValue = 'NULL',
   }) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     try {
       await db.query(table, columns: [column]);
     } catch (e) {
@@ -356,6 +442,10 @@ class SQLiteService {
 
   Future<List<Map<String, dynamic>>> getCountOfAmountsByDate() async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     var result = await db.rawQuery('''
     SELECT date, amount, COUNT(*) as count
     FROM transactions
@@ -368,6 +458,10 @@ class SQLiteService {
   Future<List<Map<String, dynamic>>> rawQueryInput(
       String query, List<dynamic> args) async {
     Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
     return await db.rawQuery(query, args);
   }
 }

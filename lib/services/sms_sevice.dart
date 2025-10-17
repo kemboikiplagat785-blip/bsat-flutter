@@ -322,4 +322,12 @@ Future<String> sendEvenInBackground(
   return status;
 }
 
+Future<int> getBongaBalance(String text) async {
+  RegExp bongaRegex = RegExp(r'(bonga|balance)[\sa-zA-Z]+\s+(\d+)', caseSensitive: false);
+  Match? bongaMatch = bongaRegex.firstMatch(text);
+  String? bongaPoints = bongaMatch?.group(2);
+
+  return bongaPoints != null ? int.parse(bongaPoints) : 0;
+}
+
 Future<void> getAdvancedSms() async {}

@@ -91,72 +91,120 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  CupertinoIcons.phone_fill,
-                                  color: Theme.of(context).indicatorColor,
-                                  size: 14,
-                                ),
-                                const SizedBox(width: kPagePadding / 4),
-                                Text(
-                                  '0${_details["number"]}',
-                                  // style: textTheme.headlineLarge!.merge(
-                                  //   const TextStyle(color: kPrimaryColor),
-                                  // ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: kPagePadding / 2),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.dialpad,
-                                  color: Theme.of(context).indicatorColor,
-                                  size: 14,
-                                ),
-                                const SizedBox(width: kPagePadding / 4),
-                                Text(
-                                  'KSH ${_details["amount"]}',
-                                ),
-                              ],
-                            ),
-                          ],
+                        Text(
+                          '${_details["ussdDialed"]}',
                         ),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  CupertinoIcons.timer,
-                                  color: Theme.of(context).indicatorColor,
-                                  size: 14,
-                                ),
-                                const SizedBox(width: kPagePadding / 4),
-                                Text(
-                                  '${_details["time"]} ${_details["date"]}',
-                                ),
-                              ],
+                        Text(
+                          'KSH ${_details["amount"]}',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: kPrimaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: kPagePadding / 2),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${_details["time"]} $interpunct ${_details["date"]}',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                        const SizedBox(width: kPagePadding / 2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _details["status"] ==
+                                    TransactionStatuses.done
+                                ? kPrimaryColor.withOpacity(0.1)
+                                : _details["status"] ==
+                                        TransactionStatuses.doneConfirmed
+                                    ? kPrimaryColor.withOpacity(0.1)
+                                    : _details["status"] ==
+                                            TransactionStatuses.advancedUssd
+                                        ? kPrimaryColor.withOpacity(0.1)
+                                        : _details["status"] ==
+                                                TransactionStatuses.error
+                                            ? kErrorColor.withOpacity(0.1)
+                                            : _details["status"] ==
+                                                    TransactionStatuses
+                                                        .blacklisted
+                                                ? kErrorColor.withOpacity(0.1)
+                                                : _details["status"] ==
+                                                            TransactionStatuses
+                                                                .paused ||
+                                                        _details["status"] ==
+                                                            TransactionStatuses
+                                                                .secondAttempt
+                                                    ? kWarningColor
+                                                        .withOpacity(0.1)
+                                                    : Colors.white
+                                                        .withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(kBorderRadius),
+                          ),
+                          child: Text(
+                            _details["status"] == TransactionStatuses.done
+                                ? "Successful"
+                                : _details["status"] ==
+                                        TransactionStatuses.doneConfirmed
+                                    ? "Successful (confirmed)"
+                                    : _details["status"] ==
+                                            TransactionStatuses.advancedUssd
+                                        ? "Advanced"
+                                        : _details["status"] ==
+                                                TransactionStatuses.error
+                                            ? "Error"
+                                            : _details["status"] ==
+                                                    TransactionStatuses
+                                                        .blacklisted
+                                                ? "Blacklisted"
+                                                : _details["status"] ==
+                                                        TransactionStatuses
+                                                            .paused
+                                                    ? "Paused"
+                                                    : _details["status"] ==
+                                                            TransactionStatuses
+                                                                .forwarded
+                                                        ? "forwarded"
+                                                        : _details["status"] ==
+                                                                TransactionStatuses
+                                                                    .secondAttempt
+                                                            ? "Second Attempt"
+                                                            : "[]",
+                            style: TextStyle(
+                              color: _details["status"] ==
+                                      TransactionStatuses.done
+                                  ? kWarningColor
+                                  : _details["status"] ==
+                                          TransactionStatuses.doneConfirmed
+                                      ? kPrimaryColor
+                                      : _details["status"] ==
+                                              TransactionStatuses.advancedUssd
+                                          ? kPrimaryColor
+                                          : _details["status"] ==
+                                                  TransactionStatuses.error
+                                              ? kErrorColor
+                                              : _details["status"] ==
+                                                      TransactionStatuses
+                                                          .blacklisted
+                                                  ? kErrorColor
+                                                  : _details["status"] ==
+                                                              TransactionStatuses
+                                                                  .paused ||
+                                                          _details["status"] ==
+                                                              TransactionStatuses
+                                                                  .secondAttempt
+                                                      ? kWarningColor
+                                                      : Colors.white,
+                              // fontWeight: FontWeight.bold,
+                              fontSize: 11,
                             ),
-                            const SizedBox(height: kPagePadding / 2),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.money_rounded,
-                                  color: Theme.of(context).indicatorColor,
-                                  size: 14,
-                                ),
-                                const SizedBox(width: kPagePadding / 4),
-                                Text(
-                                  '${_details["ussdDialed"]}',
-                                ),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
                       ],
                     ),
@@ -429,12 +477,14 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                   showSuccessDialog(
                                       context, 'Category changed to $status');
 
-                                  Future.delayed(const Duration(seconds: 3),
-                                      () {
-                                    // print("Action executed after 3 seconds!");
-                                    Navigator.pop(context);
-                                    // your action here
-                                  });
+                                  // Future.delayed(const Duration(seconds: 3),
+                                  //     () {
+                                  //   // print("Action executed after 3 seconds!");
+                                  //   Navigator.pop(context);
+                                  //   // your action here
+                                  // });
+
+                                  getStuff();
                                 }
                               },
                               Icon(

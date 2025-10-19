@@ -53,6 +53,41 @@ class TransactionController {
         ? smsMessage.body!.substring(0, 160)
         : smsMessage.body!;
 
+    bool blacklistExists = await numberIsBlacklisted(number);
+
+    if (blacklistExists) {
+      dontProcess(
+        smsMessage.body ?? "",
+        transactionId,
+        number,
+        '',
+        amount,
+        -1,
+        status: TransactionStatuses.blacklisted,
+        reply: 'Number is blacklisted',
+        canRetry: false,
+        source: name,
+      );
+      processReply(
+        number,
+        TransactionStatuses.blacklisted,
+        name.split(' ')[0],
+        name.trim().split(RegExp(r'\s+')).length > 1
+            ? name.trim().split(RegExp(r'\s+'))[1]
+            : '',
+        amount,
+      );
+
+      if (autoSaveContacts) {
+        await contactService.addNewContact(
+          name,
+          '0$number',
+        );
+      }
+
+      return;
+    }
+
     if ((await forwardIfNeeded(
       amount,
       trimmedBody,
@@ -121,41 +156,6 @@ class TransactionController {
             : '',
         amount,
       );
-
-      return;
-    }
-
-    bool blacklistExists = await numberIsBlacklisted(number);
-
-    if (blacklistExists) {
-      dontProcess(
-        smsMessage.body ?? "",
-        transactionId,
-        number,
-        '',
-        amount,
-        -1,
-        status: TransactionStatuses.blacklisted,
-        reply: 'Number is blacklisted',
-        canRetry: false,
-        source: name,
-      );
-      processReply(
-        number,
-        TransactionStatuses.blacklisted,
-        name.split(' ')[0],
-        name.trim().split(RegExp(r'\s+')).length > 1
-            ? name.trim().split(RegExp(r'\s+'))[1]
-            : '',
-        amount,
-      );
-
-      if (autoSaveContacts) {
-        await contactService.addNewContact(
-          name,
-          '0$number',
-        );
-      }
 
       return;
     }

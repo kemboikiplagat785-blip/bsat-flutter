@@ -122,7 +122,7 @@ class PhoneService {
   static Future<String?> sendUssdSequence(
       String fullCode, int subscriptionId) async {
     isRunning = true;
-    // print("UssdSession(fl): sendUssdSequence: $fullCode, $subscriptionId");
+    print("UssdSession(fl): sendUssdSequence: $fullCode, $subscriptionId");
     try {
       final result = await platform.invokeMethod(
         'runUssdSequence',

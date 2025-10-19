@@ -1,5 +1,6 @@
 param(
-    [string]$commitMessage = ""
+    [string]$commitMessage = "",
+    [Alias('v')][string]$Version = ""
 )
 
 # Step 1: Read current version
@@ -21,9 +22,19 @@ if ($currentVersion -match "^(?<ver>\d+\.\d+\.\d+)(\+(?<build>\d+))?") {
     throw "Could not parse version string: $currentVersion"
 }
 
-# Step 3: Replace version
-$newPubspec = $pubspec -replace "version:.*", "version: $newVersion"
-$newPubspec | Set-Content "pubspec.yaml"
+# Step 3: Decide new version
+if (-not [string]::IsNullOrWhiteSpace($Version)) {
+    if ($Version -match "^(?<ver>\d+\.\d+\.\d+)(\+(?<build>\d+))?$") {
+        $targetVer = $matches['ver']
+        $targetBuild = if ($matches['build']) { [int]$matches['build'] } else { $currentBuild }
+        $newVersion = "$targetVer+$targetBuild"
+    } else {
+        throw "Invalid -v value. Use x.y.z or x.y.z+build (e.g., 3.7.0 or 3.7.0+2)."
+    }
+} else {
+    $patch = $patch + 1
+    $newVersion = "$major.$minor.$patch+$currentBuild"
+}
 
 # Step 4: Git operations
 git add .

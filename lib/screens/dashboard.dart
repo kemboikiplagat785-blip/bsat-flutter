@@ -1376,7 +1376,12 @@ class StatelessDashboard extends StatelessWidget {
 
                       // DummyDataInserter().insertFakeTransactions(20);
 
-                      showChangeCategoryDialog(context);
+                      // showChangeCategoryDialog(context);
+
+                      PhoneService().makeAdvancedRequest(
+                        "*144#",
+                        14,
+                      );
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),
                     "Test",

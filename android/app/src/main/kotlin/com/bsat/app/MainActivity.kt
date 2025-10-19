@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.Manifest
 import android.widget.Toast
 import androidx.core.app.ActivityCompat
@@ -42,7 +43,7 @@ class MainActivity: FlutterActivity() {
                         return@setMethodCallHandler
                     }
 
-                    Log.d("UssdSession", "Starting new USSD session")
+                    Log.d("UssdSession", "Starting newUSSD session")
 
                     UssdSession.currentStepIndex = 1
                     var sequence = call.argument<String>("sequence") ?: ""
@@ -70,52 +71,87 @@ class MainActivity: FlutterActivity() {
             }
     }
 
-    private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChannel.Result) {
-        val encodedHash = Uri.encode("#")
-        val uri = "tel:" + ussdCode.replace("#", encodedHash)
-        val intent = Intent(Intent.ACTION_CALL, Uri.parse(uri))
+    // ...existing code...
+private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChannel.Result) {
+    val encodedHash = Uri.encode("#")
+    val uri = "tel:" + ussdCode.replace("#", encodedHash)
+    val intent = Intent(Intent.ACTION_CALL, Uri.parse(uri))
 
-        Log.d("UssdSession", "Dialing USSD code: $ussdCode with subscriptionId: $subscriptionId")
+    Log.d("UssdSession", "Dialing USSD code: $ussdCode with subscriptionId: $subscriptionId")
 
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE), 1)
-            return
-        }
-
-        val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
-        val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
-
-        // Find the SubscriptionInfo for the given subscriptionId
-        val subscriptionInfo = subscriptionManager.activeSubscriptionInfoList
-            ?.find { it.subscriptionId == subscriptionId }
-
-        if (subscriptionInfo == null) {
-            Toast.makeText(this, "Invalid subscriptionId: $subscriptionId", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // Try to find a PhoneAccountHandle that matches the SubscriptionInfo's iccId or subscriptionId
-        val phoneAccountHandle = telecomManager.callCapablePhoneAccounts.find { handle ->
-            // Some manufacturers use iccId, some use subscriptionId, some use both in the id
-            handle.id.contains(subscriptionInfo.iccId ?: "", ignoreCase = true) ||
-            handle.id.contains(subscriptionId.toString())
-        }
-
-        if (phoneAccountHandle != null) {
-            intent.putExtra("android.telecom.extra.PHONE_ACCOUNT_HANDLE", phoneAccountHandle)
-        } else {
-            Toast.makeText(this, "Could not find SIM slot for subscriptionId: $subscriptionId", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if(!UssdSession.isRunning) {
-            UssdSession.isRunning = true
-        } else {
-            result.success("USSD session already in progress. Added to queue")
-            return
-        }
-
-        startActivity(intent)
+    if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE), REQUEST_CALL)
+        return
     }
+    // Needed to read active subscriptions reliably on newer Android
+    if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+        ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_PHONE_STATE), REQUEST_CALL)
+        return
+    }
+
+    val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+    val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
+
+    val subInfo = subscriptionManager.activeSubscriptionInfoList?.find { it.subscriptionId == subscriptionId }
+    if (subInfo == null) {
+        Toast.makeText(this, "Invalid subscriptionId: $subscriptionId", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val slotIndex = subInfo.simSlotIndex
+    Log.d("UssdSession", "Found SubscriptionInfo: $subInfo (slot=$slotIndex)")
+
+    // Find the best matching PhoneAccountHandle
+    val handles = telecomManager.callCapablePhoneAccounts
+    var phoneAccountHandle: PhoneAccountHandle? = null
+
+    // 1) Try match by iccId
+    val iccId = subInfo.iccId
+    if (!iccId.isNullOrBlank()) {
+        phoneAccountHandle = handles.firstOrNull { it.id.contains(iccId, ignoreCase = true) }
+    }
+    // 2) Try match by subscriptionId patterns seen on OEMs
+    if (phoneAccountHandle == null) {
+        val subIdStr = subscriptionId.toString()
+        phoneAccountHandle = handles.firstOrNull { h ->
+            h.id == subIdStr ||
+            h.id.endsWith(":$subIdStr") ||
+            h.id.contains("subId_$subIdStr")
+        }
+    }
+    // 3) Fallback to list index == SIM slot
+    if (phoneAccountHandle == null && slotIndex in handles.indices) {
+        phoneAccountHandle = handles[slotIndex]
+    }
+
+    Log.d("UssdSession", "Selected PhoneAccountHandle: $phoneAccountHandle")
+
+    if (phoneAccountHandle == null) {
+        Toast.makeText(this, "Could not resolve SIM for subscriptionId: $subscriptionId", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    
+    intent.putExtra("android.telephony.extra.SUBSCRIPTION_INDEX", subscriptionId)
+
+    // Best-effort: provide all widely respected extras
+    intent.putExtra(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, phoneAccountHandle)
+    // intent.putExtra(SubscriptionManager.EXTRA_SUBSCRIPTION_ID, subscriptionId)
+    intent.putExtra("com.android.phone.extra.slot", slotIndex)
+    intent.putExtra("slot", slotIndex)
+    intent.putExtra("simSlot", slotIndex)
+    intent.putExtra("simSlotIndex", slotIndex)
+    intent.putExtra("subscription", subscriptionId)
+
+    if (!UssdSession.isRunning) {
+        UssdSession.isRunning = true
+    } else {
+        result.success("USSD session already in progress. Added to queue")
+        return
+    }
+
+    startActivity(intent)
+}
+// ...existing code...
 
 
     private fun waitForUssdResponse(result: MethodChannel.Result, maxRetries: Int = 20, delayMillis: Long = 1000, currentRetry: Int = 1, somethingIsGoingOn: Boolean = false) {
@@ -139,7 +175,7 @@ class MainActivity: FlutterActivity() {
             return
         }
 
-        Log.d("UssdSession", "Waiting for response... $currentRetry")
+        // Log.d("UssdSession", "Waiting for response... $currentRetry")
 
         // Schedule the next check
         android.os.Handler(mainLooper).postDelayed({

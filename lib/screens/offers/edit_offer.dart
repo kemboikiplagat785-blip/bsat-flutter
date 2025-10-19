@@ -145,7 +145,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Valid bonga points per transaction is required when using bonga points.'),
+              'Valid bonga points per transaction is required when using bonga points.',
+            ),
           ),
         );
         return false;
@@ -345,9 +346,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                       onTap: () {
                                         setState(() {
                                           _fromBothSims = true;
-                                          // _fromSim = s.subscriptionId;
                                         });
-                                        // mustUseBothSimsDialog(context);
                                       },
                                       child: Padding(
                                         padding: const EdgeInsets.only(
@@ -564,7 +563,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                       return AlertDialog(
                                         title: Text('Using Bonga Points'),
                                         content: Text(
-                                            'When this option is enabled, the app will first attempt to use your bonga points for the USSD transaction. \nIf you run out of bonga points, it will then use the fallback USSD code you provided.\n\n Make sure to provide a valid balance check USSD code and specify how many bonga points are used per transaction (e.g. 60).'),
+                                          'When this option is enabled, the app will first attempt to use your bonga points for the USSD transaction. \nIf you run out of bonga points, it will then use the fallback USSD code you provided.\n\n Make sure to provide a valid balance check USSD code and specify how many bonga points are used per transaction (e.g. 60).',
+                                        ),
                                         actions: [
                                           TextButton(
                                             onPressed: () {
@@ -594,9 +594,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                     MainAxisAlignment.spaceBetween,
                                 children: [
                                   Expanded(
-                                      child: Text(
-                                          'When I run out of bonga points, '
-                                          'use this USSD code:')),
+                                    child: Text(
+                                      'When I run out of bonga points, '
+                                      'use this USSD code:',
+                                    ),
+                                  ),
                                   const SizedBox(width: kPagePadding / 2),
                                   GestureDetector(
                                     onTap: () {
@@ -697,23 +699,26 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                   GestureDetector(
                                     onTap: () {
                                       showDialog(
-                                          context: context,
-                                          builder: (context) {
-                                            return AlertDialog(
-                                              title: Text(
-                                                  'Bonga Points per Transaction'),
-                                              content: Text(
-                                                  'Specify how many bonga points are deducted for each USSD transaction. For example, if each transaction uses 60 bonga points (e.g. for 45min 3hrs), enter 60 here.'),
-                                              actions: [
-                                                TextButton(
-                                                  onPressed: () {
-                                                    Navigator.pop(context);
-                                                  },
-                                                  child: Text('OK'),
-                                                ),
-                                              ],
-                                            );
-                                          });
+                                        context: context,
+                                        builder: (context) {
+                                          return AlertDialog(
+                                            title: Text(
+                                              'Bonga Points per Transaction',
+                                            ),
+                                            content: Text(
+                                              'Specify how many bonga points are deducted for each USSD transaction. For example, if each transaction uses 60 bonga points (e.g. for 45min 3hrs), enter 60 here.',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () {
+                                                  Navigator.pop(context);
+                                                },
+                                                child: Text('OK'),
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      );
                                     },
                                     child: Icon(
                                       Icons.info_outline,

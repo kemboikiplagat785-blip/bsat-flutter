@@ -339,7 +339,7 @@ class TransactionController {
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[4]) {
       debugPrint('advanced starting');
 
-      bool isActive =
+      bool isActive = 
           await _sharedPreferencesService.getAppIsActiveState() ?? false;
 
       String transStatus = '';
@@ -378,6 +378,8 @@ class TransactionController {
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
       );
+
+      requestResponse[1] = await transactionStatus(requestResponse);
 
       if (requestResponse[1] == TransactionStatuses.error) {
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[2] = true;
@@ -870,6 +872,8 @@ class TransactionController {
         ussdCode,
         simSubId,
       );
+
+      response[1] = await transactionStatus(response);
     } else {
       response = await _phoneService.makeMyRequest(
         ussdCode,

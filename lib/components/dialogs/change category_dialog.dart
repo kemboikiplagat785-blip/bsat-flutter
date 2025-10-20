@@ -128,6 +128,113 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                   textSize: 12,
                   accentColor: kWarningColor,
                 ),
+                // New: Paused
+                toolButton(
+                  () async {
+                    if ((await showConfirmDialog(context,
+                            message: 'Change category to Paused?')) ??
+                        false) {
+                      Navigator.of(context).pop(TransactionStatuses.paused);
+                    }
+                  },
+                  Icon(
+                    CupertinoIcons.pause_circle_fill,
+                    color: kWarningColor,
+                    size: 14,
+                  ),
+                  'Paused',
+                  context,
+                  withBorder: true,
+                  textSize: 12,
+                  accentColor: kWarningColor,
+                ),
+
+                // New: Timed Out
+                // toolButton(
+                //   () async {
+                //     if ((await showConfirmDialog(context,
+                //             message: 'Change category to Timed out?')) ??
+                //         false) {
+                //       Navigator.of(context).pop(TransactionStatuses.timedOut);
+                //     }
+                //   },
+                //   Icon(
+                //     CupertinoIcons.timer,
+                //     color: kWarningColor,
+                //     size: 14,
+                //   ),
+                //   'Timed out',
+                //   context,
+                //   withBorder: true,
+                //   textSize: 12,
+                //   accentColor: kWarningColor,
+                // ),
+
+                // New: Unavailable Offer
+                toolButton(
+                  () async {
+                    if ((await showConfirmDialog(context,
+                            message:
+                                'Change category to Unavailable offer?')) ??
+                        false) {
+                      Navigator.of(context)
+                          .pop(TransactionStatuses.unavailableOffer);
+                    }
+                  },
+                  Icon(
+                    CupertinoIcons.exclamationmark_triangle,
+                    color: Colors.white,
+                    size: 14,
+                  ),
+                  'Unavailable',
+                  context,
+                  withBorder: true,
+                  textSize: 12,
+                  accentColor: Colors.white,
+                ),
+
+                // New: Has Okoa
+                toolButton(
+                  () async {
+                    if ((await showConfirmDialog(context,
+                            message: 'Change category to Has Okoa?')) ??
+                        false) {
+                      Navigator.of(context).pop(TransactionStatuses.hasOkoa);
+                    }
+                  },
+                  const Icon(
+                    Icons.sailing_rounded,
+                    color: kDullColor,
+                    size: 14,
+                  ),
+                  'Has Okoa',
+                  context,
+                  withBorder: true,
+                  textSize: 12,
+                  accentColor: Colors.white,
+                ),
+
+                // New: Blacklisted
+                toolButton(
+                  () async {
+                    if ((await showConfirmDialog(context,
+                            message: 'Change category to Blacklisted?')) ??
+                        false) {
+                      Navigator.of(context)
+                          .pop(TransactionStatuses.blacklisted);
+                    }
+                  },
+                  const Icon(
+                    Icons.person_off_outlined,
+                    color: kWarningColor,
+                    size: 14,
+                  ),
+                  'Blacklisted',
+                  context,
+                  withBorder: true,
+                  textSize: 12,
+                  accentColor: kErrorColor,
+                ),
                 toolButton(
                   () async {
                     if ((await showConfirmDialog(context,
@@ -148,6 +255,29 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                   textSize: 12,
                   accentColor: kErrorColor,
                 ),
+
+                // New: Advanced Queue
+                // toolButton(
+                //   () async {
+                //     if ((await showConfirmDialog(context,
+                //             message: 'Change category to Advanced queue?')) ??
+                //         false) {
+                //       Navigator.of(context)
+                //           .pop(TransactionStatuses.advancedQueue);
+                //     }
+                //   },
+                //   Icon(
+                //     CupertinoIcons.arrow_right_circle_fill,
+                //     color: kIndigoColor,
+                //     size: 14,
+                //   ),
+                //   'Advanced queue',
+                //   context,
+                //   withBorder: true,
+                //   textSize: 12,
+                //   accentColor: kIndigoColor,
+                // ),
+
               ],
             )
           ],

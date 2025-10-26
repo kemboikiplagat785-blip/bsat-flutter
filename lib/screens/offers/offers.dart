@@ -1,6 +1,6 @@
 import 'package:bsat/components/card_with_number.dart';
 import 'package:bsat/components/dialogs/choose_sim.dart';
-import 'package:bsat/components/dialogs/confirm_dialog.dart';
+import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/dialogs/success_dialog.dart';
 import 'package:bsat/components/header.dart';
@@ -244,7 +244,7 @@ class _OffersPageState extends State<OffersPage> {
                         IconButton(
                           icon: const Icon(CupertinoIcons.delete),
                           onPressed: () async {
-                            bool isConfirmed = await showConfirmDialog(context,
+                            bool isConfirmed = await showConfirmDeleteDialog(context,
                                     title: "Delete",
                                     message:
                                         "Are you sure you want to delete the selected offers?") ??
@@ -263,7 +263,7 @@ class _OffersPageState extends State<OffersPage> {
                             }
 
                             showSuccessDialog(
-                                context, 'Deleted offers successfully');
+                                context, text: 'Deleted offers successfully');
                             getAllUSSDCodes();
                           },
                         ),
@@ -519,7 +519,7 @@ class _OffersPageState extends State<OffersPage> {
                 String filePath = await FileService.downloadOffersToCsv();
                 Navigator.pop(context);
                 if (filePath.isNotEmpty) {
-                  showSuccessDialog(context, "File downloaded to $filePath");
+                  showSuccessDialog(context, text: "File downloaded to $filePath");
                 }
               } else if (value == 'updateOffers') {
                 // Call a function to update offers

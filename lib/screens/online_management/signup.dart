@@ -1,15 +1,20 @@
+import 'package:bsat/components/dialogs/ask_device_name_dialog.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
-import 'package:bsat/screens/onboarding/otp.dart';
+import 'package:bsat/screens/online_management/otp.dart';
 // import 'package:bsat/services/supabase_auth.dart';
 import 'package:bsat/utils/constants.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 // import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../components/hero.dart';
-import 'login.dart';
+import '../../services/auth_service.dart';
+import '../online_management/login.dart';
 
 class SignupPage extends StatefulWidget {
+  const SignupPage({super.key});
+
   @override
   _SignupPageState createState() => _SignupPageState();
 }
@@ -17,9 +22,12 @@ class SignupPage extends StatefulWidget {
 class _SignupPageState extends State<SignupPage> {
   final _formKey = GlobalKey<FormState>();
   String email = '';
+  String name = '';
   String password = '';
   String confirmPassword = '';
   String error = '';
+  String linkUrl = '';
+  bool showPassword = false;
 
   // final _supabaseAuth = SupabaseAuth(Supabase.instance.client);
   bool isLoading = false;
@@ -32,7 +40,10 @@ class _SignupPageState extends State<SignupPage> {
           child: Column(
             children: [
               const SizedBox(height: kPagePadding * 3),
-              myHeroWidget(context),
+              Container(
+                // height: 150,
+                child: myHeroWidget(context),
+              ),
               const SizedBox(height: kPagePadding * 2),
               Container(
                 decoration: const BoxDecoration(
@@ -48,27 +59,73 @@ class _SignupPageState extends State<SignupPage> {
                     key: _formKey,
                     child: Column(
                       children: [
-                        error == ''
-                            ? Container()
-                            : Row(
-                                children: [
-                                  Text(
-                                    error,
-                                    style: TextStyle(color: kErrorColor),
-                                  ),
-                                  const SizedBox(height: kPagePadding),
-                                ],
-                              ),
                         Text(
                           'Sign Up',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                          ),
                           // style: Theme.of(context).textTheme.headline6,
                         ),
+                        const SizedBox(height: kPagePadding),
+                        if (error == '')
+                          Container()
+                        else
+                          Column(
+                            children: [
+                              Container(
+                                padding: kPagePaddingInsets,
+                                decoration: BoxDecoration(
+                                  color: kErrorColor.withAlpha(20),
+                                  borderRadius:
+                                      BorderRadius.circular(kBorderRadius),
+                                ),
+                                child: Text(
+                                  error,
+                                  style: TextStyle(color: kErrorColor),
+                                ),
+                              ),
+                              const SizedBox(height: kPagePadding),
+                            ],
+                          ),
                         const SizedBox(height: kPagePadding),
                         _buildTextField(
                           'Email',
                           (value) => email = value,
                           keyboardType: TextInputType.emailAddress,
                           isEmail: true,
+                        ),
+                        const SizedBox(height: kPagePadding),
+                        _buildTextField(
+                          'Name',
+                          (value) => name = value,
+                        ),
+                        const SizedBox(height: kPagePadding),
+                        Container(
+                          padding: const EdgeInsets.only(
+                            left: kPagePadding,
+                            // right: 2,
+                            // top: kPagePadding,
+                            // bottom: kPagePadding,
+                          ),
+                          decoration: BoxDecoration(
+                            color: kGrayColor.withAlpha(30),
+                            borderRadius: BorderRadius.only(
+                              topLeft: Radius.circular(kBorderRadius),
+                              bottomLeft: Radius.circular(kBorderRadius),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text('buy.bsat.co.ke/'),
+                              Expanded(
+                                child: _buildTextField(
+                                  'Link url',
+                                  (value) => linkUrl = value,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                         const SizedBox(height: kPagePadding),
                         _buildTextField(
@@ -85,10 +142,25 @@ class _SignupPageState extends State<SignupPage> {
                         const SizedBox(height: kPagePadding * 2),
                         SizedBox(
                           width: double.infinity,
-                          child: _buildOutlinedButton(
-                            () => _handleSignup(),
-                            const Text("SIGN UP"),
-                            outlineColor: kPrimaryColor,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              padding: kPagePaddingInsets,
+                              backgroundColor: kPrimaryColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(kBorderRadius),
+                              ),
+                            ),
+                            onPressed: () {
+                              _handleSignup();
+                            },
+                            child: Text(
+                              'SIGN UP',
+                              style: TextStyle(
+                                color: kIndigoColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: kPagePadding),
@@ -98,7 +170,7 @@ class _SignupPageState extends State<SignupPage> {
                             TextButton(
                               onPressed: () {
                                 // Navigator.of(context).pop();
-                                Navigator.of(context).push(
+                                Navigator.of(context).pushReplacement(
                                   PageRouteBuilder(
                                     pageBuilder: (context, animation,
                                             secondaryAnimation) =>
@@ -141,14 +213,28 @@ class _SignupPageState extends State<SignupPage> {
     TextInputType? keyboardType,
   }) {
     return TextFormField(
-      obscureText: isPassword,
+      obscureText: isPassword && !showPassword,
       keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(kBorderRadius),
         ),
+        suffixIcon: isPassword
+            ? IconButton(
+                icon: Icon(
+                  showPassword ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
+                  // color: kDullColor,
+                ),
+                onPressed: () {
+                  setState(() {
+                    showPassword = !showPassword;
+                  });
+                },
+              )
+            : null,
       ),
+      
       onChanged: onChanged,
       validator: (value) {
         if (value == null || value.isEmpty) {
@@ -169,27 +255,6 @@ class _SignupPageState extends State<SignupPage> {
     );
   }
 
-  Widget _buildOutlinedButton(
-    Function onTap,
-    Widget child, {
-    Color? fgColor,
-    Color? outlineColor,
-  }) {
-    return OutlinedButton(
-      onPressed: () {
-        onTap();
-      },
-      child: child,
-      style: OutlinedButton.styleFrom(
-        foregroundColor: fgColor,
-        backgroundColor: outlineColor,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(kBorderRadius)),
-        padding: kPagePaddingInsets / 2,
-      ),
-    );
-  }
-
   void _handleSignup() async {
     if (_formKey.currentState!.validate()) {
       setState(() {
@@ -197,36 +262,27 @@ class _SignupPageState extends State<SignupPage> {
       });
       showLoadingDialog(context, text: "Creating your account");
       try {
-        // await _supabaseAuth
-        //     .signUpWithEmail(
-        //   password: password,
-        //   email: email,
-        // )
-        //     .then((response) {
-        //   Navigator.of(context).pop();
-        //   if (response.user != null) {
-        //     Navigator.of(context).push(
-        //       PageRouteBuilder(
-        //         pageBuilder: (context, animation, secondaryAnimation) =>
-        //             OtpVerificationPage(),
-        //         transitionsBuilder:
-        //             (context, animation, secondaryAnimation, child) {
-        //           return CupertinoPageTransition(
-        //             primaryRouteAnimation: animation,
-        //             secondaryRouteAnimation: secondaryAnimation,
-        //             linearTransition: true,
-        //             child: child,
-        //           );
-        //         },
-        //       ),
-        //     );
-        //     ScaffoldMessenger.of(context).showSnackBar(
-        //       const SnackBar(
-        //         content: Text('Account created successfully!'),
-        //       ),
-        //     );
-        //   }
-        // });
+        final result = await AuthService().signup(
+            email: email,
+            password: password,
+            name: name,
+            linkExtension: linkUrl);
+        Navigator.of(context).pop(); // Close loading dialog
+        if (result['success']) {
+          //print('Signup successful');
+
+          String deviceName =
+              (await DeviceInfoPlugin().androidInfo).name ?? "Unknown Device";
+          deviceName = await showAskDeviceNameDialog(context, deviceName) ?? "";
+          await AuthService().registerDeviceInfo(name: deviceName);
+          //print('Device registered: $deviceName');
+          Navigator.of(context).pop(true);
+        } else {
+          //print('Signup failed: ${result['message']}');
+          setState(() {
+            error = result['message'] ?? 'Signup failed';
+          });
+        }
       } catch (error) {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(

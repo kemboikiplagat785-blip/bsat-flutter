@@ -13,7 +13,7 @@ String? getAmount(String input) {
   final match = regex.firstMatch(cleaned);
   if (match != null) {
     // Return the numeric part only (as string)
-    // print(match.groups());
+    // //print(match.groups());
     return match.group(0)!.replaceAll(RegExp(r'[^0-9.]'), '');
   }
   return null;
@@ -22,6 +22,6 @@ String? getAmount(String input) {
 // Examples:
 void main() {
   List<int> testList = [1, 2, 3, 4, 5];
-  print(testList);
-  print(jsonDecode(testList.toString()));
+  //print(testList);
+  //print(jsonDecode(testList.toString()));
 }

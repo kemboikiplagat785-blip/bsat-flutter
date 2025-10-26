@@ -1,4 +1,4 @@
-import 'package:bsat/components/dialogs/confirm_dialog.dart';
+import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -29,7 +29,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
               children: [
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message: 'Change category to advanced?')) ??
                         false) {
                       Navigator.of(context)
@@ -49,7 +49,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 ),
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message:
                                 'Change category to Successful (confirmed)?')) ??
                         false) {
@@ -70,7 +70,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 ),
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message:
                                 'Change category to Successful (unconfirmed)?')) ??
                         false) {
@@ -90,7 +90,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 ),
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message: 'Change category to Forwarded?')) ??
                         false) {
                       Navigator.of(context).pop(TransactionStatuses.forwarded);
@@ -109,7 +109,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 ),
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message:
                                 'Change category to Failed (second attempt)?')) ??
                         false) {
@@ -131,7 +131,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 // New: Paused
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message: 'Change category to Paused?')) ??
                         false) {
                       Navigator.of(context).pop(TransactionStatuses.paused);
@@ -173,7 +173,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 // New: Unavailable Offer
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message:
                                 'Change category to Unavailable offer?')) ??
                         false) {
@@ -196,7 +196,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 // New: Has Okoa
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message: 'Change category to Has Okoa?')) ??
                         false) {
                       Navigator.of(context).pop(TransactionStatuses.hasOkoa);
@@ -217,7 +217,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 // New: Blacklisted
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message: 'Change category to Blacklisted?')) ??
                         false) {
                       Navigator.of(context)
@@ -237,7 +237,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
                 ),
                 toolButton(
                   () async {
-                    if ((await showConfirmDialog(context,
+                    if ((await showConfirmDeleteDialog(context,
                             message: 'Change category to Error?')) ??
                         false) {
                           // await SQLiteService().updateStuff({'status': }, where, whereArgs, table)

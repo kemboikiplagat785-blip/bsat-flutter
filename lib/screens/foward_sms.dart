@@ -1,7 +1,8 @@
 import 'dart:convert';
 
-import 'package:bsat/components/dialogs/confirm_dialog.dart';
+import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
+import 'package:bsat/components/dialogs/success_dialog.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -12,19 +13,19 @@ import '../components/header.dart';
 import '../services/sqlite_service.dart';
 import '../utils/constants.dart';
 
-class ForwardTextsPage extends StatefulWidget {
-  const ForwardTextsPage({super.key});
+class ForwardSmsPage extends StatefulWidget {
+  const ForwardSmsPage({super.key});
 
   @override
-  State<ForwardTextsPage> createState() => _ForwardTextsPageState();
+  State<ForwardSmsPage> createState() => _ForwardSmsPageState();
 }
 
-class _ForwardTextsPageState extends State<ForwardTextsPage> {
-  var _sqliteService = SQLiteService();
+class _ForwardSmsPageState extends State<ForwardSmsPage> {
+  final _sqliteService = SQLiteService();
 
-  var _amountsToForwardTextController = TextEditingController();
-  var _whitelistedNumberTextController = TextEditingController();
-  var _numberToForwardToTextController = TextEditingController();
+  final _amountsToForwardTextController = TextEditingController();
+  final _whitelistedNumberTextController = TextEditingController();
+  final _numberToForwardToTextController = TextEditingController();
 
   List<int> _whitelistedNumbers = [];
   List<int> _amountsToForward = [];
@@ -117,7 +118,7 @@ class _ForwardTextsPageState extends State<ForwardTextsPage> {
 
   void _getData() async {
     _forwards = await _sqliteService.queryAll('forwarded');
-    print("Forwards: $_forwards");
+    //print("Forwards: $_forwards");
     _whitelistedNumbers = await _sqliteService.queryAll('processText').then(
       (onValue) {
         return onValue
@@ -245,7 +246,8 @@ class _ForwardTextsPageState extends State<ForwardTextsPage> {
                                   decoration: BoxDecoration(
                                     color: Theme.of(context).cardColor,
                                     borderRadius: BorderRadius.circular(
-                                        kBorderRadius / 2),
+                                      kBorderRadius / 2,
+                                    ),
                                   ),
                                   child: Column(
                                     // mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -293,7 +295,7 @@ class _ForwardTextsPageState extends State<ForwardTextsPage> {
                                           GestureDetector(
                                             onTap: () async {
                                               bool delete =
-                                                  await showConfirmDialog(
+                                                  await showConfirmDeleteDialog(
                                                         context,
                                                         title: 'Warning',
                                                         message:
@@ -485,14 +487,14 @@ class _ForwardTextsPageState extends State<ForwardTextsPage> {
                         onRemoveChip: (chip) {
                           setState(() {
                             _amountsToForward.remove(int.parse(chip));
-                            print(_amountsToForward);
+                            //print(_amountsToForward);
                           });
                         },
                         keyboardType: TextInputType.number,
                         spacing: kPagePadding / 3,
                         borderRadius: kBorderRadius,
                         addIconColor: kPrimaryColor,
-                      ),
+                      ), 
                       SizedBox(height: kPagePadding),
                       Text("Forwarding to (number)"),
                       SizedBox(height: kPagePadding / 3),
@@ -567,7 +569,7 @@ class _ForwardTextsPageState extends State<ForwardTextsPage> {
                   setState(() {
                     _error = "Fill in all the fields";
                     setState(() {});
-                    // print(_error);
+                    // //print(_error);
                   });
                   return;
                 }
@@ -587,6 +589,7 @@ class _ForwardTextsPageState extends State<ForwardTextsPage> {
                     'forwarded',
                   );
                   Navigator.pop(context);
+                  showSuccessDialog(context, text: "Done.\n\nBe sure to whitelist your number on the other phone.");
                 } else {
                   await _addToForwardedDB();
                 }

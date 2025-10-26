@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../utils/constants.dart';
 
-Future<void> showSuccessDialog(BuildContext context, String s, {String? text}) {
+Future<void> showSuccessDialog(BuildContext context, {required String text}) {
   return showDialog<void>(
     context: context,
     barrierDismissible: true,
@@ -24,7 +24,7 @@ Future<void> showSuccessDialog(BuildContext context, String s, {String? text}) {
             ),
             const SizedBox(height: kPagePadding * 2),
             Text(
-              s,
+              text,
               textAlign: TextAlign.center,
             ),
           ],

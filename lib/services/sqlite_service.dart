@@ -16,7 +16,6 @@ class SQLiteService {
   // ];
 
   Future<Database> get database async {
-
     // Prevent concurrent initialization
     if (_database != null && _database!.isOpen) return _database!;
     // Use a lock to ensure only one isolate initializes the database at a time
@@ -35,13 +34,11 @@ class SQLiteService {
   Future<Database> _initDatabase() async {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'bsat_app.db');
-    return await openDatabase(
-      path,
-      version: 2, // Incremented database version
-      onCreate: onCreate,
-      onUpgrade: onUpgrade,
-      singleInstance: true
-    );
+    return await openDatabase(path,
+        version: 3,
+        onCreate: onCreate,
+        onUpgrade: onUpgrade,
+        singleInstance: true);
   }
 
   void onCreate(Database db, int version) async {
@@ -156,32 +153,67 @@ class SQLiteService {
       )''',
     );
 
+    await db.execute(
+      '''CREATE TABLE IF NOT EXISTS whitelistedDevices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_name TEXT NOT NULL,
+        device_id TEXT NOT NULL UNIQUE,
+        owner_email TEXT NOT NULL,
+        user_id INTEGER
+      )''',
+    );
+
+    await db.execute(
+      '''CREATE TABLE IF NOT EXISTS forwardingDevices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_name TEXT NOT NULL,
+          device_id TEXT NOT NULL UNIQUE,
+          owner_email TEXT NOT NULL,
+          user_id INTEGER,
+          amounts_to_forward TEXT
+        )''',
+    );
+
     // Create indexes for better performance
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phoneNumber)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(firstName, lastName)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_last_bought ON clients(lastBought)');
-    await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_purchases ON clients(noOfPurchases)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phoneNumber)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(firstName, lastName)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_clients_last_bought ON clients(lastBought)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_clients_purchases ON clients(noOfPurchases)');
+
+    // Fix: Change 'devices' to 'whitelistedDevices'
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)');
+
+    // Add indexes for forwardingDevices
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_email ON forwardingDevices(owner_email)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_device_id ON forwardingDevices(device_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_user_id ON forwardingDevices(user_id)');
   }
 
   void onUpgrade(Database db, int oldVersion, int newVersion) async {
-    print('Upgrading database from $oldVersion to $newVersion');
+    //print('Upgrading database from $oldVersion to $newVersion');
     if (oldVersion < newVersion) {
       await db.execute(
-        '''CREATE TABLE IF NOT EXISTS forwarded (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          dialSim INTEGER,
-          numberToReceive INTEGER,
-          amounts TEXT,
-          isActive INTEGER DEFAULT 1,
-          simSlot INTEGER DEFAULT 1
-        )''',
+        '''CREATE TABLE IF NOT EXISTS whitelistedDevices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_name TEXT NOT NULL,
+      device_id TEXT NOT NULL UNIQUE,
+      owner_email TEXT NOT NULL,
+      user_id INTEGER
+    )''',
       );
-      await db.execute(
-        '''CREATE TABLE IF NOT EXISTS processText (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          number INTEGER
-        )''',
-      );
+
       await db.execute(
         '''CREATE TABLE IF NOT EXISTS clients (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -194,37 +226,69 @@ class SQLiteService {
         )''',
       );
 
+      await db.execute(
+        '''CREATE TABLE IF NOT EXISTS forwardingDevices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_name TEXT NOT NULL,
+          device_id TEXT NOT NULL UNIQUE,
+          owner_email TEXT NOT NULL,
+          user_id INTEGER,
+          amounts_to_forward TEXT
+        )''',
+      );
+
       // Create indexes for better performance
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phoneNumber)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(firstName, lastName)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_last_bought ON clients(lastBought)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_clients_purchases ON clients(noOfPurchases)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phoneNumber)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(firstName, lastName)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_clients_last_bought ON clients(lastBought)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_clients_purchases ON clients(noOfPurchases)');
 
+      // Fix: Change 'devices' to 'whitelistedDevices'
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)');
 
+      // Add indexes for forwardingDevices
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_email ON forwardingDevices(owner_email)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_device_id ON forwardingDevices(device_id)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_user_id ON forwardingDevices(user_id)');
       // Add new columns to ussdCodes table
-          try {
-      await db.execute('ALTER TABLE ussdCodes ADD COLUMN usesBongaPoints INTEGER DEFAULT 0');
-    } catch (e) {
-      print('Column usesBongaPoints already exists or error: $e');
-    }
-    
-    try {
-      await db.execute('ALTER TABLE ussdCodes ADD COLUMN fallbackCode TEXT');
-    } catch (e) {
-      print('Column fallbackCode already exists or error: $e');
-    }
-    
-    try {
-      await db.execute('ALTER TABLE ussdCodes ADD COLUMN balanceCheckCode TEXT');
-    } catch (e) {
-      print('Column balanceCheckCode already exists or error: $e');
-    }
-    
-    try {
-      await db.execute('ALTER TABLE ussdCodes ADD COLUMN bongaPointsPerTransaction INTEGER DEFAULT 0');
-    } catch (e) {
-      print('Column bongaPointsPerTransaction already exists or error: $e');
-    }
+      try {
+        await db.execute(
+            'ALTER TABLE ussdCodes ADD COLUMN usesBongaPoints INTEGER DEFAULT 0');
+      } catch (e) {
+        //print('Column usesBongaPoints already exists or error: $e');
+      }
+
+      try {
+        await db.execute('ALTER TABLE ussdCodes ADD COLUMN fallbackCode TEXT');
+      } catch (e) {
+        //print('Column fallbackCode already exists or error: $e');
+      }
+
+      try {
+        await db
+            .execute('ALTER TABLE ussdCodes ADD COLUMN balanceCheckCode TEXT');
+      } catch (e) {
+        //print('Column balanceCheckCode already exists or error: $e');
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE ussdCodes ADD COLUMN bongaPointsPerTransaction INTEGER DEFAULT 0');
+      } catch (e) {
+        //print('Column bongaPointsPerTransaction already exists or error: $e');
+      }
     }
   }
 
@@ -376,7 +440,11 @@ class SQLiteService {
     // debugPrint('Executing query: $query with arguments: $whereArgs');
 
     return await db.query(
-        columns: columns, table, where: query, whereArgs: whereArgs, orderBy: orderBy);
+        columns: columns,
+        table,
+        where: query,
+        whereArgs: whereArgs,
+        orderBy: orderBy);
   }
 
   Future<int> updateStuff(

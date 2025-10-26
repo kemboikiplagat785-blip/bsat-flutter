@@ -1,5 +1,5 @@
 import 'package:bsat/components/dialogs/clear_history_dialog.dart';
-import 'package:bsat/components/dialogs/confirm_dialog.dart';
+import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/dialogs/success_dialog.dart';
 import 'package:bsat/components/header.dart';
@@ -195,7 +195,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                         .then((value) => getStatuses());
                                     Navigator.pop(context);
                                     showSuccessDialog(context,
-                                        'Timeout set to ${_retryTimeoutController.text} minutes');
+                                        text: 'Timeout set to ${_retryTimeoutController.text} minutes');
                                   },
                                   child: Text('Save'),
                                 ),
@@ -297,7 +297,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                 themeProvider.setBrownTheme();
                               },
                               child: Container(
-
+                      
                                 padding: kPagePaddingInsets,
                                 width: kPagePadding * 2,
                                 decoration: BoxDecoration(
@@ -481,7 +481,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                         .then((value) => getStatuses());
                                     Navigator.pop(context);
                                     showSuccessDialog(
-                                        context, 'Name set successfuly');
+                                        context, text: 'Name set successfuly');
                                   },
                                   child: Text('Save'),
                                 ),
@@ -546,7 +546,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                   ),
                                   onPressed: () async {
                                     // await showClearHistoryDialog(context);
-                                    await showConfirmDialog(
+                                    await showConfirmDeleteDialog(
                                       context,
                                       title: 'Warning',
                                       message:
@@ -562,7 +562,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                       }
                                     });
                                     showSuccessDialog(context,
-                                        'History cleared successfully');
+                                        text: 'History cleared successfully');
                                   },
                                   child: Text('All'),
                                 ),
@@ -620,7 +620,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                         .then((value) => getStatuses());
                                     showSuccessDialog(
                                       context,
-                                      'Duration set to ${_deleteDurationController.text} days',
+                                      text: 'Duration set to ${_deleteDurationController.text} days',
                                     );
                                   },
                                   child: Text('Save'),

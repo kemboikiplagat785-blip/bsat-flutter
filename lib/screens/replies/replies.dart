@@ -2,7 +2,7 @@
 
 import 'dart:convert';
 
-import 'package:bsat/components/dialogs/confirm_dialog.dart';
+import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/screens/replies/edit_reply.dart';
 import 'package:flutter/cupertino.dart';
@@ -44,9 +44,9 @@ class _RepliesPageState extends State<RepliesPage> {
 
     if (status.isGranted) {
       // Proceed with sending SMS
-      // print("SMS permission granted");
+      // //print("SMS permission granted");
     } else {
-      // print("SMS permission denied");
+      // //print("SMS permission denied");
     }
   }
 
@@ -147,7 +147,7 @@ class _RepliesPageState extends State<RepliesPage> {
                               const SizedBox(height: kPagePadding),
                               InkWell(
                                 onTap: () async {
-                                  bool del = await showConfirmDialog(context, title: 'Warning', message: 'Are you sure you want to delete this reply?',) ?? false;
+                                  bool del = await showConfirmDeleteDialog(context, title: 'Warning', message: 'Are you sure you want to delete this reply?',) ?? false;
                                   if (del) {
                                     showLoadingDialog(context);
                                     await _sqliteService.deleteStuff(items[index]['id'], 'replies');

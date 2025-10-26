@@ -1,3 +1,5 @@
+import 'package:bsat/utils/constants.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 Future<void> showLoadingDialog(BuildContext context, {String? text}) {
@@ -8,15 +10,19 @@ Future<void> showLoadingDialog(BuildContext context, {String? text}) {
       return SimpleDialog(
         // backgroundColor: Colors.white,
         children: [
+          const SizedBox(height: kPagePadding),
           Text(""),
           const Center(
-            child: CircularProgressIndicator(),
+            child: CupertinoActivityIndicator(),
           ),
-          Text(
-            text ?? "",
-            style: const TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.bold,
+          const SizedBox(height: kPagePadding),
+          Center(
+            child: Text(
+              text ?? "",
+              style: const TextStyle(
+                // color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],

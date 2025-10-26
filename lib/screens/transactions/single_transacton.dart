@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
-import '../../components/dialogs/confirm_dialog.dart';
+import '../../components/dialogs/confirm_delete_dialog.dart';
 import '../../components/dialogs/loading_dialog.dart';
 import '../../components/dialogs/success_dialog.dart';
 import '../../components/dialogs/till_done_dialogue.dart';
@@ -479,11 +479,11 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                   );
 
                                   showSuccessDialog(
-                                      context, 'Category changed to $status');
+                                      context, text: 'Category changed to $status');
 
                                   // Future.delayed(const Duration(seconds: 3),
                                   //     () {
-                                  //   // print("Action executed after 3 seconds!");
+                                  //   // //print("Action executed after 3 seconds!");
                                   //   Navigator.pop(context);
                                   //   // your action here
                                   // });
@@ -555,7 +555,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                 //   // Navigator.pop(context);
                                 // });
                                 // Navigator.pop(context);
-                                if ((await showConfirmDialog(
+                                if ((await showConfirmDeleteDialog(
                                       context,
                                       title: 'Warning',
                                       message:
@@ -578,7 +578,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
 
                                     sendEvenInBackground('456', trimmedMessage);
                                   }).then((value) async {
-                                    if ((await showConfirmDialog(
+                                    if ((await showConfirmDeleteDialog(
                                           context,
                                           title: 'Done',
                                           message:
@@ -595,7 +595,6 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       Navigator.pop(context);
                                       showSuccessDialog(
                                         context,
-                                        'Deleted',
                                         text: 'Transaction deleted',
                                       );
                                     }

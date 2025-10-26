@@ -17,7 +17,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     // sid = id;
@@ -43,7 +43,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
 
@@ -74,7 +74,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     // sid = id;
@@ -99,7 +99,7 @@ class SharedPreferencesService {
       });
       return true;
     } catch (e) {
-      // if (kDebugMode) print(e.toString());
+      // if (kDebugMode) //print(e.toString());
     }
 
     return false;
@@ -120,7 +120,7 @@ class SharedPreferencesService {
       await prefs.setInt("last-check-skipped-time", time);
       return true;
     } catch (e) {
-      // if (kDebugMode) print(e.toString());
+      // if (kDebugMode) //print(e.toString());
     }
 
     return false;
@@ -141,7 +141,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -162,7 +162,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -183,7 +183,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -193,7 +193,7 @@ class SharedPreferencesService {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     bool? paused = prefs.getBool("sms_running");
-    // print("isPaused: $paused");
+    // //print("isPaused: $paused");
     return paused;
   }
 
@@ -204,7 +204,7 @@ class SharedPreferencesService {
       await prefs.setBool("sms_running", paused);
       return true;
     } catch (e) {
-      // print(e);
+      // //print(e);
       // if (kDebugMode) {
       // }
     }
@@ -215,7 +215,7 @@ class SharedPreferencesService {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
     bool? paused = prefs.getBool("data_running");
-    // print("isPaused: $paused");
+    // //print("isPaused: $paused");
     return paused;
   }
 
@@ -226,7 +226,7 @@ class SharedPreferencesService {
       await prefs.setBool("data_running", paused);
       return true;
     } catch (e) {
-      // print(e);
+      // //print(e);
       // if (kDebugMode) {
       // }
     }
@@ -248,7 +248,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -269,7 +269,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -290,7 +290,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -304,7 +304,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -332,7 +332,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -354,7 +354,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -375,7 +375,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -389,7 +389,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -423,7 +423,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -444,7 +444,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -465,7 +465,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -486,7 +486,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -506,7 +506,7 @@ class SharedPreferencesService {
       await prefs.setBool("offers_might_have_changed", state);
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
   }
@@ -526,7 +526,7 @@ class SharedPreferencesService {
       return true;
     } catch (e) {
       if (kDebugMode) {
-        // print(e.toString());
+        // //print(e.toString());
       }
     }
     return false;
@@ -536,5 +536,131 @@ class SharedPreferencesService {
     await prefs.reload();
     int? days = prefs.getInt("auto_delete_after_number_of_days");
     return days;
+  }
+
+  // jwt_token
+  Future<bool> setJwtToken(String token) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString('jwt_token', token);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+  Future<String?> getJwtToken() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? token = prefs.getString('jwt_token');
+    return token;
+  }
+
+  // user_id
+  Future<bool> setUserId(String id) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString('user_id', id);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+  Future<String?> getUserId() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? id = prefs.getString('user_id');
+    return id;
+  }
+
+  // user_email
+  Future<bool> setUserEmail(String email) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString('user_email', email);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+  Future<String?> getUserEmail() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? email = prefs.getString('user_email');
+    return email;
+  }
+
+  // user_name
+  Future<bool> setUserName(String name) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString('user_name', name);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+  Future<String?> getUserName() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? name = prefs.getString('user_name');
+    return name;
+  }
+
+  // device_id
+  Future<bool> setDeviceId(String deviceId) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString('user_device_id', deviceId);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+  Future<String?> getDeviceId() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? deviceId = prefs.getString('user_device_id');
+    return deviceId;
+  }
+
+  // link extension
+  Future<bool> setLinkExtension(String extension) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString('user_link_extension', extension);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+  Future<String?> getLinkExtension() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? extension = prefs.getString('user_link_extension');
+    return extension;
   }
 }

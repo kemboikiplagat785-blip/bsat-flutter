@@ -25,21 +25,21 @@ class PhoneService {
     int numb = 0;
     List sims = await getAllSimSubids();
 
-    print("Making request on sim: $subscriptionId, available sims: $sims");
+    //print("Making request on sim: $subscriptionId, available sims: $sims");
 
     if (!(sims.contains(subscriptionId)) || subscriptionId == -1) {
       subscriptionId = (await getAllSimSubids()).first;
     }
 
     try {
-      print("Making request: $code on sim $subscriptionId");
+      //print("Making request: $code on sim $subscriptionId");
       String ussdResponseMessage = await UssdService.makeRequest(
         subscriptionId,
         code,
         const Duration(seconds: 10),
       );
 
-      print("Responser: $ussdResponseMessage");
+      //print("Responser: $ussdResponseMessage");
 
       return [ussdResponseMessage, TransactionStatuses.done];
     } on PlatformException catch (e) {
@@ -122,13 +122,13 @@ class PhoneService {
   static Future<String?> sendUssdSequence(
       String fullCode, int subscriptionId) async {
     isRunning = true;
-    print("UssdSession(fl): sendUssdSequence: $fullCode, $subscriptionId");
+    //print("UssdSession(fl): sendUssdSequence: $fullCode, $subscriptionId");
     try {
       final result = await platform.invokeMethod(
         'runUssdSequence',
         {"sequence": fullCode, "subscriptionId": subscriptionId},
       );
-      // print("UssdSession(fl): Result: $result");
+      // //print("UssdSession(fl): Result: $result");
       return result;
     } finally {
       isRunning = false;

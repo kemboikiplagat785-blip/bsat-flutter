@@ -219,16 +219,16 @@ class TransactionController {
       }
     }
 
-    print("makeTransaction - compounded amount:");
+    //print("makeTransaction - compounded amount:");
 // I/flutter (31950): [, 38, false, false, false, true]
-    print(USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive.length);
+    //print(USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive.length);
 
     List canCompound = await unavailableAmountCanCompound(
       amount,
       number,
     );
-    print("makeTransaction - compounded amount 2");
-    print(canCompound);
+    //print("makeTransaction - compounded amount 2");
+    //print(canCompound);
 
     if (canCompound[3]) {
       USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = canCompound;
@@ -833,7 +833,7 @@ class TransactionController {
       amount = compoundedAmount;
     }
 
-    print("New number: $number, amount: $amount, ussdCode: $ussdCode");
+    //print("New number: $number, amount: $amount, ussdCode: $ussdCode");
 
     List lecodes = (await _sqliteService.queryCustom(
       'ussdCodes',
@@ -845,7 +845,7 @@ class TransactionController {
       return;
     }
 
-    print("Redoing transaction $id with code $ussdCode on sim $simSubId");
+    //print("Redoing transaction $id with code $ussdCode on sim $simSubId");
 
     List<dynamic> USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive =
         await get0USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive(
@@ -859,8 +859,8 @@ class TransactionController {
 
     List<dynamic> response = [];
 
-    // print("Is Adv 0: ${await isAdvanced(ussdCode)}");
-    // print("is adv ${USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]}");
+    // //print("Is Adv 0: ${await isAdvanced(ussdCode)}");
+    // //print("is adv ${USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]}");
 
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]) {
       bool isActive =
@@ -890,7 +890,7 @@ class TransactionController {
 
     canRetry = canRetry + 2;
 
-    print("Response: $response, canRetry: $canRetry");
+    //print("Response: $response, canRetry: $canRetry");
 
     await _sqliteService.updateOnly(
       "UPDATE transactions SET ussdDialed=?, date=?, time=?, ussdReply=?, status=?, timeStamp=?, canRetry=? WHERE id=?",
@@ -1017,7 +1017,7 @@ class TransactionController {
       return;
     }
 
-    // print('Last check skipped time: ${DateTime.now()}');
+    // //print('Last check skipped time: ${DateTime.now()}');
 
     if (DateTime.now().millisecondsSinceEpoch <
         (lastCheckSkippedTime + const Duration(minutes: 2).inMilliseconds)) {
@@ -1128,7 +1128,7 @@ class TransactionController {
       columns: ['id', 'ussdDialed', 'simSubId', 'canRetry'],
     );
 
-    print('Retrying all: ${rawStuff.length}');
+    //print('Retrying all: ${rawStuff.length}');
 
     debugPrint('Retrying all transactions:');
 
@@ -1277,8 +1277,8 @@ class TransactionController {
           'CASE WHEN amounts IS NULL OR amounts = "" THEN 1 ELSE 0 END, CAST(amounts AS INTEGER) ASC',
     );
 
-    print(
-        'Found ${replies.length} replies for condition $condition, \n $replies');
+    //print(
+        // 'Found ${replies.length} replies for condition $condition, \n $replies');
 
     List<Map<String, dynamic>> matchingReplies = replies.where((reply) {
       String? amounts = reply['amounts'];
@@ -1301,7 +1301,7 @@ class TransactionController {
       matchingReplies = replies;
     }
 
-    print("Matching replies: $matchingReplies");
+    //print("Matching replies: $matchingReplies");
 
     if (matchingReplies.isNotEmpty) {
       message = fillReplyTemplate(
@@ -1601,7 +1601,7 @@ class TransactionController {
     }
 
     if (rawStuff.isNotEmpty) {
-      print("Updating advanced request");
+      //print("Updating advanced request");
       await _sqliteService.updateOnly(
         "UPDATE transactions SET ussdReply = ?, status = ? WHERE id = ?",
         [
@@ -1701,7 +1701,7 @@ class TransactionController {
 
     int bongaBalance = await getBongaBalance(reply[0]);
 
-    print("Bonga balance: $bongaBalance");
+    //print("Bonga balance: $bongaBalance");
 
     if (bongaBalance > ussdCodeItem.first['bongaPointsPerTransaction']) {
       return ussdCodeItem.first['code'];

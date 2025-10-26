@@ -3,7 +3,7 @@ import '../utils/constants.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 var lightTheme = ThemeData(
-  colorScheme: ColorScheme.fromSeed(seedColor: kIndigoColor),
+  // colorScheme: ColorScheme.fromSeed(seedColor: kIndigoColor),
   fontFamily: GoogleFonts.karla().fontFamily,
   useMaterial3: true,
   scaffoldBackgroundColor: kBgColor,
@@ -11,7 +11,9 @@ var lightTheme = ThemeData(
   hintColor: kSecondaryColor,
   focusColor: kSecondaryColor,
   indicatorColor: kIndigoColor,
-  textTheme: GoogleFonts.karlaTextTheme().apply(bodyColor: kIndigoColor),
+  textTheme: GoogleFonts.karlaTextTheme().apply(
+    // bodyColor: kIndigoColor,
+  ),
   // brightness: Brightness.dark
 );
 
@@ -101,7 +103,7 @@ var blackAndWhiteTheme = ThemeData(
   hintColor: Colors.white.withOpacity(.7),
   focusColor: Colors.white.withOpacity(.7),
 
-  textTheme:
-      GoogleFonts.karlaTextTheme().apply(bodyColor: Colors.white.withOpacity(.7)),
+  textTheme: GoogleFonts.karlaTextTheme()
+      .apply(bodyColor: Colors.white.withOpacity(.7)),
   brightness: Brightness.dark,
 );

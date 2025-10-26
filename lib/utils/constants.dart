@@ -201,6 +201,6 @@ List<Color> kSectionColors = [
 
 Future<String> getAppVersion() async {
   PackageInfo packageInfo = await PackageInfo.fromPlatform();
-  // print(packageInfo.version);
+  // //print(packageInfo.version);
   return packageInfo.version;
 }

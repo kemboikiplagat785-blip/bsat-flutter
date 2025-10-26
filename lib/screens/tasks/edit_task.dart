@@ -475,7 +475,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
                         await _checkAndSave().then((value) {
                           // debugPrint('$value');
                           if (value) {
-                            showSuccessDialog(context, 'Saved Sucessfully')
+                            showSuccessDialog(context, text: 'Saved Sucessfully')
                                 .then(
                               (value) => Navigator.pop(context),
                             );

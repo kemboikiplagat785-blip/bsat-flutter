@@ -128,7 +128,7 @@ Widget transactionListItem(
                             onPressed: (selectionMode ?? false)
                                 ? null
                                 : () async {
-                                    // print("Codes: $code $amount $id $status");
+                                    // //print("Codes: $code $amount $id $status");
                                     await TransactionController()
                                         .redoTransaction(
                                             id, code, simSubId, canRetry);

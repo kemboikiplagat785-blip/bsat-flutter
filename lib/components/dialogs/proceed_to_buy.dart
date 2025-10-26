@@ -56,7 +56,7 @@ Future<bool?> proceedToPayDialog(BuildContext context, int amount, int days,
                 Navigator.pop(context);
                 Navigator.pop(context);
                 Navigator.pop(context);
-                // print("VAls: ${value}");
+                // //print("VAls: ${value}");
                 if (value[1] == TransactionStatuses.error) {
                   showErrorDialog(
                     context,
@@ -66,7 +66,7 @@ Future<bool?> proceedToPayDialog(BuildContext context, int amount, int days,
                   // showSuccessDialog(context, "Payment made successfully.");
                 } else {
                   showSuccessDialog(
-                      context, "Payment of KSH $amount made successfully.");
+                      context, text: "Payment of KSH $amount made successfully.");
                 }
               });
             },

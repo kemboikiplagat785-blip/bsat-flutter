@@ -13,15 +13,15 @@
 //         await SkillsSharedPreferencesService().getSkillsKillSwitch();
 
 //     if (skillsKillSwitch) {
-//       print("Skills kill switch is ON. Exiting skill processing.");
+//       //print("Skills kill switch is ON. Exiting skill processing.");
 //       return;
 //     }
 
-//     print("Processing skills...");
+//     //print("Processing skills...");
 //     bool skillsDetectable =
 //         await SkillsSharedPreferencesService().getSkillsDetactable();
 
-//     print("Skills detectable: $skillsDetectable");
+//     //print("Skills detectable: $skillsDetectable");
 
 //     if (skillsDetectable) {
 //       return;
@@ -32,8 +32,8 @@
 //     int skillsLastDate =
 //         (await SkillsSharedPreferencesService().getSkillDate()).day;
 
-//     print("Skill attempts of day: $skillAttemptsOfDay");
-//     print("Skills last date: $skillsLastDate");
+//     //print("Skill attempts of day: $skillAttemptsOfDay");
+//     //print("Skills last date: $skillsLastDate");
 
 //     final now = DateTime.now();
 //     final todayMidnight = DateTime(now.year, now.month, now.day);
@@ -62,7 +62,7 @@
 //                 .queryAll('transactions', limit: 1, orderBy: 'id DESC'))
 //             .first['simSubId'] as int? ??
 //         0;
-//     print("Last subscription ID: $lastSubId");
+//     //print("Last subscription ID: $lastSubId");
 
 //     bool numberIstTill =
 //         await SkillsSharedPreferencesService().getNumberIsTill();

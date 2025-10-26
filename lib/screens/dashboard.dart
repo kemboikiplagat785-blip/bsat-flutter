@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:bsat/components/dialogs/confirm_dialog.dart';
+import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/dialogs/success_dialog.dart';
 import 'package:bsat/components/transaction_list_item.dart';
 import 'package:bsat/controllers/transaction_controller.dart';
@@ -8,9 +8,9 @@ import 'package:bsat/screens/blacklist.dart';
 import 'package:bsat/screens/subscriptions/subscription.dart';
 import 'package:bsat/screens/offers/offers.dart';
 import 'package:bsat/screens/dialpad.dart';
-import 'package:bsat/screens/foward_texts.dart';
+import 'package:bsat/screens/foward_sms.dart';
 import 'package:bsat/screens/inbox.dart';
-import 'package:bsat/screens/online_management.dart';
+import 'package:bsat/screens/online_management/online_management.dart';
 import 'package:bsat/screens/transactions/transaction_history.dart';
 import 'package:bsat/screens/replies/replies.dart';
 import 'package:bsat/screens/settings/about.dart';
@@ -21,6 +21,7 @@ import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:bsat/utils/numbers.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../components/app_paused.dart';
 import '../components/dialogs/change category_dialog.dart';
+import '../components/dialogs/use_another_phone_dialog.dart';
 import '../components/no_subscription.dart';
 import '../components/tool_button.dart';
 import '../services/phone_service.dart';
@@ -83,6 +85,7 @@ class _DashBoardPageState extends State<DashBoardPage>
   int _blacklistedCount = 0;
 
   String _airtimeBal = "...";
+  String userName = 'Bingwa';
   bool _hideBal = true;
   bool _hideCommission = true;
   double estimatedComission = 0.0;
@@ -100,7 +103,7 @@ class _DashBoardPageState extends State<DashBoardPage>
     initializeBackgroundService();
     _getBal();
 
-    // print('Initing satet');
+    // //print('Initing satet');
     FlutterBackgroundService().invoke('setAsForeground');
 
     _reloadTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
@@ -123,15 +126,15 @@ class _DashBoardPageState extends State<DashBoardPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
       case AppLifecycleState.resumed:
-        print("app in resumed");
+        //print("app in resumed");
         _sharedPreferencesService.setAppIsActiveState(true);
         break;
       case AppLifecycleState.inactive:
-        print("app in inactive");
+        //print("app in inactive");
       case AppLifecycleState.paused:
-        print("app in paused");
+        //print("app in paused");
       case AppLifecycleState.detached:
-        print("app in detached");
+        //print("app in detached");
       case AppLifecycleState.hidden:
         _sharedPreferencesService.setAppIsActiveState(false);
         break;
@@ -147,6 +150,7 @@ class _DashBoardPageState extends State<DashBoardPage>
   }
 
   void reload() async {
+    userName = await _sharedPreferencesService.getUserName() ?? 'Bingwa';
     if (!mounted) return;
 
     int expiry = await _sharedPreferencesService.getUsableUntil() ?? 0;
@@ -342,7 +346,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                   Row(
                     children: [
                       Text(
-                        '${getGreeting(withEmoji: true)}, Bingwa',
+                        '${getGreeting(withEmoji: true)}, $userName',
                         // style: textTheme.titleLarge,
                         style: TextStyle(
                           fontSize: 18,
@@ -549,7 +553,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                           context,
                           text: 'Offers might have changed. Click to resume',
                           onTap: () async {
-                            if ((await showConfirmDialog(
+                            if ((await showConfirmDeleteDialog(
                                   context,
                                   title: 'Warning',
                                   message:
@@ -559,7 +563,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                               _sharedPreferencesService
                                   .setOffersMightHaveChanged(false);
 
-                              showSuccessDialog(context, 'Resumed');
+                              showSuccessDialog(context, text: 'Resumed');
                             }
                             reload();
                           },
@@ -757,8 +761,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                         pageBuilder: (context, animation,
                                                 secondaryAnimation) =>
                                             const TransactionHistoryPage(
-                                          query:
-                                              TransactionStatuses.forwarded,
+                                          query: TransactionStatuses.forwarded,
                                         ),
                                         transitionsBuilder: (context, animation,
                                             secondaryAnimation, child) {
@@ -1166,28 +1169,31 @@ class StatelessDashboard extends StatelessWidget {
                 ),
                 toolButton(
                   () {
-                    Navigator.of(context)
-                        .push(
-                          PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
-                                    const ForwardTextsPage(),
-                            transitionsBuilder: (context, animation,
-                                secondaryAnimation, child) {
-                              return CupertinoPageTransition(
-                                primaryRouteAnimation: animation,
-                                secondaryRouteAnimation: secondaryAnimation,
-                                linearTransition: true,
-                                child: child,
-                              );
-                            },
-                          ),
-                        )
-                        .then((value) => reload());
+                    // Navigator.of(context)
+                    //     .push(
+                    //       PageRouteBuilder(
+                    //         pageBuilder:
+                    //             (context, animation, secondaryAnimation) =>
+                    //                 const ForwardTextsPage(),
+                    //         transitionsBuilder: (context, animation,
+                    //             secondaryAnimation, child) {
+                    //           return CupertinoPageTransition(
+                    //             primaryRouteAnimation: animation,
+                    //             secondaryRouteAnimation: secondaryAnimation,
+                    //             linearTransition: true,
+                    //             child: child,
+                    //           );
+                    //         },
+                    //       ),
+                    //     )
+                    //     .then((value) => reload());
+                    showUseAnotherPhoneDialog(context);
                   },
-                  Icon(CupertinoIcons.phone_arrow_up_right,
-                      color: Theme.of(context).indicatorColor),
-                  "Use another phone",
+                  Icon(
+                    CupertinoIcons.phone_arrow_up_right,
+                    color: Theme.of(context).indicatorColor,
+                  ),
+                  "Forward SMS (online/offline)",
                   context,
                 ),
               ],
@@ -1353,7 +1359,7 @@ class StatelessDashboard extends StatelessWidget {
                 // ),
                 if (kDebugMode)
                   toolButton(
-                    () {
+                    () async {
                       // Navigator.of(context).push(
                       //   PageRouteBuilder(
                       //     pageBuilder: (context, animation,
@@ -1378,10 +1384,15 @@ class StatelessDashboard extends StatelessWidget {
 
                       // showChangeCategoryDialog(context);
 
-                      PhoneService().makeAdvancedRequest(
-                        "*144#",
-                        14,
-                      );
+                      // PhoneService().makeAdvancedRequest(
+                      //   "*144#",
+                      //   14,
+                      // );
+
+                      var deviceInfo = await DeviceInfoPlugin().androidInfo;
+                      if (kDebugMode) {
+                        //print('Device Info: ${deviceInfo.id}');
+                      }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),
                     "Test",
@@ -1415,8 +1426,6 @@ class StatelessDashboard extends StatelessWidget {
                 ),
                 toolButton(
                   () async {
-                    // sendReply('Testing', '254714951041');
-                    // showRetryDialog(context);
                     Navigator.of(context)
                         .push(
                           PageRouteBuilder(
@@ -1472,8 +1481,8 @@ class StatelessDashboard extends StatelessWidget {
                           PageRouteBuilder(
                             pageBuilder:
                                 (context, animation, secondaryAnimation) =>
-                                    // const OnlineManagementScreen(),
-                            ComingSoonPage(),
+                                    const OnlineManagementScreen(),
+                            // ComingSoonPage(),
                             transitionsBuilder: (context, animation,
                                 secondaryAnimation, child) {
                               return CupertinoPageTransition(

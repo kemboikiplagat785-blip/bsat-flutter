@@ -165,7 +165,7 @@ Future<List> getAllSmsBody() async {
 }
 
 bool messageIsReceived(String messageBody) {
-  // print(messageBody);
+  // //print(messageBody);
   RegExp regex = RegExp(r'\b received \b', caseSensitive: false);
   return regex.hasMatch(messageBody);
 }
@@ -240,12 +240,12 @@ int getAmount(String? smsBody) {
     caseSensitive: false,
   );
 
-  print("FMatch: ${amountRegex.firstMatch(cleaned)?[0]}");
+  //print("FMatch: ${amountRegex.firstMatch(cleaned)?[0]}");
 
   String? amountMatch =
       amountRegex.firstMatch(cleaned)?[0]!.replaceAll(RegExp(r'[^0-9.]'), '');
   // String? amountWIthCommas = amountMatch?.group(1);
-  print("AmountMatch:  $amountMatch");
+  //print("AmountMatch:  $amountMatch");
 
   // if (amountWIthCommas == null) return 0; // <-- Fix: return 0 if not found
 
@@ -255,7 +255,7 @@ int getAmount(String? smsBody) {
 
   amount ??= double.parse(amountMatch).toInt();
 
-  print("Amount: -> $amount, $amountMatch");
+  //print("Amount: -> $amount, $amountMatch");
   return amount ?? 0;
 }
 
@@ -286,7 +286,7 @@ Future<String> sendEvenInBackground(
     if (similar.isNotEmpty) return "Already sent";
   }
 
-  print("Sending message to $address, $message");
+  //print("Sending message to $address, $message");
 
   List<String> messages = [];
   String status = "Sent";
@@ -307,14 +307,14 @@ Future<String> sendEvenInBackground(
       message: msg,
       simSlot: simSlot,
     ).onError((e, _) {
-      print("ERRRRO: $e");
+      //print("ERRRRO: $e");
       return backgroundSms.SmsStatus.failed;
     });
-    print(result);
+    //print(result);
     if (result == backgroundSms.SmsStatus.sent) {
-      // print("Sent");
+      // //print("Sent");
     } else {
-      // print("Failed");
+      // //print("Failed");
       status = "Failed";
     }
   }

@@ -31,7 +31,7 @@ class _BlacklistPageState extends State<BlacklistPage> {
     items = await _sqliteService
         .queryCustom('blacklist', 'CAST(number AS TEXT) LIKE ?', ['%$query%']);
 
-    // print(items.length);
+    // //print(items.length);
     setState(() {});
   }
 
@@ -68,7 +68,7 @@ class _BlacklistPageState extends State<BlacklistPage> {
                 onChanged: (value) async {
                   // smsList = await searchSms(value);
                   // setState(() {
-                  //   print(smsList.length);
+                  //   //print(smsList.length);
                   // });
                   searchList(value);
                 },

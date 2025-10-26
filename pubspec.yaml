@@ -61,6 +61,9 @@ dependencies:
   firebase_analytics: ^10.7.4
   csv: ^6.0.0
   file_picker: ^10.1.9
+  socket_io_client: ^3.1.2
+  device_info_plus: ^11.3.0
+  flutter_otp_text_field: ^1.5.1+1
   # connectivity_plus: ^6.1.4
 
 dev_dependencies:

@@ -95,7 +95,7 @@ class _ClearHistoryDialogState extends State<ClearHistoryDialog> {
             );
             Navigator.pop(context);
             Navigator.pop(context);
-            showSuccessDialog(context, 'History cleared successfuly');
+            showSuccessDialog(context, text: 'History cleared successfuly');
           },
           child: Text('Clear History'),
         ),

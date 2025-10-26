@@ -8,7 +8,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import '../../components/dialogs/confirm_dialog.dart';
+import '../../components/dialogs/confirm_delete_dialog.dart';
 import '../../utils/constants.dart';
 
 class TaskManagerPage extends StatefulWidget {
@@ -312,7 +312,7 @@ class _TaskManagerPageState extends State<TaskManagerPage> {
                           // await _deleteSelected(selectedIds);
                           // Navigator.pop(context);
                           // Navigator.pop(context);
-                          showConfirmDialog(
+                          showConfirmDeleteDialog(
                             context,
                             title: 'Delete ${selectedIds.length} Tasks',
                             message:

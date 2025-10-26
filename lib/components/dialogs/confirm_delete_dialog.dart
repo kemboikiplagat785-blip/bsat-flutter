@@ -1,7 +1,7 @@
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/material.dart';
 
-Future<bool?> showConfirmDialog(BuildContext context,
+Future<bool?> showConfirmDeleteDialog(BuildContext context,
     {String? title, String? message, String? btnText}) {
   return showDialog<bool>(
     context: context,

@@ -48,7 +48,7 @@ int getLastSundayMidnightMillis() {
     weekday = 0;
   }
 
-  // print("WeeekDay: $weekday");
+  // //print("WeeekDay: $weekday");
   DateTime lastSunday = now.subtract(Duration(days: weekday));
   DateTime lastSundayMidnight =
       DateTime(lastSunday.year, lastSunday.month, lastSunday.day);

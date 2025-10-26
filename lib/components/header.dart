@@ -20,14 +20,14 @@ Widget header(BuildContext context, String title) {
           padding: kPagePaddingInsets,
           child: Row(
             children: [
-              IconButton(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(
+              GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: const Icon(
                   CupertinoIcons.back,
                   size: 14,
                 ),
               ),
-              const SizedBox(width: kPagePadding / 2),
+              const SizedBox(width: kPagePadding),
               Text(
                 title,
                 style: textTheme.titleLarge,

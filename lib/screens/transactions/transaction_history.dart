@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:bsat/components/dialogs/confirm_dialog.dart';
+import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/transaction_list_item.dart';
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/services/sqlite_service.dart';
@@ -306,7 +306,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         IconButton(
                           icon: const Icon(CupertinoIcons.refresh),
                           onPressed: () {
-                            showConfirmDialog(
+                            showConfirmDeleteDialog(
                               context,
                               title: 'Retry Transactions',
                               message: 'Are you sure you want to retry these '
@@ -331,7 +331,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         IconButton(
                           icon: const Icon(CupertinoIcons.delete),
                           onPressed: () {
-                            showConfirmDialog(
+                            showConfirmDeleteDialog(
                               context,
                               message: 'Are you sure you want to delete these '
                                   '${_selectedTransactionIds.length} transactions?',
@@ -358,7 +358,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                             // add all
                             // showLoadingDialog(context);
                             // Navigator.pop(context);
-                            await showConfirmDialog(context,
+                            await showConfirmDeleteDialog(context,
                                     title:
                                         'Schedule transactions for tomorrow midnight',
                                     message:

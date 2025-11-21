@@ -35,6 +35,7 @@ import '../components/dialogs/change category_dialog.dart';
 import '../components/dialogs/use_another_phone_dialog.dart';
 import '../components/no_subscription.dart';
 import '../components/tool_button.dart';
+import '../services/auth_service.dart';
 import '../services/phone_service.dart';
 import '../services/shared_preferences_service.dart';
 
@@ -130,11 +131,11 @@ class _DashBoardPageState extends State<DashBoardPage>
         _sharedPreferencesService.setAppIsActiveState(true);
         break;
       case AppLifecycleState.inactive:
-        //print("app in inactive");
+      //print("app in inactive");
       case AppLifecycleState.paused:
-        //print("app in paused");
+      //print("app in paused");
       case AppLifecycleState.detached:
-        //print("app in detached");
+      //print("app in detached");
       case AppLifecycleState.hidden:
         _sharedPreferencesService.setAppIsActiveState(false);
         break;
@@ -1389,8 +1390,9 @@ class StatelessDashboard extends StatelessWidget {
                       //   14,
                       // );
 
-                      var deviceInfo = await DeviceInfoPlugin().androidInfo;
+                      // var deviceInfo = await DeviceInfoPlugin().androidInfo;
                       if (kDebugMode) {
+                        // print(AuthService().pingServer());
                         //print('Device Info: ${deviceInfo.id}');
                       }
                     },
@@ -1494,7 +1496,9 @@ class StatelessDashboard extends StatelessWidget {
                             },
                           ),
                         )
-                        .then((value) => reload());
+                        .then(
+                          (value) => reload(),
+                        );
                   },
                   const Icon(
                     CupertinoIcons.globe,

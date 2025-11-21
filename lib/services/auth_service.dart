@@ -7,6 +7,20 @@ class AuthService {
   final String baseUrl = 'https://bsat.co.ke'; // Replace with your API URL
   final SharedPreferencesService _prefs = SharedPreferencesService();
 
+  // ping to check if phone is online
+  Future<bool> pingServer() async {
+    try {
+      final response = await http.get(
+        Uri.parse('https://google.com'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // Signup with email and password
   Future<Map<String, dynamic>> signup({
     required String email,
@@ -24,12 +38,15 @@ class AuthService {
 
       // check if linkExtension contains spaces and remove them
       linkExtension = linkExtension.replaceAll(' ', '');
+      //reove other special characters except _ and -
+      linkExtension = linkExtension.replaceAll(RegExp(r'[^\w\-]'), '');
+
 
       final linkAvailable = await getLinkAvailable(linkExtension);
-      if (!linkAvailable) {
+      if (!linkAvailable['success']) {
         return {
           'success': false,
-          'message': 'Link extension is already taken',
+          'message': linkAvailable['message'] ?? 'Link extension is already taken',
         };
       }
 
@@ -82,7 +99,7 @@ class AuthService {
     }
   }
 
-  Future<bool> getLinkAvailable(String linkExtension) async {
+  Future<Map<String, dynamic>> getLinkAvailable(String linkExtension) async {
     try {
       final response = await http.get(
         Uri.parse(
@@ -90,15 +107,30 @@ class AuthService {
         headers: {'Content-Type': 'application/json'},
       );
 
-      //print('Link Availability Response status: ${response.statusCode}');
+      print('Link Availability Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
-        return true;
+        return {
+          'success': true,
+          'message': 'Link is available',
+        };
+      } else if (response.statusCode == 409) {
+        return {
+          'success': false,
+          'message': response.body,
+        };
       }
     } catch (e) {
       // debugPrint('Error checking link availability: ${e.toString()}');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
     }
-    return false;
+    return {
+      'success': false,
+      'message': 'Error. Could not check link availability',
+    };
   }
 
   // app.put('/api/auth/update-link-extension'
@@ -117,10 +149,10 @@ class AuthService {
       }
 
       final linkAvailable = await getLinkAvailable(newLinkExtension);
-      if (!linkAvailable) {
+      if (!linkAvailable['success']) {
         return {
           'success': false,
-          'message': 'Link extension is already taken',
+          'message': linkAvailable['message'] ?? 'Link extension is already taken',
         };
       }
 
@@ -426,7 +458,7 @@ class AuthService {
         }),
       );
 
-      //print('Response status: ${response.body}');
+      print('Response status: ${response.body}, uri: $baseUrl/api/auth/send-otp');
 
       if (response.statusCode == 200) {
         //print('OTP requested successfully');

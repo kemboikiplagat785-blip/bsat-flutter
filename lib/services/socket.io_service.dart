@@ -3,129 +3,108 @@ import 'dart:convert';
 
 class SocketService {
   IO.Socket? socket;
-  final String serverUrl = 'https://bsat.co.ke'; // Your server URL
-  
-  // Callbacks for different message types
-  Function(Map<String, dynamic>)? onNewTransaction;
-  Function(Map<String, dynamic>)? onOfferUpdate;
-  Function(String)? onNotification;
-  Function(Map<String, dynamic>)? onCustomMessage;
+  final String serverUrl = 'https://bsat.co.ke';
 
-  void connect({required String userId}) {
-    socket = IO.io(serverUrl, <String, dynamic>{
-      'transports': ['websocket'],
-      'autoConnect': false,
-      'query': {'userId': userId}, // Send user ID on connection
-    });
+  // Callbacks for different message types
+  Function(Map<String, dynamic>)? onMessage;
+  Function(Map<String, dynamic>)? onError;
+  Function()? onConnect;
+  Function()? onDisconnect;
+
+  void connect({required String token, required String deviceDbId}) {
+    socket = IO.io(
+        serverUrl,
+        IO.OptionBuilder()
+            .setTransports(['websocket']) // for Flutter or Dart VM
+            .disableAutoConnect() // disable auto-connection
+            .setAuth({
+              'token': token,
+              'deviceId': deviceDbId,
+            })
+            .setExtraHeaders({
+              'Authorization': 'Bearer $token', // Optional: additional header
+            })
+            .build());
 
     socket?.connect();
 
-    // Connection events
     socket?.onConnect((_) {
-      //print('Socket connected');
-      // Join user-specific room
-      socket?.emit('join', {'userId': userId});
+      print('Socket connected - Device ID: $deviceDbId');
+      if (onConnect != null) onConnect!();
     });
 
     socket?.onDisconnect((_) {
-      //print('Socket disconnected');
+      print('Socket disconnected');
+      if (onDisconnect != null) onDisconnect!();
     });
 
     socket?.onConnectError((error) {
-      //print('Socket connection error: $error');
+      // print('Socket connection error: $error');
+      if (onError != null) {
+        onError!({'type': 'connection_error', 'message': error.toString()});
+      }
     });
 
-    // Listen for incoming messages
+    socket?.onReconnect((_) {
+      print('Socket reconnected');
+    });
+
     _setupMessageListeners();
   }
 
   void _setupMessageListeners() {
-    // Generic message handler
+    // Listen for incoming messages from other devices
     socket?.on('message', (data) {
-      //print('Received message: $data');
-      _handleIncomingMessage(data);
-    });
-
-    // New transaction notification
-    socket?.on('new_transaction', (data) {
-      //print('New transaction: $data');
-      if (onNewTransaction != null) {
-        onNewTransaction!(data is Map ? data.cast<String, dynamic>() : jsonDecode(data));
+      print('Message received: $data');
+      if (onMessage != null) {
+        final messageData =
+            data is Map ? data.cast<String, dynamic>() : jsonDecode(data);
+        onMessage!(messageData);
       }
     });
 
-    // Offer updates
-    socket?.on('offer_update', (data) {
-      //print('Offer update: $data');
-      if (onOfferUpdate != null) {
-        onOfferUpdate!(data is Map ? data.cast<String, dynamic>() : jsonDecode(data));
+    // Listen for errors (e.g., unpaired devices)
+    socket?.on('error', (data) {
+      print('Socket error: $data');
+      if (onError != null) {
+        final errorData = data is Map
+            ? data.cast<String, dynamic>()
+            : {'message': data.toString()};
+        onError!(errorData);
       }
-    });
-
-    // General notifications
-    socket?.on('notification', (data) {
-      //print('Notification: $data');
-      if (onNotification != null) {
-        onNotification!(data.toString());
-      }
-    });
-
-    // Custom message type
-    socket?.on('custom_message', (data) {
-      //print('Custom message: $data');
-      if (onCustomMessage != null) {
-        onCustomMessage!(data is Map ? data.cast<String, dynamic>() : jsonDecode(data));
-      }
-    });
-
-    // Broadcast messages to all clients
-    socket?.on('broadcast', (data) {
-      //print('Broadcast message: $data');
-      _handleBroadcast(data);
     });
   }
 
-  void _handleIncomingMessage(dynamic data) {
-    try {
-      Map<String, dynamic> message = data is Map 
-          ? data.cast<String, dynamic>() 
-          : jsonDecode(data);
-
-      // Route message based on type
-      switch (message['type']) {
-        case 'transaction':
-          onNewTransaction?.call(message['data']);
-          break;
-        case 'offer':
-          onOfferUpdate?.call(message['data']);
-          break;
-        case 'notification':
-          onNotification?.call(message['message']);
-          break;
-        default:
-          //print('Unknown message type: ${message['type']}');
-      }
-    } catch (e) {
-      //print('Error handling message: $e');
+  // Send message to another device
+  void sendMessageToDevice(
+      {required int toDeviceId, required dynamic payload}) {
+    if (socket?.connected ?? false) {
+      socket?.emit('message', {
+        'to': toDeviceId,
+        'payload': payload,
+      });
+      print('Message sent to device $toDeviceId');
+    } else {
+      print('Socket not connected. Message not sent.');
     }
   }
 
-  void _handleBroadcast(dynamic data) {
-    // Handle broadcast messages (announcements, updates, etc.)
-    //print('Processing broadcast: $data');
-  }
-
-  // Send message to server
+  // Generic send method
   void sendMessage(String event, Map<String, dynamic> data) {
     if (socket?.connected ?? false) {
       socket?.emit(event, data);
     } else {
-      //print('Socket not connected. Message not sent.');
+      print('Socket not connected. Message not sent.');
     }
+  }
+
+  bool isConnected() {
+    return socket?.connected ?? false;
   }
 
   void disconnect() {
     socket?.disconnect();
     socket?.dispose();
+    socket = null;
   }
 }

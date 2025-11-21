@@ -36,6 +36,7 @@ class ThemeProvider with ChangeNotifier {
       // var brightness = WidgetsBinding.instance.window.platformBrightness;
       // if (brightness == Brightness.dark) {
       _currentTheme = darkPurpleTheme;
+      _sharedPreferenceService.setThemeMode("darkPurple");
       // } else {
       //   _currentTheme = lightTheme;
       // }

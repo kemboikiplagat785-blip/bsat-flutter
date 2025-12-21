@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:bsat/services/shared_preferences_service.dart';
 
 class AuthService {
-  final String baseUrl = 'https://bsat.co.ke'; // Replace with your API URL
+  final String baseUrl = 'https://api.bsat.co.ke'; // Replace with your API URL
   final SharedPreferencesService _prefs = SharedPreferencesService();
 
   // ping to check if phone is online
@@ -205,6 +205,8 @@ class AuthService {
 
       var deviceInfo = await DeviceInfoPlugin().androidInfo;
 
+      print('device id: ${deviceInfo.id}');
+
       final response = await http.post(
         Uri.parse('$baseUrl/api/device/isregistered'),
         headers: {
@@ -236,6 +238,13 @@ class AuthService {
       };
     }
   }
+
+  // get device id device_info_plus
+  Future<String?> getDeviceId() async {
+    var deviceInfo = await DeviceInfoPlugin().androidInfo;
+    return deviceInfo.id;
+  }
+  
 
   // register device info
   // user_id, device_name, device_id, model, android_version, created_at
@@ -414,6 +423,8 @@ class AuthService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
+        print('Login data: $data');
+
         // Save JWT token and user info
         if (data['token'] != null) {
           await _prefs.setJwtToken(data['token']);
@@ -422,7 +433,7 @@ class AuthService {
           if (data['user'] != null) {
             await _prefs.setUserName(data['user']['name'] ?? '');
             await _prefs.setUserId(data['user']['id']?.toString() ?? '');
-            await _prefs.setLinkExtension(data['user']['linkExtension'] ?? '');
+            await _prefs.setLinkExtension(data['user']['link_extension'] ?? '');
           }
         }
 

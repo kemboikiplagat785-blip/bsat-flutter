@@ -42,97 +42,99 @@ void onStart(ServiceInstance serviceInstance) async {
   final SocketService socketService = SocketService();
   final _prefs = SharedPreferencesService();
 
-  // Initialize Socket.IO connection
-  String? token = await _prefs.getJwtToken(); // JWT token
-  String? deviceDbId = await _prefs.getDeviceId(); // Device database ID
-  
-  if (token != null && deviceDbId != null) {
-    // Setup socket callbacks
-    socketService.onMessage = (data) async {
-      print('Background: Message received from ${data['fromDeviceName']}: ${data['payload']}');
-      
-      // Parse payload to determine action
-      final payload = data['payload'];
-      
-      if (payload is Map<String, dynamic>) {
-        switch (payload['type']) {
-          case 'transaction':
-            print('Background: New transaction received');
-            // Process transaction data
-            if (payload['auto_process'] == true) {
-              // Auto-process transaction
-              await _processTransaction(payload['data'], transactionController);
-            } else {
-              // Show notification for manual processing
+  // ✅ ADD connection status tracking
+  bool isSocketInitialized = false;
+
+  Future<void> initializeSocket() async {
+    String? token = await _prefs.getJwtToken();
+    String? deviceDbId = await _prefs.getDeviceId();
+    
+    print('🔍 Token: ${token?.substring(0, 20)}...');
+    print('🔍 Device ID: $deviceDbId');
+    
+    if (token != null && deviceDbId != null && deviceDbId != '-1') {
+      socketService.onMessage = (data) async {
+        print('📥 Background: Message received from ${data['fromDeviceName']}: ${data['payload']}');
+        
+        final payload = data['payload'];
+        
+        if (payload is Map<String, dynamic>) {
+          switch (payload['type']) {
+            case 'transaction':
+              print('📥 Background: New transaction received');
+              if (payload['auto_process'] == true) {
+                await _processTransaction(payload['data'], transactionController);
+              } else {
+                _showNotification(
+                  flutterLocalNotificationsPlugin,
+                  'New Transaction',
+                  'From: ${data['fromDeviceName']}',
+                );
+              }
+              break;
+              
+            case 'offer_update':
+              print('📥 Background: Offer update received');
+              await _prefs.setOffersMightHaveChanged(true);
               _showNotification(
                 flutterLocalNotificationsPlugin,
-                'New Transaction',
-                'From: ${data['fromDeviceName']}',
+                'Offer Updated',
+                'Your offers have been updated',
               );
-            }
-            break;
-            
-          case 'offer_update':
-            print('Background: Offer update received');
-            await _prefs.setOffersMightHaveChanged(true);
-            _showNotification(
-              flutterLocalNotificationsPlugin,
-              'Offer Updated',
-              'Your offers have been updated',
-            );
-            break;
-            
-          case 'retry_failed':
-            print('Background: Retry failed transactions');
-            await transactionController.retryAll(true);
-            break;
-            
-          case 'sync_transactions':
-            print('Background: Sync transactions requested');
-            // Implement sync logic
-            break;
-            
-          case 'notification':
-            _showNotification(
-              flutterLocalNotificationsPlugin,
-              'BSAT Notification',
-              payload['message'] ?? 'New notification',
-            );
-            break;
-            
-          default:
-            print('Background: Unknown message type: ${payload['type']}');
-            _showNotification(
-              flutterLocalNotificationsPlugin,
-              'Message from ${data['fromDeviceName']}',
-              payload.toString(),
-            );
+              break;
+              
+            case 'retry_failed':
+              print('📥 Background: Retry failed transactions');
+              await transactionController.retryAll(true);
+              break;
+              
+            case 'notification':
+              _showNotification(
+                flutterLocalNotificationsPlugin,
+                'BSAT Notification',
+                payload['message'] ?? 'New notification',
+              );
+              break;
+              
+            default:
+              print('📥 Background: Unknown message type: ${payload['type']}');
+              _showNotification(
+                flutterLocalNotificationsPlugin,
+                'Message from ${data['fromDeviceName']}',
+                payload.toString(),
+              );
+          }
+        } else {
+          _showNotification(
+            flutterLocalNotificationsPlugin,
+            'Message from ${data['fromDeviceName']}',
+            payload.toString(),
+          );
         }
-      } else {
-        // Handle simple text messages
-        _showNotification(
-          flutterLocalNotificationsPlugin,
-          'Message from ${data['fromDeviceName']}',
-          payload.toString(),
-        );
-      }
-    };
+      };
 
-    socketService.onError = (error) {
-      // print('Background: Socket error: ${error['message']}');
-    };
+      socketService.onError = (error) {
+        print('⚠️ Background: Socket error: ${error['message']}');
+      };
 
-    socketService.onConnect = () {
-      print('Background: Socket connected');
-    };
+      socketService.onConnect = () {
+        print('✅ Background: Socket connected');
+        isSocketInitialized = true;
+      };
 
-    socketService.onDisconnect = () {
-      print('Background: Socket disconnected');
-    };
+      socketService.onDisconnect = () {
+        print('❌ Background: Socket disconnected');
+        isSocketInitialized = false;
+      };
 
-    // Connect to socket
-    socketService.connect(token: token, deviceDbId: deviceDbId);
+      socketService.connect(token: token, deviceDbId: deviceDbId);
+    } else {
+      print('❌ Cannot initialize socket: Missing token or device ID');
+    }
   }
+
+  // Initialize socket on service start
+  await initializeSocket();
 
   if (serviceInstance is AndroidServiceInstance) {
     serviceInstance.on('setAsForeground').listen((event) {
@@ -158,24 +160,24 @@ void onStart(ServiceInstance serviceInstance) async {
       if (await serviceInstance.isForegroundService()) {
         initMessagesPlatformState();
 
-        // Keep socket alive - reconnect if disconnected
-        if (!socketService.isConnected()) {
-          String? token = await _prefs.getJwtToken();
-          String? deviceDbId = await _prefs.getDeviceId() ?? '-1';
-          
-          if (token != null && deviceDbId != null) {
-            print('Reconnecting socket...');
-            socketService.connect(token: token, deviceDbId: deviceDbId);
-          }
+        // ✅ IMPROVED: Better reconnection logic
+        if (!socketService.isConnected() && isSocketInitialized) {
+          print('⚠️ Socket disconnected, attempting reconnect...');
+          await initializeSocket();
+        } else if (!isSocketInitialized) {
+          print('⚠️ Socket not initialized, initializing...');
+          await initializeSocket();
         }
 
         await transactionController.retryAll(true);
         await TransactionController().checkSkipped();
         await TransactionController().runScheduled();
 
+        // ✅ IMPROVED: Show connection status with emoji
+        final socketStatus = socketService.isConnected() ? '🟢 Connected' : '🔴 Disconnected';
         serviceInstance.setForegroundNotificationInfo(
-          title: 'BSAT',
-          content: 'Running - Socket: ${socketService.isConnected() ? "Connected" : "Disconnected"}',
+          title: 'BSAT Active',
+          content: 'Socket: $socketStatus | Processing transactions...',
         );
       }
     }

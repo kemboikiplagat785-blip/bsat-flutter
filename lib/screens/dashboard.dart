@@ -1394,6 +1394,8 @@ class StatelessDashboard extends StatelessWidget {
                       if (kDebugMode) {
                         // print(AuthService().pingServer());
                         //print('Device Info: ${deviceInfo.id}');
+                        SharedPreferencesService()
+                            .printAll();
                       }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),

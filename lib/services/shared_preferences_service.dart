@@ -663,4 +663,14 @@ class SharedPreferencesService {
     String? extension = prefs.getString('user_link_extension');
     return extension;
   }
+
+  void printAll() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    Set<String> keys = prefs.getKeys();
+    for (String key in keys) {
+      var value = prefs.get(key);
+      print('$key: $value');
+    }
+  }
 }

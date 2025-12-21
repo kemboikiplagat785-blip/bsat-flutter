@@ -1,6 +1,7 @@
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/hero.dart';
 import 'package:bsat/screens/dashboard.dart';
+import 'package:bsat/services/shared_preferences_service.dart';
 import './otp.dart';
 import 'package:bsat/screens/online_management/reset_password.dart';
 import './signup.dart';
@@ -297,6 +298,8 @@ class _LoginPageState extends State<LoginPage> {
         if (result['success']) {
           showLoadingDialog(context);
           if ((await AuthService().isDeviceRegisteredToMe())['success']) {
+            await SharedPreferencesService()
+                .setDeviceId(await AuthService().getDeviceId() ?? '');
             Navigator.of(context).pop(); // Close loading dialog
             Navigator.of(context).pushReplacement(
               CupertinoPageRoute(

@@ -117,7 +117,7 @@ class _SignupPageState extends State<SignupPage> {
                           ),
                           child: Row(
                             children: [
-                              Text('buy.bsat.co.ke/'),
+                              Text('bundles.bsat.co.ke/'),
                               Expanded(
                                 child: _buildTextField(
                                   'Link url',

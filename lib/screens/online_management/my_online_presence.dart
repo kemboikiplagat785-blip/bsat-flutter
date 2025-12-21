@@ -106,7 +106,7 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                     child: Row(
                       children: [
                         Text(
-                          'https://buy.bsat.co.ke/',
+                          'https://bundles.bsat.co.ke/',
                           style: TextStyle(color: Colors.grey),
                         ),
                         Expanded(
@@ -141,7 +141,7 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                           Clipboard.setData(
                             ClipboardData(
                               text:
-                                  'https://buy.bsat.co.ke/${_linkController.text}',
+                                  'https://bundles.bsat.co.ke/${_linkController.text}',
                             ),
                           );
 

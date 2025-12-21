@@ -15,6 +15,7 @@ Future<String?> showAskDeviceNameDialog(BuildContext context, String initialName
         title: Text('Device Name'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Please enter a name for your device.',

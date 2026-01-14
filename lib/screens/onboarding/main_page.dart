@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../components/hero.dart';
 import '../../utils/constants.dart';
-import '../dashboard.dart';
+import '../dashboard/dashboard.dart';
 
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({super.key});

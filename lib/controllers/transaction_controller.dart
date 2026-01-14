@@ -16,6 +16,11 @@ import '../services/skills.dart';
 import '../services/sms_sevice.dart';
 import '../services/phone_service.dart';
 
+/// Orchestrates the full M-PESA → offer → USSD → transaction lifecycle.
+/// Entry point is [makeTransaction], which parses inbound SMS, applies
+/// business rules (blacklist, forwarding, subscription/tokens, offer state),
+/// dials the mapped USSD (advanced or normal), records outcomes to SQLite,
+/// and emits replies/side effects (auto-save contacts, send confirmations).
 class TransactionController {
   final PhoneService _phoneService = PhoneService();
   final SQLiteService _sqliteService = SQLiteService();
@@ -24,6 +29,17 @@ class TransactionController {
 
   final _sharedPreferencesService = SharedPreferencesService();
 
+  /// Process a single payment SMS into a transaction.
+  /// Steps (in order):
+  /// 1) Housekeeping: optional auto-delete old transactions, trim SMS body.
+  /// 2) Parse primitives: id, number, amount, name; blacklist check.
+  /// 3) Forwarding: reroute if forwarding rules match (returns early).
+  /// 4) Offer safety: pause if offers flagged as changed; reject invalid numbers/Airtel.
+  /// 5) Resolve offer: pick USSD + SIM + retry/advanced flags; check subscription/token/auto-renew.
+  /// 6) Compound amounts: attempt to combine smaller offers if exact match missing.
+  /// 7) Guardrails: pause inactive offers; enqueue advanced calls if app inactive.
+  /// 8) Execute USSD: advanced or standard dial; derive transaction status.
+  /// 9) Persist result to SQLite, emit replies, and auto-save contact when enabled.
   void makeTransaction(SmsMessage smsMessage) async {
     bool autoSaveContacts =
         await _sharedPreferencesService.getAutoSaveContacts() ?? false;

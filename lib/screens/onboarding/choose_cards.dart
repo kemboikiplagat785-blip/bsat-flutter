@@ -1,5 +1,5 @@
 import 'package:bsat/components/dialogs/check_offers_dialog.dart';
-import 'package:bsat/screens/dashboard.dart';
+import 'package:bsat/screens/dashboard/dashboard.dart';
 import 'package:bsat/screens/offers/offers.dart';
 import 'package:bsat/screens/settings/settings.dart';
 import 'package:flutter/cupertino.dart';

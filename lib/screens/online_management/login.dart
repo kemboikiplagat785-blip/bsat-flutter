@@ -1,6 +1,6 @@
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/hero.dart';
-import 'package:bsat/screens/dashboard.dart';
+import 'package:bsat/screens/dashboard/dashboard.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import './otp.dart';
 import 'package:bsat/screens/online_management/reset_password.dart';

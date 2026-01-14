@@ -1,7 +1,7 @@
 // import 'dart:ui';
 
 import 'package:bsat/firebase_options.dart';
-import 'package:bsat/screens/dashboard.dart';
+import 'package:bsat/screens/dashboard/dashboard.dart';
 import 'package:bsat/screens/onboarding/main_page.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';

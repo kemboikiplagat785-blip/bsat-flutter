@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BSAT Docs</title>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --panel: #111827;
+            --card: #1f2937;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --accent: #22d3ee;
+            --border: #1f2937;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Inter", system-ui, -apple-system, sans-serif;
+            background: radial-gradient(circle at 20% 20%, #152037, #0f172a 40%),
+                radial-gradient(circle at 80% 0%, #122139, transparent 45%),
+                var(--bg);
+            color: var(--text);
+            padding: 24px;
+            line-height: 1.5;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            letter-spacing: 0.01em;
+        }
+
+        p {
+            margin: 0 0 12px;
+            color: var(--muted);
+        }
+
+        .shell {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 16px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: calc(100vh - 48px);
+            position: sticky;
+            top: 24px;
+            overflow: hidden;
+        }
+
+        .sidebar .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .toggle {
+            border: 1px solid var(--border);
+            background: var(--card);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .search {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--card);
+            margin: 0 0 10px;
+        }
+
+        .search input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text);
+            font-size: 14px;
+            outline: none;
+        }
+
+        .list {
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+
+        .item {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            background: linear-gradient(145deg, rgba(34, 51, 84, 0.2), rgba(22, 32, 54, 0.85));
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: border-color 120ms ease, transform 120ms ease;
+        }
+
+        .item:hover {
+            border-color: var(--accent);
+            transform: translateY(-1px);
+        }
+
+        .item.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.25);
+        }
+
+        .item h3 {
+            margin: 0 0 6px;
+            font-size: 15px;
+        }
+
+        .item p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .tag {
+            display: inline-block;
+            background: rgba(34, 211, 238, 0.1);
+            color: var(--accent);
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            letter-spacing: 0.02em;
+            margin-bottom: 8px;
+        }
+
+        .content {
+            min-height: 70vh;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        }
+
+        .content h2 {
+            margin-top: 0;
+        }
+
+        .content a {
+            color: var(--accent);
+        }
+
+        .content pre {
+            background: #0b1221;
+            border-radius: 10px;
+            padding: 12px;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+        }
+
+        .content code {
+            color: #eab308;
+        }
+
+        @media (max-width: 900px) {
+            body {
+                padding: 16px;
+            }
+
+            .shell {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+                max-height: none;
+            }
+
+            .list {
+                max-height: 300px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="shell">
+        <div class="panel sidebar">
+            <div class="header">
+                <div>
+                    <h1>BSAT-Developer Docs</h1>
+                </div>
+                <button class="toggle" id="toggle">Hide</button>
+            </div>
+            <div id="sidebar-body">
+                <div class="search">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="7" />
+                        <line x1="16.65" y1="16.65" x2="21" y2="21" />
+                    </svg>
+                    <input id="search" type="search" placeholder="Search docs by title or description"
+                        aria-label="Search docs" />
+                </div>
+                <div id="list" class="list"></div>
+            </div>
+        </div>
+
+        <div class="content" id="content">
+            <h2>Pick a doc to view</h2>
+            <p>Select a file from the left to render its Markdown here.</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+        const docs = [
+            {
+                title: "Setup & Run",
+                desc: "Prereqs, platform config, commands to run and build, common issues.",
+                link: "setup_and_run.md",
+                tag: "Getting Started"
+            },
+            {
+                title: "Developer Overview",
+                desc: "Purpose, architecture, core flows, modules, data/state, troubleshooting.",
+                link: "developer_overview.md",
+                tag: "Overview"
+            },
+            {
+                title: "Folder Structure",
+                desc: "Map of directories, what lives where, and quick fix checklist.",
+                link: "folder_structure.md",
+                tag: "Reference"
+            },
+            {
+                title: "Transaction Controller",
+                desc: "End-to-end payment pipeline, collaborators, extension points, testing tips.",
+                link: "transaction_controller.md",
+                tag: "Backend"
+            }
+        ];
+
+        const listEl = document.getElementById("list");
+        const searchEl = document.getElementById("search");
+        const contentEl = document.getElementById("content");
+        const toggleEl = document.getElementById("toggle");
+        const sidebarBody = document.getElementById("sidebar-body");
+        let sidebarVisible = true;
+        let activeLink = null;
+
+        function render(filter = "") {
+            const q = filter.trim().toLowerCase();
+            const filtered = docs.filter(d =>
+                d.title.toLowerCase().includes(q) || d.desc.toLowerCase().includes(q) || d.tag.toLowerCase().includes(q)
+            );
+            listEl.innerHTML = filtered.map(d => `
+        <div class="item ${activeLink === d.link ? 'active' : ''}" data-link="${d.link}" data-title="${d.title}">
+          <div class="tag">${d.tag}</div>
+          <h3>${d.title}</h3>
+          <p>${d.desc}</p>
+        </div>
+      `).join("");
+
+            listEl.querySelectorAll('.item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const link = item.getAttribute('data-link');
+                    const title = item.getAttribute('data-title');
+                    activeLink = link;
+                            updateUrl(link);
+                    render(searchEl.value);
+                    loadDoc(link, title);
+                });
+            });
+        }
+
+        async function loadDoc(link, title) {
+            contentEl.innerHTML = `<p style="color:${'var(--muted)'}">Loading ${title}...</p>`;
+            try {
+                const res = await fetch(link);
+                if (!res.ok) throw new Error(`Failed to load ${link}`);
+                const text = await res.text();
+                const html = marked.parse(text, { mangle: false, headerIds: true });
+                contentEl.innerHTML = `<h2>${title}</h2>` + html;
+            } catch (err) {
+                contentEl.innerHTML = `<p style="color:${'var(--muted)'}">Could not load ${title}. ${err.message}</p>`;
+            }
+        }
+
+        function updateUrl(link) {
+            const url = new URL(window.location);
+            url.searchParams.set('doc', link);
+            window.history.replaceState({}, '', url);
+        }
+
+        function loadFromQuery() {
+            const params = new URLSearchParams(window.location.search);
+            const docParam = params.get('doc');
+            if (!docParam) return false;
+            const found = docs.find(d => d.link === docParam);
+            if (found) {
+                activeLink = found.link;
+                render(searchEl.value);
+                loadDoc(found.link, found.title);
+                return true;
+            }
+            return false;
+        }
+
+        searchEl.addEventListener("input", (e) => render(e.target.value));
+        toggleEl.addEventListener("click", () => {
+            sidebarVisible = !sidebarVisible;
+            sidebarBody.style.display = sidebarVisible ? "block" : "none";
+            toggleEl.textContent = sidebarVisible ? "Hide" : "Show";
+        });
+        render();
+        if (!loadFromQuery() && docs.length) {
+            activeLink = docs[0].link;
+            render();
+            loadDoc(docs[0].link, docs[0].title);
+        }
+    </script>
+</body>
+
+</html>

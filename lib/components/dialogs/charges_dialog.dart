@@ -1,5 +1,5 @@
 import 'package:bsat/screens/subscriptions/subscription.dart';
-import 'package:bsat/screens/dashboard.dart';
+import 'package:bsat/screens/dashboard/dashboard.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 

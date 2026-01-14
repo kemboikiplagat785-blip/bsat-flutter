@@ -1,5 +1,5 @@
 import 'package:bsat/components/dialogs/make_offer_tutorial_dialog.dart';
-import 'package:bsat/screens/dashboard.dart';
+import 'package:bsat/screens/dashboard/dashboard.dart';
 import 'package:bsat/screens/offers/edit_offer.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';

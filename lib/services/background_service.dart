@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:bsat/services/skills.dart';
-import 'package:bsat/services/socket.io_service.dart';
+import 'package:bsat/services/socket_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -44,6 +44,7 @@ void onStart(ServiceInstance serviceInstance) async {
 
   // ✅ ADD connection status tracking
   bool isSocketInitialized = false;
+  StreamSubscription? _messageSubscription;
 
   Future<void> initializeSocket() async {
     String? token = await _prefs.getJwtToken();
@@ -53,8 +54,15 @@ void onStart(ServiceInstance serviceInstance) async {
     print('🔍 Device ID: $deviceDbId');
     
     if (token != null && deviceDbId != null && deviceDbId != '-1') {
-      socketService.onMessage = (data) async {
-        print('📥 Background: Message received from ${data['fromDeviceName']}: ${data['payload']}');
+      try {
+        await socketService.connect(token: token, deviceId: deviceDbId);
+        isSocketInitialized = true;
+        print('✅ Background: Socket connected');
+        
+        // Listen to incoming messages
+        _messageSubscription?.cancel();
+        _messageSubscription = socketService.messageStream.listen((data) async {
+          print('📥 Background: Message received from ${data['fromDeviceName']}: ${data['payload']}');
         
         final payload = data['payload'];
         
@@ -111,23 +119,11 @@ void onStart(ServiceInstance serviceInstance) async {
             payload.toString(),
           );
         }
-      };
-
-      socketService.onError = (error) {
-        print('⚠️ Background: Socket error: ${error['message']}');
-      };
-
-      socketService.onConnect = () {
-        print('✅ Background: Socket connected');
-        isSocketInitialized = true;
-      };
-
-      socketService.onDisconnect = () {
-        print('❌ Background: Socket disconnected');
+        });
+      } catch (e) {
+        print('❌ Failed to connect socket: $e');
         isSocketInitialized = false;
-      };
-
-      socketService.connect(token: token, deviceDbId: deviceDbId);
+      }
     } else {
       print('❌ Cannot initialize socket: Missing token or device ID');
     }
@@ -146,8 +142,9 @@ void onStart(ServiceInstance serviceInstance) async {
     });
   }
 
-  serviceInstance.on('stopService').listen((event) {
-    socketService.disconnect();
+  serviceInstance.on('stopService').listen((event) async {
+    _messageSubscription?.cancel();
+    await socketService.disconnect();
     serviceInstance.stopSelf();
   });
 
@@ -161,7 +158,7 @@ void onStart(ServiceInstance serviceInstance) async {
         initMessagesPlatformState();
 
         // ✅ IMPROVED: Better reconnection logic
-        if (!socketService.isConnected() && isSocketInitialized) {
+        if (!socketService.isConnected && isSocketInitialized) {
           print('⚠️ Socket disconnected, attempting reconnect...');
           await initializeSocket();
         } else if (!isSocketInitialized) {
@@ -174,7 +171,7 @@ void onStart(ServiceInstance serviceInstance) async {
         await TransactionController().runScheduled();
 
         // ✅ IMPROVED: Show connection status with emoji
-        final socketStatus = socketService.isConnected() ? '🟢 Connected' : '🔴 Disconnected';
+        final socketStatus = socketService.isConnected ? '🟢 Connected' : '🔴 Disconnected';
         serviceInstance.setForegroundNotificationInfo(
           title: 'BSAT Active',
           content: 'Socket: $socketStatus | Processing transactions...',

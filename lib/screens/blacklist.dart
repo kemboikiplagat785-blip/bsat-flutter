@@ -51,7 +51,7 @@ class _BlacklistPageState extends State<BlacklistPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            header(context, 'Blacklst'),
+            header(context, 'Blacklst'),  
             Padding(
               padding: kPagePaddingInsets,
               child: TextField(
@@ -135,3 +135,5 @@ class _BlacklistPageState extends State<BlacklistPage> {
     );
   }
 }
+
+

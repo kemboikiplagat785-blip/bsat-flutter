@@ -29,6 +29,7 @@
             color: var(--text);
             padding: 24px;
             line-height: 1.5;
+            overflow-x: hidden;
         }
 
         h1 {
@@ -43,7 +44,7 @@
 
         .shell {
             display: grid;
-            grid-template-columns: 280px 1fr;
+            grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
             gap: 16px;
             max-width: 1200px;
             margin: 0 auto;
@@ -117,6 +118,7 @@
             margin-bottom: 10px;
             cursor: pointer;
             transition: border-color 120ms ease, transform 120ms ease;
+            word-break: break-word;
         }
 
         .item:hover {
@@ -158,6 +160,7 @@
             border-radius: 14px;
             padding: 20px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+            word-break: break-word;
         }
 
         .content h2 {
@@ -196,7 +199,16 @@
             }
 
             .list {
-                max-height: 300px;
+                max-height: 320px;
+                padding-right: 0;
+            }
+
+            .panel {
+                padding: 12px;
+            }
+
+            .content {
+                padding: 16px;
             }
         }
     </style>
@@ -237,26 +249,38 @@
             {
                 title: "Setup & Run",
                 desc: "Prereqs, platform config, commands to run and build, common issues.",
-                link: "setup_and_run.md",
+                link: "dev/setup_and_run.md",
                 tag: "Getting Started"
             },
             {
                 title: "Developer Overview",
                 desc: "Purpose, architecture, core flows, modules, data/state, troubleshooting.",
-                link: "developer_overview.md",
+                link: "dev/developer_overview.md",
                 tag: "Overview"
             },
             {
                 title: "Folder Structure",
                 desc: "Map of directories, what lives where, and quick fix checklist.",
-                link: "folder_structure.md",
+                link: "dev/folder_structure.md",
                 tag: "Reference"
             },
             {
                 title: "Transaction Controller",
                 desc: "End-to-end payment pipeline, collaborators, extension points, testing tips.",
-                link: "transaction_controller.md",
+                link: "dev/transaction_controller.md",
                 tag: "Backend"
+            },
+            {
+                title: "Offers",
+                desc: "Add or edit offers and matching behavior.",
+                link: "dev/offers.md",
+                tag: "Backend"
+            },
+            {
+                title: "Theme",
+                desc: "How to change themes and add variants.",
+                link: "dev/theme.md",
+                tag: "UI"
             }
         ];
 
@@ -286,7 +310,7 @@
                     const link = item.getAttribute('data-link');
                     const title = item.getAttribute('data-title');
                     activeLink = link;
-                            updateUrl(link);
+                    updateUrl(link);
                     render(searchEl.value);
                     loadDoc(link, title);
                 });

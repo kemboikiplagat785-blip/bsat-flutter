@@ -12,7 +12,12 @@
           "package_name": "com.bsat.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "347484390283-v48rheig9geuvh6irdgvjmbfhoi4h8tk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBRjACGD-yQ7eej4LSKfid3Uqb1guZhq90"
@@ -20,7 +25,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "347484390283-v48rheig9geuvh6irdgvjmbfhoi4h8tk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

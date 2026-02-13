@@ -29,11 +29,13 @@ Widget appPausedButton(BuildContext context, {String? text, Function()? onTap}) 
             ),
           );
         },
-        child: Text(
-          text ?? 'Some features paused. Resume?',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: kErrorColor,
+        child: Center(
+          child: Text(
+            text ?? 'Some features paused. Resume?',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: kErrorColor,
+            ),
           ),
         ),
       ),

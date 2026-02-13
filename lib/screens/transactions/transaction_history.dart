@@ -20,8 +20,9 @@ import '../../utils/constants.dart';
 
 class TransactionHistoryPage extends StatefulWidget {
   final String? query;
+  final bool isDashboard;
 
-  const TransactionHistoryPage({super.key, this.query});
+  const TransactionHistoryPage({super.key, this.query, this.isDashboard = false});
 
   @override
   State<TransactionHistoryPage> createState() => _TransactionHistoryPageState();
@@ -286,10 +287,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                             setState(() {});
                           }
                         : () => Navigator.of(context).pop(),
-                    icon: const Icon(
+                    icon: (!widget.isDashboard || _selectionMode) ? const Icon(
                       CupertinoIcons.back,
                       size: 14,
-                    ),
+                    ) : const SizedBox.shrink(),
                   ),
                   const SizedBox(width: kPagePadding / 2),
                   Text(

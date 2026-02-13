@@ -3,6 +3,7 @@ import 'package:bsat/components/tool_button.dart';
 import 'package:bsat/screens/blacklist.dart';
 import 'package:bsat/screens/dialpad.dart';
 import 'package:bsat/screens/inbox.dart';
+import 'package:bsat/screens/messaging/send_message_page.dart';
 import 'package:bsat/screens/offers/offers.dart';
 import 'package:bsat/screens/online_management/online_management.dart';
 import 'package:bsat/screens/replies/replies.dart';
@@ -42,11 +43,17 @@ class DashboardToolsSection extends StatelessWidget {
         decoration: BoxDecoration(
           color: Theme.of(context).primaryColor.withOpacity(.05),
           borderRadius: BorderRadius.circular(kBorderRadius / 2),
+          image: DecorationImage(
+            image: const AssetImage('assets/images/mesh.png'),
+            fit: BoxFit.cover,
+            opacity: 0.05,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(),
+            const SizedBox(height: kPagePadding),
             const Text("Automation tools"),
             const SizedBox(height: kPagePadding / 2),
             Wrap(
@@ -237,6 +244,34 @@ class DashboardToolsSection extends StatelessWidget {
                     color: kErrorColor,
                   ),
                   "DialPad",
+                  context,
+                ),
+                toolButton(
+                  () {
+                    Navigator.of(context)
+                        .push(
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    const SendMessagePage(),
+                            transitionsBuilder: (context, animation,
+                                secondaryAnimation, child) {
+                              return CupertinoPageTransition(
+                                primaryRouteAnimation: animation,
+                                secondaryRouteAnimation: secondaryAnimation,
+                                linearTransition: true,
+                                child: child,
+                              );
+                            },
+                          ),
+                        )
+                        .then((value) => onReload());
+                  },
+                  const Icon(
+                    CupertinoIcons.paperplane,
+                    color: kIndigoColor,
+                  ),
+                  "Send Message",
                   context,
                 ),
                 toolButton(

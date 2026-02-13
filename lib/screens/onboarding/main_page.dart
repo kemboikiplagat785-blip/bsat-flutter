@@ -1,3 +1,4 @@
+import 'package:bsat/screens/dashboard/home.dart';
 import 'package:bsat/screens/onboarding/automate_splash.dart';
 import 'package:bsat/screens/stats/statistics.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
@@ -23,7 +24,7 @@ class OnboardingPageState extends State<OnboardingPage> {
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (context, animation, secondaryAnimation) =>
-            const DashBoardPage(),
+            const HomePage(),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           return CupertinoPageTransition(
             primaryRouteAnimation: animation,

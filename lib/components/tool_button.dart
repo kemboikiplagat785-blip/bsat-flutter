@@ -23,13 +23,34 @@ Widget toolButton(
         child: Container(
           padding: kPagePaddingInsets / 3,
           decoration: BoxDecoration(
-            color: accentColor != null
-                ? accentColor.withOpacity(.2)
-                : Theme.of(context).cardColor,
-            border: Border.all(
-              color: withBorder ? kDullColor : Colors.transparent,
-              width: .5,
+            color: Theme.of(context).scaffoldBackgroundColor,
+            border: Border(
+              bottom: BorderSide(
+                // color: Theme.of(context).hintColor,
+                color: Colors.black.withOpacity(0.9),
+                width: 1,
+              ),
+              right: BorderSide(
+                // color: Theme.of(context).hintColor,
+                color: Colors.black.withOpacity(0.9),
+                width: 1,
+              ),
             ),
+            // : null,
+            // boxShadow: withBorder
+            //     ? [
+            //         BoxShadow(
+            //           color: Theme.of(context).hintColor.withOpacity(0.9),
+            //           blurRadius: 0,
+            //           offset: const Offset(1, 1),
+            //         ),
+            //         // BoxShadow(
+            //         //   color: Theme.of(context).hintColor.withOpacity(0.3),
+            //         //   blurRadius: 0,
+            //         //   offset: const Offset(-1, -1),
+            //         // ),
+            //       ]
+            //     : null,
             borderRadius: BorderRadius.circular(kBorderRadius / 2),
             // color: kLightColor,
           ),
@@ -43,13 +64,12 @@ Widget toolButton(
                 Text(
                   text,
                   style: TextStyle(
-                    fontWeight:
-                        accentColor != null ? FontWeight.bold : FontWeight.normal,
-                    fontSize:
-                        textSize?.toDouble() ?? (accentColor != null ? 14 : null),
-                    color: isLightMode
-                        ? kSecondaryColor 
-                        : accentColor,
+                    fontWeight: accentColor != null
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    fontSize: textSize?.toDouble() ??
+                        (accentColor != null ? 14 : null),
+                    color: isLightMode ? kSecondaryColor : accentColor,
                   ),
                 ),
               if (otherText != null)
@@ -60,7 +80,7 @@ Widget toolButton(
                     style: TextStyle(
                       // fontWeight: FontWeight.bold,
                       fontSize: otherTextSize?.toDouble() ?? 13,
-                      color: isLightMode ? kSecondaryColor : accentColor,
+                      color: accentColor,
                     ),
                   ),
                 ),

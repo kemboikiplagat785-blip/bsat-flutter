@@ -2,7 +2,9 @@
 
 import 'package:bsat/firebase_options.dart';
 import 'package:bsat/screens/dashboard/dashboard.dart';
+import 'package:bsat/screens/dashboard/home.dart';
 import 'package:bsat/screens/onboarding/main_page.dart';
+import 'package:bsat/services/firebase_messaging_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -30,6 +32,9 @@ Future<void> main() async {
   );
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // Initialize Firebase Messaging
+  await FirebaseMessagingService().initNotifications();
 
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
@@ -65,7 +70,7 @@ class MyApp extends StatelessWidget {
             } else {
               bool? isRunning = snapshot.data;
               return isRunning ?? false
-                  ? const DashBoardPage()
+                  ? const HomePage()
                   : const OnboardingPage();
             }
           },

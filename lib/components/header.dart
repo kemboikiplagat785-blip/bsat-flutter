@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../utils/constants.dart';
 
-Widget header(BuildContext context, String title) {
+Widget header(BuildContext context, String title, {bool isDashboard = false}) {
   var textTheme = Theme.of(context).textTheme;
   return Container(
     decoration: BoxDecoration(
@@ -20,7 +20,9 @@ Widget header(BuildContext context, String title) {
           padding: kPagePaddingInsets,
           child: Row(
             children: [
-              GestureDetector(
+              isDashboard
+                ? const SizedBox()
+                : GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child: const Icon(
                   CupertinoIcons.back,

@@ -9,14 +9,14 @@ import '../../components/header.dart';
 import '../../utils/constants.dart';
 
 class StatisticsPage extends StatefulWidget {
-  const StatisticsPage({super.key});
+  final bool isDashboard;
+  const StatisticsPage({super.key, this.isDashboard = false});
 
   @override
   State<StatisticsPage> createState() => _StatisticsPageState();
 }
 
 class _StatisticsPageState extends State<StatisticsPage> {
-
   @override
   void initState() {
     super.initState();
@@ -30,32 +30,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            header(context, 'Business Insights'),
-            const SizedBox(height: kPagePadding),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: kPagePadding),
-              child: Text('Commission (Ksh)'),
-            ),
-            const SizedBox(height: kPagePadding / 4),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: kPagePadding),
-              child: Container(
-                padding: const EdgeInsets.all(kPagePadding),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(kBorderRadius),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(0),
-                      child: CommissionGraph(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            header(context, 'Business Insights',
+                isDashboard: widget.isDashboard),
             const SizedBox(height: kPagePadding),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: kPagePadding),
@@ -67,8 +43,27 @@ class _StatisticsPageState extends State<StatisticsPage> {
               child: Container(
                 padding: const EdgeInsets.all(kPagePadding),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
+                  color: Theme.of(context).scaffoldBackgroundColor,
                   borderRadius: BorderRadius.circular(kBorderRadius),
+                  image: DecorationImage(
+                    image: AssetImage(
+                      'assets/images/mesh_distorted.png',
+                    ),
+                    fit: BoxFit.cover,
+                    opacity: 0.1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      blurRadius: 0,
+                      offset: const Offset(3, 3),
+                    ),
+                    BoxShadow(
+                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      blurRadius: 0,
+                      offset: const Offset(-1, -1),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -76,6 +71,50 @@ class _StatisticsPageState extends State<StatisticsPage> {
                     Padding(
                       padding: const EdgeInsets.all(0),
                       child: AirtimePerDay(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: kPagePadding),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: kPagePadding),
+              child: Text('Commission (Ksh)'),
+            ),
+            const SizedBox(height: kPagePadding / 4),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: kPagePadding),
+              child: Container(
+                padding: const EdgeInsets.all(kPagePadding),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  borderRadius: BorderRadius.circular(kBorderRadius),
+                  image: DecorationImage(
+                    image: AssetImage(
+                      'assets/images/mesh_distorted.png',
+                    ),
+                    fit: BoxFit.cover,
+                    opacity: 0.1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      blurRadius: 0,
+                      offset: const Offset(3, 3),
+                    ),
+                    BoxShadow(
+                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      blurRadius: 0,
+                      offset: const Offset(-1, -1),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(0),
+                      child: CommissionGraph(),
                     ),
                   ],
                 ),
@@ -92,14 +131,32 @@ class _StatisticsPageState extends State<StatisticsPage> {
               child: Container(
                 padding: const EdgeInsets.all(kPagePadding),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
+                  color: Theme.of(context).scaffoldBackgroundColor,
                   borderRadius: BorderRadius.circular(kBorderRadius),
+                  image: DecorationImage(
+                    image: AssetImage(
+                      'assets/images/mesh_distorted.png',
+                    ),
+                    fit: BoxFit.cover,
+                    opacity: 0.1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      blurRadius: 0,
+                      offset: const Offset(3, 3),
+                    ),
+                    BoxShadow(
+                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      blurRadius: 0,
+                      offset: const Offset(-1, -1),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const SizedBox(height: kPagePadding),
-
                     Padding(
                       padding: const EdgeInsets.all(0),
                       child: ValuePerformanceOverTime(),
@@ -119,14 +176,32 @@ class _StatisticsPageState extends State<StatisticsPage> {
               child: Container(
                 padding: const EdgeInsets.all(kPagePadding),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
+                  color: Theme.of(context).scaffoldBackgroundColor,
                   borderRadius: BorderRadius.circular(kBorderRadius),
+                  image: DecorationImage(
+                    image: AssetImage(
+                      'assets/images/mesh_distorted.png',
+                    ),
+                    fit: BoxFit.cover,
+                    opacity: 0.1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      blurRadius: 0,
+                      offset: const Offset(3, 3),
+                    ),
+                    BoxShadow(
+                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      blurRadius: 0,
+                      offset: const Offset(-1, -1),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     const SizedBox(height: kPagePadding),
-
                     Padding(
                       padding: const EdgeInsets.all(0),
                       child: SalesVolumePerOffer(),

@@ -22,7 +22,10 @@ import '../settings/settings.dart';
 
 /// Main dashboard surface: greets the agent, shows KPIs, and links to tools.
 class DashBoardPage extends StatefulWidget {
-  const DashBoardPage({super.key});
+  final bool isDashboard;
+
+  const DashBoardPage({super.key, this.isDashboard = false});
+  // const DashBoardPage({super.key});
 
   @override
   State<DashBoardPage> createState() => _DashBoardPageState();
@@ -31,6 +34,7 @@ class DashBoardPage extends StatefulWidget {
 class _DashBoardPageState extends State<DashBoardPage>
     with WidgetsBindingObserver {
   late final DashboardViewModel _viewModel;
+  final ScrollController _chipsScrollController = ScrollController();
 
   @override
   void initState() {
@@ -58,9 +62,20 @@ class _DashBoardPageState extends State<DashBoardPage>
 
   @override
   void dispose() {
+    _chipsScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _viewModel.dispose();
     super.dispose();
+  }
+
+  void _scrollChips() {
+    if (_chipsScrollController.hasClients) {
+      _chipsScrollController.animateTo(
+        _chipsScrollController.offset + 200,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   @override
@@ -79,196 +94,203 @@ class _DashBoardPageState extends State<DashBoardPage>
                   const SizedBox(height: kPagePadding * 2),
                   Container(
                     padding: kPagePaddingInsets,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${getGreeting(withEmoji: true)}',
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                            Text(
+                              vm.userName,
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Image.asset(
+                          'assets/icons/icon.png',
+                          width: 60,
+                          height: 60,
+                        ),
+                      ],
+                    ),
+                  ),
+                  // const SizedBox(height: kPagePadding),
+                  Container(
+                    margin: kPagePaddingInsets,
+                    padding: kPagePaddingInsets,
                     decoration: BoxDecoration(
                       color: Theme.of(context).primaryColor.withOpacity(.05),
                       borderRadius: BorderRadius.circular(kBorderRadius),
                     ),
                     child: Column(
                       children: [
-                        Row(
-                          children: [
-                            Text(
-                              '${getGreeting(withEmoji: true)}, ${vm.userName}',
-                              style: const TextStyle(fontSize: 18),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: kPagePadding),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Container(
-                                decoration: ShapeDecoration(
-                                  shape: SolidBorder(
-                                    width: 1,
-                                    borderRadius: BorderRadius.circular(12),
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        Colors.transparent,
-                                        Theme.of(context).indicatorColor,
-                                        Colors.transparent,
-                                        Theme.of(context).indicatorColor,
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(kPagePadding),
+                          decoration: BoxDecoration(
+                            image: DecorationImage(
+                                image: AssetImage(
+                                  'assets/images/mesh_distorted.png',
+                                ),
+                                fit: BoxFit.cover,
+                                opacity: 0.3),
+                            borderRadius: BorderRadius.circular(kBorderRadius),
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.9),
+                                // Theme.of(context)
+                                //     .hintColor
+                                //     .withOpacity(0.9),
+                                blurRadius: 0,
+                                offset: const Offset(2, 2),
+                              ),
+                              // BoxShadow(
+                              //   color: Theme.of(context)
+                              //       .hintColor
+                              //       .withOpacity(0.3),
+                              //   blurRadius: 0,
+                              //   offset: const Offset(-2, -2),
+                              // ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  // Container(
+                                  //   padding: const EdgeInsets.all(kPagePadding),
+                                  //   decoration: BoxDecoration(
+                                  //     color: Theme.of(context)
+                                  //         .cardColor
+                                  //         .withOpacity(0.2),
+                                  //     borderRadius:
+                                  //         BorderRadius.circular(kBorderRadius),
+                                  //   ),
+                                  //   child: Icon(
+                                  //     Icons.sim_card,
+                                  //     // color: Colors.white,
+                                  //     size: 16,
+                                  //   ),
+                                  // ),
+                                  // const SizedBox(width: kPagePadding),
+                                  const Text(
+                                    "Airtime Balance",
+                                    style: TextStyle(
+                                      // color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
-                                ),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    vm.reload();
-                                    vm.refreshBalances();
-                                  },
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          GestureDetector(
-                                            onTap: vm.toggleHideBalance,
-                                            child: Icon(
-                                              vm.hideBalance
-                                                  ? CupertinoIcons.eye
-                                                  : CupertinoIcons.eye_slash,
-                                              size: 16,
-                                            ),
-                                          ),
-                                          IconButton(
-                                            onPressed: () {
-                                              vm.reload();
-                                              vm.refreshBalances();
-                                            },
-                                            icon: const Icon(
-                                              CupertinoIcons.refresh,
-                                              size: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          const Text('Ksh   '),
-                                          Text(
-                                            vm.hideBalance
-                                                ? '...'
-                                                : Numbers.formatNumber(
-                                                    int.tryParse(vm
-                                                            .airtimeBalance) ??
-                                                        0,
-                                                  ),
-                                            style:
-                                                textTheme.headlineLarge!.merge(
-                                              TextStyle(
-                                                color: Theme.of(context)
-                                                    .indicatorColor,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: kPagePadding / 2),
-                                      const Text('Airtime'),
-                                      const SizedBox(height: kPagePadding),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: kPagePadding / 2),
-                            Expanded(
-                              child: Container(
-                                decoration: ShapeDecoration(
-                                  shape: SolidBorder(
-                                    width: 1,
-                                    borderRadius: BorderRadius.circular(12),
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        Theme.of(context).indicatorColor,
-                                        Colors.transparent,
-                                        Theme.of(context).indicatorColor,
-                                        Colors.transparent,
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
+                                  const SizedBox(width: kPagePadding),
+                                  Text(
+                                    vm.hideBalance
+                                        ? 'KES ****'
+                                        : 'KES ${Numbers.formatNumber(int.tryParse(vm.airtimeBalance) ?? 0)}',
+                                    style: const TextStyle(
+                                      // color: Colors.white,
+                                      // fontSize: 32,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -1,
                                     ),
                                   ),
-                                ),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    vm.reload();
-                                    vm.refreshBalances();
-                                  },
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          GestureDetector(
-                                            onTap: vm.toggleHideCommission,
-                                            child: Icon(
-                                              vm.hideCommission
-                                                  ? CupertinoIcons.eye
-                                                  : CupertinoIcons.eye_slash,
-                                              size: 16,
-                                            ),
-                                          ),
-                                          IconButton(
-                                            onPressed: () {
-                                              vm.reload();
-                                              vm.refreshBalances();
-                                            },
-                                            icon: const Icon(
-                                              CupertinoIcons.refresh,
-                                              size: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          const Text('Ksh '),
-                                          Text(
-                                            vm.hideCommission
-                                                ? '...'
-                                                : Numbers.formatNumber(
-                                                    int.parse(
-                                                      vm.estimatedCommission
-                                                          .toStringAsFixed(0),
-                                                    ),
-                                                  ),
-                                            style:
-                                                textTheme.headlineLarge!.merge(
-                                              TextStyle(
-                                                color: Theme.of(context)
-                                                    .indicatorColor,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: kPagePadding / 2),
-                                      const Text('Est. Commission'),
-                                      const SizedBox(height: kPagePadding),
-                                    ],
-                                  ),
-                                ),
+                                ],
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: kPagePadding),
+
+                              // const SizedBox(height: 24),
+                              // Container(
+                              //   height: 1,
+                              //   color: Theme.of(context).cardColor.withOpacity(0.2),
+                              // ),
+                              // const SizedBox(height: 16),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    "Est. Commission",
+                                    style: TextStyle(
+                                      // color: Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(width: kPagePadding),
+                                  Text(
+                                    vm.hideCommission
+                                        ? 'KES ***'
+                                        : 'KES ${Numbers.formatNumber(int.parse(vm.estimatedCommission.toStringAsFixed(0)))}',
+                                    style: const TextStyle(
+                                      // color: Colors.white,
+                                      // fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  // Icon(
+                                  //   vm.hideCommission
+                                  //       ? CupertinoIcons.eye
+                                  //       : CupertinoIcons.eye_slash,
+                                  //   color: Colors.white54,
+                                  //   size: 12,
+                                  // ),
+                                ],
+                              ),
+                              const SizedBox(height: kPagePadding),
+
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  IconButton(
+                                    onPressed: () {
+                                      vm.toggleHideBalance();
+                                      vm.toggleHideCommission();
+                                    },
+                                    icon: Icon(
+                                      vm.hideBalance
+                                          ? CupertinoIcons.eye
+                                          : CupertinoIcons.eye_slash,
+                                      color: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium
+                                              ?.color ??
+                                          Colors.white,
+                                      size: 13,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    onPressed: () {
+                                      vm.reload();
+                                      vm.refreshBalances();
+                                    },
+                                    icon: const Icon(
+                                      CupertinoIcons.refresh,
+                                      color: kDarkerGreen,
+                                      size: 13,
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    // constraints: const BoxConstraints(
+                                    //   minWidth: 40,
+                                    //   minHeight: 40,
+                                    // ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: kPagePadding),
+                        const SizedBox(height: kPagePadding * 2),
                         vm.hasActiveSubscription
                             ? const SizedBox()
                             : noBalanceButton(context),
@@ -355,418 +377,492 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 ),
                               ],
                             ),
-                            const SizedBox(height: kPagePadding / 2),
+                            const SizedBox(height: kPagePadding),
                             Container(
                               width: double.infinity,
-                              child: Wrap(
-                                alignment: WrapAlignment.center,
-                                runSpacing: kPagePadding / 4,
+                              // height: 60, // Fixed height for the scrollable row
+                              child: Stack(
                                 children: [
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query: TransactionStatuses
-                                                    .doneConfirmed,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    const Icon(
-                                        CupertinoIcons.checkmark_seal_fill,
-                                        color: kPrimaryColor,
-                                        size: 14),
-                                    vm.successfulConfirmedCount.toString(),
-                                    otherText: vm.verboseMode
-                                        ? "successful(confirmed)"
-                                        : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kPrimaryColor,
-                                  ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query: TransactionStatuses.done,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    const Icon(CupertinoIcons.checkmark_alt,
-                                        color: kWarningColor, size: 14),
-                                    vm.successfulCount.toString(),
-                                    otherText: vm.verboseMode
-                                        ? "successful(pending)"
-                                        : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kPrimaryColor,
-                                  ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query: TransactionStatuses
-                                                    .advancedUssd,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    Icon(
-                                      CupertinoIcons.phone_circle_fill,
-                                      color: kPrimaryColor,
-                                      size: 14,
+                                  SingleChildScrollView(
+                                    controller: _chipsScrollController,
+                                    scrollDirection: Axis.horizontal,
+                                    physics: const BouncingScrollPhysics(),
+                                    padding: const EdgeInsets.only(
+                                        right:
+                                            60), // Padding to avoid overlap with scroll button
+                                    child: Row(
+                                      children: [
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .doneConfirmed,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          const Icon(
+                                              CupertinoIcons
+                                                  .checkmark_seal_fill,
+                                              color: kPrimaryColor,
+                                              size: 14),
+                                          vm.successfulConfirmedCount
+                                              .toString(),
+                                          otherText: vm.verboseMode
+                                              ? "successful(confirmed)"
+                                              : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kDarkerGreen,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .done,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          const Icon(
+                                              CupertinoIcons.checkmark_alt,
+                                              color: kWarningColor,
+                                              size: 14),
+                                          vm.successfulCount.toString(),
+                                          otherText: vm.verboseMode
+                                              ? "successful(pending)"
+                                              : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kDarkerGreen,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .advancedUssd,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          Icon(
+                                            CupertinoIcons.phone_circle_fill,
+                                            color: kPrimaryColor,
+                                            size: 14,
+                                          ),
+                                          vm.advancedCount.toString(),
+                                          otherText: vm.verboseMode
+                                              ? "advanced"
+                                              : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kDarkerGreen,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .forwarded,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          Icon(
+                                            CupertinoIcons.arrow_turn_right_up,
+                                            color: kPrimaryColor,
+                                            size: 14,
+                                          ),
+                                          vm.forwardedCount.toString(),
+                                          otherText: vm.verboseMode
+                                              ? "forwarded"
+                                              : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kDarkerGreen,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .secondAttempt,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          const Icon(
+                                              CupertinoIcons.arrow_2_circlepath,
+                                              color: kWarningColor,
+                                              size: 14),
+                                          vm.failedCount.toString(),
+                                          otherText: vm.verboseMode
+                                              ? "second attempt"
+                                              : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kWarningColor,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .paused,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          Icon(
+                                            CupertinoIcons.pause_circle_fill,
+                                            color: Theme.of(context).hintColor,
+                                            size: 14,
+                                          ),
+                                          vm.pausedCount.toString(),
+                                          otherText:
+                                              vm.verboseMode ? "paused" : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kWarningColor,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .hasOkoa,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          Icon(
+                                            Icons.sailing_rounded,
+                                            color: kDullColor,
+                                            size: 14,
+                                          ),
+                                          vm.okoaCount.toString(),
+                                          otherText:
+                                              vm.verboseMode ? "okoa" : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kBgColor,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .unavailableOffer,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          Icon(
+                                            CupertinoIcons
+                                                .exclamationmark_triangle,
+                                            color: Theme.of(context)
+                                                .indicatorColor,
+                                            size: 14,
+                                          ),
+                                          vm.unavailableCount.toString(),
+                                          otherText: vm.verboseMode
+                                              ? "unavailable offers"
+                                              : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor:
+                                              Theme.of(context).indicatorColor,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: 'blacklist',
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          const Icon(
+                                            Icons.person_off_outlined,
+                                            color: kWarningColor,
+                                            size: 14,
+                                          ),
+                                          vm.blacklistedCount.toString(),
+                                          otherText: vm.verboseMode
+                                              ? "blacklisted"
+                                              : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kErrorColor,
+                                        ),
+                                        const SizedBox(width: kPagePadding / 4),
+                                        toolButton(
+                                          () {
+                                            Navigator.of(context)
+                                                .push(
+                                                  PageRouteBuilder(
+                                                    pageBuilder: (context,
+                                                            animation,
+                                                            secondaryAnimation) =>
+                                                        const TransactionHistoryPage(
+                                                      query: TransactionStatuses
+                                                          .error,
+                                                    ),
+                                                    transitionsBuilder:
+                                                        (context,
+                                                            animation,
+                                                            secondaryAnimation,
+                                                            child) {
+                                                      return CupertinoPageTransition(
+                                                        primaryRouteAnimation:
+                                                            animation,
+                                                        secondaryRouteAnimation:
+                                                            secondaryAnimation,
+                                                        linearTransition: true,
+                                                        child: child,
+                                                      );
+                                                    },
+                                                  ),
+                                                )
+                                                .then((value) => vm.reload());
+                                          },
+                                          const Icon(
+                                              CupertinoIcons.xmark_circle_fill,
+                                              color: kErrorColor,
+                                              size: 14),
+                                          vm.errorCount.toString(),
+                                          otherText:
+                                              vm.verboseMode ? "errors" : null,
+                                          context,
+                                          withBorder: true,
+                                          accentColor: kErrorColor,
+                                        ),
+                                      ],
                                     ),
-                                    vm.advancedCount.toString(),
-                                    otherText:
-                                        vm.verboseMode ? "advanced" : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kPrimaryColor,
                                   ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query: TransactionStatuses
-                                                    .forwarded,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    Icon(
-                                      CupertinoIcons.arrow_turn_right_up,
-                                      color: kPrimaryColor,
-                                      size: 14,
+                                  Positioned(
+                                    right: 0,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.only(left: 20),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                          colors: [
+                                            Theme.of(context)
+                                                .cardColor
+                                                .withOpacity(0.0),
+                                            Theme.of(context).cardColor,
+                                          ],
+                                          stops: const [0.0, 0.4],
+                                        ),
+                                      ),
+                                      child: IconButton(
+                                        onPressed: _scrollChips,
+                                        icon: const Icon(
+                                            CupertinoIcons.chevron_right,
+                                            size: 20),
+                                        color: Colors.grey,
+                                      ),
                                     ),
-                                    vm.forwardedCount.toString(),
-                                    otherText:
-                                        vm.verboseMode ? "forwarded" : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kPrimaryColor,
-                                  ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query: TransactionStatuses
-                                                    .secondAttempt,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    const Icon(
-                                        CupertinoIcons.arrow_2_circlepath,
-                                        color: kWarningColor,
-                                        size: 14),
-                                    vm.failedCount.toString(),
-                                    otherText: vm.verboseMode
-                                        ? "second attempt"
-                                        : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kWarningColor,
-                                  ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query:
-                                                    TransactionStatuses.paused,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    Icon(
-                                      CupertinoIcons.pause_circle_fill,
-                                      color: Theme.of(context).hintColor,
-                                      size: 14,
-                                    ),
-                                    vm.pausedCount.toString(),
-                                    otherText: vm.verboseMode ? "paused" : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kWarningColor,
-                                  ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query:
-                                                    TransactionStatuses.hasOkoa,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    Icon(
-                                      Icons.sailing_rounded,
-                                      color: kDullColor,
-                                      size: 14,
-                                    ),
-                                    vm.okoaCount.toString(),
-                                    otherText: vm.verboseMode ? "okoa" : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kBgColor,
-                                  ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query: TransactionStatuses
-                                                    .unavailableOffer,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    Icon(
-                                      CupertinoIcons.exclamationmark_triangle,
-                                      color: Theme.of(context).indicatorColor,
-                                      size: 14,
-                                    ),
-                                    vm.unavailableCount.toString(),
-                                    otherText: vm.verboseMode
-                                        ? "unavailable offers"
-                                        : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor:
-                                        Theme.of(context).indicatorColor,
-                                  ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query: 'blacklist',
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    const Icon(
-                                      Icons.person_off_outlined,
-                                      color: kWarningColor,
-                                      size: 14,
-                                    ),
-                                    vm.blacklistedCount.toString(),
-                                    otherText:
-                                        vm.verboseMode ? "blacklisted" : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kErrorColor,
-                                  ),
-                                  const SizedBox(width: kPagePadding / 4),
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(
-                                                query:
-                                                    TransactionStatuses.error,
-                                              ),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    const Icon(CupertinoIcons.xmark_circle_fill,
-                                        color: kErrorColor, size: 14),
-                                    vm.errorCount.toString(),
-                                    otherText: vm.verboseMode ? "errors" : null,
-                                    context,
-                                    withBorder: true,
-                                    accentColor: kErrorColor,
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(height: kPagePadding / 2),
+                            const SizedBox(height: kPagePadding),
                             vm.recentTransactions.isNotEmpty
                                 ? transactionListItem(
                                     context,
@@ -819,4 +915,3 @@ class _DashBoardPageState extends State<DashBoardPage>
     );
   }
 }
-

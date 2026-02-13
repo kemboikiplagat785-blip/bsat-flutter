@@ -17,7 +17,8 @@ import '../../utils/get_sim_cards.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  final bool isDashboard;
+  const SettingsPage({super.key, this.isDashboard = false});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -129,7 +130,7 @@ class _SettingsPageState extends State<SettingsPage> {
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            header(context, 'Settings'),
+            header(context, 'Settings', isDashboard: widget.isDashboard),
             InkWell(
               onTap: () {
                 setState(() {

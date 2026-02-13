@@ -46,42 +46,42 @@ class SocketService {
       _socket!.onConnect((_) {
         _isConnected = true;
         _connectionStateController.add(true);
-        print('✅ Socket.IO connected');
-        print('   Transport: ${_socket!.io.engine?.transport?.name}');
+        //print('✅ Socket.IO connected');
+        //print('   Transport: ${_socket!.io.engine?.transport?.name}');
       });
 
       _socket!.on('message', (data) {
-        print('📥 Message received: $data');
+        //print('📥 Message received: $data');
         _messageController.add(data);
       });
 
       _socket!.onDisconnect((_) {
         _isConnected = false;
         _connectionStateController.add(false);
-        print('❌ Socket.IO disconnected');
+        //print('❌ Socket.IO disconnected');
       });
 
       _socket!.onError((error) {
         _isConnected = false;
-        print('⚠️ Socket.IO error: $error');
+        //print('⚠️ Socket.IO error: $error');
       });
 
       _socket!.onConnectError((error) {
         _isConnected = false;
         _connectionStateController.add(false);
-        print('❌ Socket.IO connection error: $error');
+        //print('❌ Socket.IO connection error: $error');
       });
 
       // Listen for transport upgrades
       _socket!.io.engine?.on('upgrade', (data) {
-        print('🔄 Transport upgraded to: ${_socket!.io.engine?.transport?.name}');
+        //print('🔄 Transport upgraded to: ${_socket!.io.engine?.transport?.name}');
       });
 
       _socket!.connect();
       
     } catch (e) {
       _isConnected = false;
-      print('Failed to initialize socket: $e');
+      //print('Failed to initialize socket: $e');
       rethrow;
     }
   }
@@ -93,9 +93,9 @@ class SocketService {
         'to': toDeviceId,
         'payload': payload,
       });
-      print('📤 Sent message to device $toDeviceId');
+      //print('📤 Sent message to device $toDeviceId');
     } else {
-      print('❌ Socket not connected');
+      //print('❌ Socket not connected');
     }
   }
 
@@ -104,7 +104,7 @@ class SocketService {
     _socket?.disconnect();
     _socket?.dispose();
     _isConnected = false;
-    print('Disconnected from Socket.IO server');
+    //print('Disconnected from Socket.IO server');
   }
 
   // Dispose resources

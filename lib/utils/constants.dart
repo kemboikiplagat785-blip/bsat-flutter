@@ -10,9 +10,10 @@ const kBorderRadius = 6.0;
 const kPagePaddingInsets = EdgeInsets.all(kPagePadding);
 
 // colors
-const kPrimaryColor = Color.fromARGB(255, 83, 235, 113);
+// const kPrimaryColor = Color.fromARGB(255, 83, 235, 113);
 
 const kDarkerGreen = Color.fromARGB(255, 0, 137, 0);
+const kPrimaryColor = kDarkerGreen;
 
 const kBgColor = Color(0xFFF3F3F3);
 const kGrayColor = Color.fromARGB(55, 141, 146, 154);

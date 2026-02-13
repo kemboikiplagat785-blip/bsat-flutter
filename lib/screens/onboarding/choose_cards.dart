@@ -1,5 +1,6 @@
 import 'package:bsat/components/dialogs/check_offers_dialog.dart';
 import 'package:bsat/screens/dashboard/dashboard.dart';
+import 'package:bsat/screens/dashboard/home.dart';
 import 'package:bsat/screens/offers/offers.dart';
 import 'package:bsat/screens/settings/settings.dart';
 import 'package:flutter/cupertino.dart';
@@ -278,7 +279,7 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
                         PageRouteBuilder(
                           pageBuilder:
                               (context, animation, secondaryAnimation) =>
-                                  const DashBoardPage(),
+                                  const HomePage(),
                           transitionsBuilder:
                               (context, animation, secondaryAnimation, child) {
                             // Define your custom animation here

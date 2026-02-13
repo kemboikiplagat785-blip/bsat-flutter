@@ -59,4 +59,5 @@ class DefaultFirebaseOptions {
     projectId: 'bingwasokoniautomationtoolkit',
     storageBucket: 'bingwasokoniautomationtoolkit.firebasestorage.app',
   );
+
 }

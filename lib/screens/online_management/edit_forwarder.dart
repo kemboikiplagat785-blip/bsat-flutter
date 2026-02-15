@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/dialogs/confirmation_dialog.dart';
 import 'package:bsat/components/header.dart';
+import 'package:bsat/screens/online_management/pair_device_page.dart';
+import 'package:bsat/services/auth_service.dart';
+import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +13,7 @@ import 'package:flutter/material.dart';
 import '../../components/chip_input_field.dart';
 import '../../components/device_card.dart';
 import '../../components/dialogs/loading_dialog.dart';
+import '../../components/dialogs/show_error_dialog.dart';
 import '../../services/sqlite_service.dart';
 import 'search_device.dart';
 
@@ -46,6 +50,53 @@ class _EditForwarderState extends State<EditForwarder> {
 
   Future<void> postData() async {
     showLoadingDialog(context, text: "Saving...");
+
+    try {
+      final backendService = BackendService();
+      final myDeviceId = await AuthService().getDeviceId();
+
+      if (myDeviceId == null) {
+        if (mounted) {
+          Navigator.pop(context); // Hide loading
+          showErrorDialog(
+              context, "Error", "Could not determine local device ID.");
+        }
+        return;
+      }
+
+      // Using a likely endpoint. Update if the server expects a different one.
+      final response =
+          await backendService.post('/api/devices/request-pairing', body: {
+        'myDeviceId': myDeviceId,
+        'targetDeviceId': deviceToReceive['device_id'],
+      });
+
+      print("Pairing response: $response");
+
+      if (!response['success']) {
+        if (mounted) {
+          Navigator.pop(context);
+          String errorMessage =
+              response['message'] ?? "Failed to save settings.";
+
+          if (response['error'] != null && response['error'] is Map) {
+            errorMessage = response['error']['error'] ??
+                response['error']['message'] ??
+                errorMessage;
+          }
+
+          showErrorDialog(context, "Error", errorMessage);
+        }
+        // return;
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Hide loading
+        showErrorDialog(context, "Error", "An error occurred: $e");
+      }
+      return;
+    }
+
     if (widget.dbId != null) {
       Map<String, dynamic> updatedData = {
         'device_id': deviceToReceive['device_id'],
@@ -55,6 +106,8 @@ class _EditForwarderState extends State<EditForwarder> {
         'amounts_to_forward': jsonEncode(amountsToForward),
       };
 
+      print("Updating Forwarded Device ID: ${widget.dbId}");
+
       int updatedId = await SQLiteService().updateStuff(
         updatedData,
         'id = ?',
@@ -62,7 +115,7 @@ class _EditForwarderState extends State<EditForwarder> {
         'forwardingDevices',
       );
 
-      //print("Updated Forwarded Device ID: $updatedId");
+      print("Updated Forwarded Device ID: $updatedId");
     } else {
       Map<String, dynamic> newData = {
         'device_id': deviceToReceive['device_id'],
@@ -104,7 +157,7 @@ class _EditForwarderState extends State<EditForwarder> {
           spacing: kPagePadding,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            header(context, "Edit Forward"),
+            header(context, "Forward MPESA Messages"),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
@@ -248,16 +301,15 @@ class _EditForwarderState extends State<EditForwarder> {
                           await postData();
                           Navigator.of(context).pop();
                           Navigator.of(context).pop();
-                          
                         },
                         style: OutlinedButton.styleFrom(
-                          backgroundColor: kPrimaryColor,
+                          // backgroundColor: kPrimaryColor,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(kBorderRadius),
                           ),
                         ),
                         child: const Text("Save",
-                            style: TextStyle(color: kIndigoColor)),
+                            style: TextStyle(color: kPrimaryColor)),
                       ),
                     ],
                   ),

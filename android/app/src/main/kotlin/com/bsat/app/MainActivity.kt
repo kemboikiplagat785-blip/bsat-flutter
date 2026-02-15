@@ -12,6 +12,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
+import io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingBackgroundService;
+
 import android.telecom.TelecomManager
 import android.telephony.SubscriptionManager
 import android.content.Context
@@ -58,11 +60,6 @@ class MainActivity: FlutterActivity() {
                     val firstCode = "*${UssdSession.ussdSteps[0]}#"
                     dialUssd(firstCode, subscriptionId, result)
                     Log.d("UssdSession", "Dialing USSD code: $firstCode")
-                    // Wait for AccessibilityService to send response
-
-                    // This commented because final response isn't provided yet
-                    // UssdResponseHandler.flutterResult = result
-                    // Log.d("UssdSession", "Done? ${UssdResponseHandler.flutterResult}")
 
                     waitForUssdResponse(result)
                 } else {

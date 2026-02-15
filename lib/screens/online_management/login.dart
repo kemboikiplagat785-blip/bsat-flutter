@@ -1,6 +1,6 @@
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/hero.dart';
-import 'package:bsat/screens/dashboard/dashboard.dart';
+import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import './otp.dart';
 import 'package:bsat/screens/online_management/reset_password.dart';
@@ -10,6 +10,7 @@ import 'package:bsat/screens/online_management/online_management.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../components/dialogs/ask_device_name_dialog.dart';
 import '../../services/auth_service.dart';
@@ -58,74 +59,77 @@ class _LoginPageState extends State<LoginPage> {
                 padding: const EdgeInsets.all(20),
                 child: Form(
                   key: _formKey,
-                  child: Column(
-                    children: [
-                      Text(
-                        'Login',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        // style: Theme.of(context).textTheme.headline6,
-                      ),
-                      const SizedBox(height: kPagePadding),
-                      if (error == '')
-                        Container()
-                      else
-                        Container(
-                          padding: kPagePaddingInsets,
-                          margin: const EdgeInsets.only(bottom: kPagePadding),
-                          decoration: BoxDecoration(
-                            color: kErrorColor.withAlpha(20),
-                            borderRadius: BorderRadius.circular(kBorderRadius),
+                  child: AutofillGroup(
+                    child: Column(
+                      children: [
+                        Text(
+                          'Login',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
                           ),
-                          child: Column(
-                            children: [
-                              Text(
-                                error,
-                                style: TextStyle(color: kErrorColor),
-                              ),
-                            ],
-                          ),
+                          // style: Theme.of(context).textTheme.headline6,
                         ),
-                      const SizedBox(height: kPagePadding),
-                      _buildTextField(
-                        'Email',
-                        (value) => email = value,
-                        keyboardType: TextInputType.emailAddress,
-                        isEmail: true,
-                      ),
-                      const SizedBox(height: kPagePadding),
-                      _buildTextField(
-                        'Password',
-                        (value) => password = value,
-                        isPassword: true,
-                      ),
-                      const SizedBox(height: kPagePadding * 2),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
+                        const SizedBox(height: kPagePadding),
+                        if (error == '')
+                          Container()
+                        else
+                          Container(
                             padding: kPagePaddingInsets,
-                            backgroundColor: kPrimaryColor,
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
+                            margin: const EdgeInsets.only(bottom: kPagePadding),
+                            decoration: BoxDecoration(
+                              color: kErrorColor.withAlpha(20),
+                              borderRadius: BorderRadius.circular(kBorderRadius),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  error,
+                                  style: TextStyle(color: kErrorColor),
+                                ),
+                              ],
                             ),
                           ),
-                          onPressed: () {
-                            _handleLogin();
-                          },
-                          child: Text(
-                            'LOGIN',
-                            style: TextStyle(
-                              color: kIndigoColor,
-                              fontWeight: FontWeight.bold,
+                        const SizedBox(height: kPagePadding),
+                        _buildTextField(
+                          'Email',
+                          (value) => email = value,
+                          keyboardType: TextInputType.emailAddress,
+                          isEmail: true,
+                          autofillHints: const [AutofillHints.email],
+                        ),
+                        const SizedBox(height: kPagePadding),
+                        _buildTextField(
+                          'Password',
+                          (value) => password = value,
+                          isPassword: true,
+                          autofillHints: const [AutofillHints.password],
+                        ),
+                        const SizedBox(height: kPagePadding * 2),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              padding: kPagePaddingInsets,
+                              backgroundColor: kPrimaryColor,
+                              shape: RoundedRectangleBorder(
+                                borderRadius:
+                                    BorderRadius.circular(kBorderRadius),
+                              ),
+                            ),
+                            onPressed: () {
+                              _handleLogin();
+                            },
+                            child: Text(
+                              'LOGIN',
+                              style: TextStyle(
+                                color: kIndigoColor,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: kPagePadding),
+                        const SizedBox(height: kPagePadding),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -205,6 +209,7 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ],
                   ),
+                  ),
                 ),
               ),
             ),
@@ -221,8 +226,10 @@ class _LoginPageState extends State<LoginPage> {
     bool isPassword = false,
     bool isEmail = false,
     TextInputType? keyboardType,
+    Iterable<String>? autofillHints,
   }) {
     return TextFormField(
+      autofillHints: autofillHints,
       obscureText: isPassword ? _obscurePassword : false,
       keyboardType: keyboardType,
       decoration: InputDecoration(
@@ -285,6 +292,7 @@ class _LoginPageState extends State<LoginPage> {
 
   void _handleLogin() async {
     if (_formKey.currentState!.validate()) {
+      TextInput.finishAutofillContext();
       setState(() {
         isLoading = true;
       });

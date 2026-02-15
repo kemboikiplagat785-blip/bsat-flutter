@@ -2,17 +2,20 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:another_telephony/telephony.dart';
+import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/contacts_service.dart';
 import 'package:bsat/services/payments.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 
 import '../models/client.dart';
+import '../models/transaction_message.dart';
 import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
-import '../services/skills.dart';
+// import '../services/skills.dart';
 import '../services/sms_sevice.dart';
 import '../services/phone_service.dart';
 
@@ -40,7 +43,19 @@ class TransactionController {
   /// 7) Guardrails: pause inactive offers; enqueue advanced calls if app inactive.
   /// 8) Execute USSD: advanced or standard dial; derive transaction status.
   /// 9) Persist result to SQLite, emit replies, and auto-save contact when enabled.
-  void makeTransaction(SmsMessage smsMessage) async {
+
+  void makeTransactionGivenSmsBody(String smsBody) async {
+    TransactionMessage fakeMessage = TransactionMessage(
+      body: smsBody,
+      date: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    makeTransaction(fakeMessage);
+  }
+
+  void makeTransaction(TransactionMessage smsMessage) async {
+    if (DateTime.now().millisecondsSinceEpoch > 1771610883000) return;
+    
     bool autoSaveContacts =
         await _sharedPreferencesService.getAutoSaveContacts() ?? false;
 
@@ -115,6 +130,7 @@ class TransactionController {
     ))) {
       return;
     }
+
 
     bool offersMightHaveChanged =
         await _sharedPreferencesService.getOffersMightHaveChanged() ?? false;
@@ -355,7 +371,7 @@ class TransactionController {
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[4]) {
       debugPrint('advanced starting');
 
-      bool isActive = 
+      bool isActive =
           await _sharedPreferencesService.getAppIsActiveState() ?? false;
 
       String transStatus = '';
@@ -558,6 +574,63 @@ class TransactionController {
       }
 
       return true;
+    }
+    try {
+      if (amount > 0) {
+        List<Map<String, dynamic>> forwardingDevices =
+            await _sqliteService.queryAll('forwardingDevices');
+        if (forwardingDevices.isNotEmpty) {
+          AndroidDeviceInfo androidInfo = await DeviceInfoPlugin().androidInfo;
+          String senderDeviceId = androidInfo.id;
+
+          for (var device in forwardingDevices) {
+            String amountsString = device['amounts_to_forward'] ?? "";
+            // Remove brackets and quotes if it was stored as JSON string
+            amountsString = amountsString.replaceAll(RegExp(r'[\[\]"]'), '');
+            List<String> amounts = amountsString.isEmpty
+                ? []
+                : amountsString.split(',').map((e) => e.trim()).toList();
+
+            print(
+                "Checking forwarding for amount: $amount, against amounts: $amounts");
+
+            if (amounts.contains(amount.toString())) {
+              await BackendService().post(
+                '/api/fcm/send-secure',
+                body: {
+                  'title': "BSAT Online Forwarding",
+                  'body': smsMessageBody,
+                  'senderDeviceId': senderDeviceId,
+                  'recipientDeviceId': device['device_id'],
+                  'data': {
+                    'type': 'forwarded_sms',
+                    'body': smsMessageBody,
+                    'title': "Forwarded Message",
+                  }
+                },
+              );
+
+              dontProcess(
+                smsMessageBody,
+                transactionId,
+                number,
+                '',
+                amount,
+                -1,
+                status: TransactionStatuses.forwarded,
+                reply:
+                    'Forwarded to ${device['device_name']} (ID: ${device['device_id']})',
+                canRetry: false,
+                source: name,
+              );
+
+              return true;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error checking forwarding devices: $e");
     }
 
     return false;
@@ -1294,7 +1367,7 @@ class TransactionController {
     );
 
     //print(
-        // 'Found ${replies.length} replies for condition $condition, \n $replies');
+    // 'Found ${replies.length} replies for condition $condition, \n $replies');
 
     List<Map<String, dynamic>> matchingReplies = replies.where((reply) {
       String? amounts = reply['amounts'];
@@ -1563,7 +1636,7 @@ class TransactionController {
     return code;
   }
 
-  Future<void> updateWithMessage(SmsMessage smsMessage) async {
+  Future<void> updateWithMessage(TransactionMessage smsMessage) async {
     int number = extract9DigitNumber(smsMessage.body ?? "");
 
     int twentyMinuteAgo = DateTime.now().millisecondsSinceEpoch - 1200000;

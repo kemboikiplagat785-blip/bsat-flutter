@@ -210,7 +210,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                 ),
               ),
             ),
-            const SizedBox(height: kPagePadding * 2),
+            const SizedBox(height: kPagePadding * 7),
           ],
         ),
       ),

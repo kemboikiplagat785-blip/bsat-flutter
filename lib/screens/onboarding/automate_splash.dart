@@ -6,7 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../utils/constants.dart';
-import '../dashboard/dashboard.dart';
+import '../home/dashboard/dashboard.dart';
 
 class AutomatePageSplash extends StatefulWidget {
   const AutomatePageSplash({super.key});

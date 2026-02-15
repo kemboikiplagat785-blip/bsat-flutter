@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:another_telephony/telephony.dart';
 import 'package:background_sms/background_sms.dart' as backgroundSms;
 import 'package:bsat/controllers/transaction_controller.dart';
+import 'package:bsat/models/transaction_message.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/date_ops.dart';
@@ -43,7 +44,13 @@ onMessageReceive(SmsMessage smsMessage) async {
     if (smsMessage.address == "Safaricom" ||
         smsMessage.address!
             .contains(RegExp(r'SAF_OfaMOTO', caseSensitive: false))) {
-      TransactionController().updateWithMessage(smsMessage);
+      TransactionController().updateWithMessage(
+        TransactionMessage(
+          body: smsMessage.body,
+          subscriptionId: smsMessage.subscriptionId,
+          date: smsMessage.date,
+        ),
+      );
     }
     int numb = extract9DigitNumber(smsMessage.address ?? "");
     if (await SQLiteService().getCount(
@@ -63,7 +70,13 @@ onMessageReceive(SmsMessage smsMessage) async {
 
   if (!isActive) return;
 
-  TransactionController().makeTransaction(smsMessage);
+  TransactionController().makeTransaction(
+    TransactionMessage(
+      body: smsMessage.body,
+      subscriptionId: smsMessage.subscriptionId,
+      date: smsMessage.date,
+    ),
+  );
 }
 
 Future<List<SmsMessage>> getAllSms({int? limit}) async {

@@ -346,7 +346,7 @@ class SQLiteService {
       db = await database;
     }
     var result = await db.rawQuery(
-      'SELECT COUNT(*) FROM $table $appendQuery',
+      'SELECT COUNT(*) FROM $table ${appendQuery ?? ''}',
       args,
     );
     return Sqflite.firstIntValue(result) ?? 0;
@@ -506,6 +506,15 @@ class SQLiteService {
       await db.execute(
           'ALTER TABLE $table ADD COLUMN $column $type DEFAULT $defaultValue');
     }
+  }
+
+  Future<void> clearTable(String table) async {
+    Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
+    await db.delete(table);
   }
 
   Future<List<Map<String, dynamic>>> getCountOfAmountsByDate() async {

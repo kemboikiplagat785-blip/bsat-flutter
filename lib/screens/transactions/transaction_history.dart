@@ -844,6 +844,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                 ),
               ),
             ),
+            const SizedBox(height: kPagePadding * 7),
           ],
         ),
       ),

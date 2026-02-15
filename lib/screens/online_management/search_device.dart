@@ -8,7 +8,8 @@ import '../../services/auth_service.dart';
 import '../../utils/constants.dart';
 
 class SearchDevicePage extends StatefulWidget {
-  const SearchDevicePage({super.key});
+  final String query;
+  const SearchDevicePage({super.key, this.query = ""});
 
   @override
   State<SearchDevicePage> createState() => _SearchDevicePageState();
@@ -44,6 +45,16 @@ class _SearchDevicePageState extends State<SearchDevicePage> {
     setState(() {
       isLoading = false;
     });
+  }
+
+  @override
+  void initState() {
+    // TODO: implement initState
+    super.initState();
+    searchController.text = widget.query;
+    if (widget.query.isNotEmpty) {
+      searchDevices();
+    }
   }
 
   @override

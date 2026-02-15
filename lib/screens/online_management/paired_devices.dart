@@ -6,6 +6,9 @@ import 'package:bsat/components/dialogs/show_error_dialog.dart';
 import 'package:bsat/components/dialogs/success_dialog.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/screens/online_management/edit_forwarder.dart';
+import 'package:bsat/screens/online_management/pair_device_page.dart';
+import 'package:bsat/services/auth_service.dart';
+import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -23,26 +26,102 @@ class ForwardReceiveOnlinePage extends StatefulWidget {
 }
 
 class _ForwardReceiveOnlinePageState extends State<ForwardReceiveOnlinePage> {
-  List<Map<String, dynamic>> receivingDevices = [];
+  List<Map<String, dynamic>> pairedDevices = [];
   List<Map<String, dynamic>> forwardingDevices = [];
 
-  Future<void> getData() async {
-    List<Map<String, dynamic>> recvDevices =
-        await SQLiteService().queryAll('whitelistedDevices');
+  int pendingPairs = 0;
 
-    List<Map<String, dynamic>> fwdDevices =
-        await SQLiteService().queryAll('forwardingDevices');
+  BackendService backendService = BackendService();
 
-    setState(() {
-      receivingDevices = recvDevices;
-      forwardingDevices = fwdDevices;
+  Future<void> _unlinkDevice(String targetDeviceId) async {
+    bool confirmed = await showConfirmDeleteDialog(context,
+            message: "Are you sure you want to unlink this device?") ??
+        false;
+    if (!confirmed) return;
+
+    if (!mounted) return;
+    showLoadingDialog(context, text: "Unlinking Device...");
+
+    String? myDeviceId = await AuthService().getDeviceId();
+    final response = await backendService.post('/api/device/unlink', body: {
+      'myDeviceId': myDeviceId,
+      'otherDeviceId': targetDeviceId,
     });
+
+    if (mounted) Navigator.of(context).pop();
+
+    if (response['success']) {
+      await getData();
+      if (mounted) showSuccessDialog(context, text: "Device unlinked");
+    } else {
+      if (mounted) {
+        showErrorDialog(context, "Error",
+            response['message'] ?? "Failed to unlink device.");
+      }
+    }
+  }
+
+  Future<void> getData() async {
+    // get data from endpoint /whitelisted
+    // then update whitelistedDevices with the new data
+    showLoadingDialog(  context, text: "Fetching paired devices...");
+    pairedDevices = await backendService
+        .get('/api/device/whitelisted')
+        .then((response) async {
+      if (response['success']) {
+        print("Whitelisted devices from server: ${response['data']}");
+        final data = response['data'];
+        if (data != null && data['devices'] != null) {
+          List<Map<String, dynamic>> devices =
+              List<Map<String, dynamic>>.from(data['devices']);
+          await SQLiteService().clearTable('whitelistedDevices');
+          print("Cleared local whitelistedDevices table, ${SQLiteService().getCount('whitelistedDevices')} records now.");
+          for (var device in devices) {
+            await SQLiteService().insertStuff(device, 'whitelistedDevices');
+          }
+          return devices;
+        }
+        return <Map<String, dynamic>>[];
+      } else {
+        print("Failed to fetch whitelisted devices: ${response['message']}");
+        return <Map<String, dynamic>>[];
+      }
+    });
+
+    pendingPairs = await backendService
+        .get('/api/device/pending-pairings?myDeviceId=${await AuthService().getDeviceId()}')
+        .then((response) {
+      if (response['success']) {
+        print("Pending pairing requests: ${response['data']}");
+        final data = response['data'];
+        if (data != null && data['requests'] != null) {
+          return (data['requests'] as List).length;
+        }
+      } else {
+        print(
+            "Failed to fetch pending pairing requests: ${response['message']}");
+      }
+      return 0;
+    });
+
+    if (pairedDevices.isEmpty) {
+      // If we couldn't fetch from server, fallback to local database
+      pairedDevices = await SQLiteService().queryAll('whitelistedDevices');
+    }
+
+    forwardingDevices = await SQLiteService().queryAll('forwardingDevices');
+
+    Navigator.of(context).pop(); // Hide loading
+
+    setState(() {});
   }
 
   @override
   void initState() {
     super.initState();
-    getData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      getData();
+    });
   }
 
   @override
@@ -51,7 +130,7 @@ class _ForwardReceiveOnlinePageState extends State<ForwardReceiveOnlinePage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            header(context, "Online Forwarder"),
+            header(context, "Paired Devices"),
             const SizedBox(height: kPagePadding * 2),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
@@ -59,13 +138,103 @@ class _ForwardReceiveOnlinePageState extends State<ForwardReceiveOnlinePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 // spacing: kPagePadding / 2,
                 children: [
-                  Text(
-                    "Receiving",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  Text("Always process messages from the following devices:"),
+                  Text("Send and receive MPESA messages online between paired devices"),
                   const SizedBox(height: kPagePadding),
-                  if (receivingDevices.isEmpty)
+                  Divider(),
+                  const SizedBox(height: kPagePadding * 2),
+                  Text("Paired Devices", style: TextStyle(fontWeight: FontWeight.bold),),
+
+                  Text("Process messages from the following devices"),
+                  const SizedBox(height: kPagePadding),
+                  pendingPairs > 0
+                      ? Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  PageRouteBuilder(
+                                    pageBuilder: (context, animation,
+                                            secondaryAnimation) =>
+                                        PairDevicePage(),
+                                    transitionsBuilder: (context, animation,
+                                        secondaryAnimation, child) {
+                                      return CupertinoPageTransition(
+                                        primaryRouteAnimation: animation,
+                                        secondaryRouteAnimation:
+                                            secondaryAnimation,
+                                        linearTransition: true,
+                                        child: child,
+                                      );
+                                    },
+                                  ),
+                                ).then((_) => getData());
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  // color: Colors.white,
+                                  color: Theme.of(context).cardColor,
+                                  borderRadius:
+                                      BorderRadius.circular(kBorderRadius),
+                                  border: Border(
+                                    bottom: BorderSide(
+                                      // color: Theme.of(context).hintColor,
+                                      color: kIndigoColor,
+                                      width: 4,
+                                    ),
+                                    right: BorderSide(
+                                      // color: Theme.of(context).hintColor,
+                                      color: kIndigoColor,
+                                      width: 4,
+                                    ),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      "Pending Pairing Requests",
+                                      style: TextStyle(
+                                          // fontSize: 14,
+                                          // color: Colors.grey,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                                CupertinoIcons
+                                                    .exclamationmark_triangle,
+                                                color: Colors.orangeAccent),
+                                            const SizedBox(width: 10),
+                                            Text(
+                                              "$pendingPairs pending pairing request${pendingPairs != 1 ? 's' : ''}",
+                                              style: const TextStyle(
+                                                // fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        Icon(CupertinoIcons.chevron_right,
+                                            color: kIndigoColor),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: kPagePadding),
+                          ],
+                        )
+                      : SizedBox.shrink(),
+
+                  if (pairedDevices.isEmpty)
                     Padding(
                       padding:
                           const EdgeInsets.symmetric(vertical: kPagePadding),
@@ -75,43 +244,25 @@ class _ForwardReceiveOnlinePageState extends State<ForwardReceiveOnlinePage> {
                       ),
                     )
                   else
-                    ...receivingDevices.map((device) {
+                    ...pairedDevices.map((device) {
                       return InkWell(
                         onTap: () async {
-                          bool confirmed =
-                              await showConfirmDeleteDialog(context) ?? false;
-
-                          if (confirmed) {
-                            showLoadingDialog(
-                              context,
-                              text: "Removing Device...",
-                            );
-                            int deleteId = await SQLiteService().deleteWhere(
-                              'whitelistedDevices',
-                              'device_id = ?',
-                              [device['device_id']],
-                            );
-                            Navigator.of(context).pop();
-                            getData();
-                            if (deleteId >= 0) {
-                              showSuccessDialog(
-                                context,
-                                text: "Deleted device",
-                              );
-                            } else {
-                              showErrorDialog(
-                                context,
-                                "Error",
-                                "Failed to delete device.",
-                              );
-                            }
-                          }
+                          await _unlinkDevice(device['device_id']);
                         },
                         child: deviceCard(
                           context: context,
                           deviceName: device['device_name'],
                           deviceDetails: "${device['owner_email']}",
                           iconData: Icons.devices,
+                          trailing: IconButton(
+                            onPressed: () async {
+                              await _unlinkDevice(device['device_id']);
+                            },
+                            icon: Icon(
+                              CupertinoIcons.xmark_circle,
+                              color: Colors.redAccent,
+                            ),
+                          ),
                         ),
                       );
                     }).toList(),
@@ -119,11 +270,11 @@ class _ForwardReceiveOnlinePageState extends State<ForwardReceiveOnlinePage> {
                   Center(
                     child: InkWell(
                       onTap: () async {
-                        Map deviceDetails = await Navigator.of(context).push(
+                        await Navigator.of(context).push(
                           PageRouteBuilder(
                             pageBuilder:
                                 (context, animation, secondaryAnimation) =>
-                                    SearchDevicePage(),
+                                    PairDevicePage(),
                             transitionsBuilder: (context, animation,
                                 secondaryAnimation, child) {
                               return CupertinoPageTransition(
@@ -135,22 +286,7 @@ class _ForwardReceiveOnlinePageState extends State<ForwardReceiveOnlinePage> {
                             },
                           ),
                         );
-                        Map<String, dynamic> deviceToInsert = {
-                          'device_name': deviceDetails['device_name'],
-                          'device_id': deviceDetails['device_id'],
-                          'owner_email': deviceDetails['owner_email'],
-                          'user_id': deviceDetails['user_id'],
-                        };
-
-                        // Insert the device into the database
-                        await SQLiteService().insertStuff(
-                          deviceToInsert,
-                          'whitelistedDevices',
-                        );
-
                         await getData();
-
-                        //print("Selected Device Details: $deviceDetails");
                       },
                       child: Container(
                         padding: kPagePaddingInsets,
@@ -235,7 +371,8 @@ class _ForwardReceiveOnlinePageState extends State<ForwardReceiveOnlinePage> {
                                   ...amounts.map(
                                     (amt) => Chip(
                                       padding: EdgeInsets.symmetric(
-                                          horizontal: kPagePadding / 4, vertical: 0),
+                                          horizontal: kPagePadding / 4,
+                                          vertical: 0),
                                       labelPadding: EdgeInsets.symmetric(
                                           horizontal: 0, vertical: 0),
                                       label: Text(amt),

@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../components/hero.dart';
 import '../../utils/constants.dart';
-import '../dashboard/dashboard.dart';
+import '../home/dashboard/dashboard.dart';
 
 class UpdatedToolkitPageSplash extends StatefulWidget {
   const UpdatedToolkitPageSplash({super.key});

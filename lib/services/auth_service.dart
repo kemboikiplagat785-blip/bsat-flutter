@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 
 class AuthService {
@@ -259,6 +260,8 @@ class AuthService {
 
       var deviceInfo = await DeviceInfoPlugin().androidInfo;
 
+      String? fcmToken = await FirebaseMessaging.instance.getToken();
+
       final userInfo = await getUserInfo();
       final userId = userInfo['id'] ?? '';
 
@@ -279,6 +282,7 @@ class AuthService {
         body: jsonEncode({
           'deviceName': name ?? deviceInfo.device,
           'deviceId': deviceInfo.id,
+          'fcmToken': fcmToken,
           'model': deviceInfo.model,
           'androidVersion': deviceInfo.version.release,
           'createdAtMillis': DateTime.now().millisecondsSinceEpoch,
@@ -320,7 +324,8 @@ class AuthService {
     try {
       var jwtToken = await getToken();
 
-      //print(jwtToken);
+      print(jwtToken);
+      print(query);
 
       if (jwtToken == null || jwtToken.isEmpty) {
         //print('No JWT token available');
@@ -338,7 +343,7 @@ class AuthService {
         },
       );
 
-      //print('Search Device Response status: ${response.body}');
+      print('Search Device Response status: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);

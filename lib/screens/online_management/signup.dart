@@ -117,7 +117,7 @@ class _SignupPageState extends State<SignupPage> {
                           ),
                           child: Row(
                             children: [
-                              Text('bundles.bsat.co.ke/'),
+                              Text('bingwa.bsat.co.ke/'),
                               Expanded(
                                 child: _buildTextField(
                                   'Link url',
@@ -274,6 +274,7 @@ class _SignupPageState extends State<SignupPage> {
           String deviceName =
               (await DeviceInfoPlugin().androidInfo).name ?? "Unknown Device";
           deviceName = await showAskDeviceNameDialog(context, deviceName) ?? "";
+          print("Device name: $deviceName");
           await AuthService().registerDeviceInfo(name: deviceName);
           //print('Device registered: $deviceName');
           Navigator.of(context).pop(true);

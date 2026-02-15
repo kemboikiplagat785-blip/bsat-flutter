@@ -1,11 +1,15 @@
 import 'package:bsat/components/header.dart';
-import 'package:bsat/screens/online_management/forward_receive.dart';
+import 'package:bsat/components/profile_card.dart';
+import 'package:bsat/screens/online_management/paired_devices.dart';
 import 'package:bsat/screens/online_management/login.dart';
 import 'package:bsat/screens/online_management/my_online_presence.dart';
+import 'package:bsat/screens/online_management/pair_device_page.dart';
 import 'package:bsat/screens/settings/coming_soon.dart';
+import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../components/dialogs/confirm_delete_dialog.dart';
 import '../../services/auth_service.dart';
 
 class OnlineManagementScreen extends StatefulWidget {
@@ -17,6 +21,11 @@ class OnlineManagementScreen extends StatefulWidget {
 
 class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
   // var myFirebaseAuth = MyFirebaseAuth();
+
+  String name = "John Doe";
+  String webLink = "www.johndoe.com";
+  String email = "john.doe@example.com";
+  int numberOfDevices = 3;
 
   bool isSignedIn = true;
   String myDeviceId = '';
@@ -47,6 +56,17 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
           builder: (context) => LoginPage(),
         ),
       );
+    } else {
+      // Fetch user details if needed
+      SharedPreferencesService sharedPreferencesService =
+          SharedPreferencesService();
+
+      name = await sharedPreferencesService.getUserName() ?? "Bingwa";
+      webLink =
+          "https://bingwa.bsat.co.ke/${await sharedPreferencesService.getLinkExtension()}" ??
+              "bingwa";
+      email = await sharedPreferencesService.getUserEmail() ?? "";
+      setState(() {});
     }
 
     setState(() {});
@@ -55,102 +75,112 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          header(context, 'Online Management'),
-          Container(
-            padding: kPagePaddingInsets,
-            child: Row(
-              // spacing: kPagePadding / 2,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                ElevatedButton(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    backgroundColor: kPrimaryColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(kBorderRadius),
-                    ),
-                  ),
-                  child: Text(
-                    "Subscription expiry: ",
-                    style: TextStyle(color: kIndigoColor),
-                  ),
-                ),
-                Row(
-                  children: [
-                    IconButton(
-                      style: IconButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(kBorderRadius),
-                        ),
-                        backgroundColor: kIndigoColor.withOpacity(.1),
-                      ),
-                      onPressed: () {},
-                      icon: Icon(CupertinoIcons.person, color: kIndigoColor),
-                    ),
-                    IconButton(
-                      style: IconButton.styleFrom(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(kBorderRadius),
-                        ),
-                        backgroundColor: Theme.of(context).cardColor,
-                      ),
-                      onPressed: () async {
-                        await AuthService().logout();
-                      },
-                      icon: Icon(CupertinoIcons.gear),
-                    ),
-                  ],
-                ),
-              ],
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            header(context, 'Online Management'),
+            Padding(
+              padding: kPagePaddingInsets,
+              child: ProfileCard(
+                name: name,
+                webLink: webLink,
+                numberOfDevices: numberOfDevices,
+                email: email,
+              ),
             ),
-          ),
-          _actionButton(
-            context,
-            title: 'Sell data online + buy for another number',
-            subtitle: 'My link',
-            icon: Icon(CupertinoIcons.link, color: kIndigoColor),
-            onTap: () {
-              Navigator.of(context).push(
-                CupertinoPageRoute(
-                  builder: (context) => MyOnlinePresencePage(),
+            Container(
+              margin: kPagePaddingInsets,
+              width: double.infinity,
+              padding: kPagePaddingInsets,
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(kBorderRadius),
+                image: DecorationImage(
+                  image: AssetImage('assets/images/mesh.png'),
+                  alignment: Alignment.centerLeft,
+                  fit: BoxFit.cover,
+                  opacity: 0.1,
                 ),
-              );
-            },
-          ),
-          _actionButton(
-            context,
-            title: 'share messages between trusted devices online',
-            subtitle: 'Forward/receive requests',
-            icon: Icon(CupertinoIcons.arrow_right_arrow_left,
-                color: kPrimaryColor),
-            onTap: () async {
-              Navigator.of(context).push(
-                CupertinoPageRoute(
-                  builder: (context) => ForwardReceiveOnlinePage(),
-                ),
-              );
-            },
-          ),
-          _actionButton(
-            context,
-            title: 'view/manage your phones through a common dashboard',
-            subtitle: 'Remote Device Control',
-            icon: Icon(CupertinoIcons.device_laptop, color: kErrorColor),
-            onTap: () {
-              Navigator.of(context).push(
-                CupertinoPageRoute(
-                  builder: (context) => ComingSoonPage(),
-                ),
-              );
-            },
-          ),
-        ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Premium Subscription Expiry (online + offline features)",
+                    style: TextStyle(
+                        color: kPrimaryColor, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: kPagePadding),
+                  Text(
+                    "31${interpunct}02${interpunct}2025 12:00hrs",
+                  ),
+                ],
+              ),
+            ),
+            _actionButton(
+              context,
+              title: 'Sell data online + buy for another number',
+              subtitle: 'Online Presence',
+              icon: Icon(CupertinoIcons.link, color: kIndigoColor),
+              onTap: () {
+                Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (context) => MyOnlinePresencePage(),
+                  ),
+                );
+              },
+            ),
+            _actionButton(
+              context,
+              title: 'share messages between trusted devices online',
+              subtitle: 'Paired Devices',
+              icon: Icon(CupertinoIcons.arrow_right_arrow_left,
+                  color: kPrimaryColor),
+              onTap: () async {
+                Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (context) => ForwardReceiveOnlinePage(),
+                  ),
+                );
+              },
+            ),
+            _actionButton(
+              context,
+              title: 'view/manage your phones through a common dashboard',
+              subtitle: 'Remote Device Control',
+              icon: Icon(CupertinoIcons.device_laptop, color: kErrorColor),
+              onTap: () {
+                Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (context) => ComingSoonPage(),
+                  ),
+                );
+              },
+            ),
+            _actionButton(
+              context,
+              title: 'End Session',
+              subtitle: 'Sign out',
+              icon: Icon(CupertinoIcons.power, color: kErrorColor),
+              onTap: () async {
+                bool confirmed = await showConfirmDeleteDialog(
+                      context,
+                      title: "Confirm Sign Out",
+                      message:
+                          "Are you sure you want to sign out from all devices ?",
+                    ) ??
+                    false;
+
+                if (!confirmed) return;
+
+                await AuthService().logout();
+
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+            ),
+            const SizedBox(height: kPagePadding * 5),
+          ],
+        ),
       ),
     );
   }

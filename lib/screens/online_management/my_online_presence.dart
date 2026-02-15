@@ -106,7 +106,7 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                     child: Row(
                       children: [
                         Text(
-                          'https://bundles.bsat.co.ke/',
+                          'https://bingwa.bsat.co.ke/',
                           style: TextStyle(color: Colors.grey),
                         ),
                         Expanded(
@@ -141,7 +141,7 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                           Clipboard.setData(
                             ClipboardData(
                               text:
-                                  'https://bundles.bsat.co.ke/${_linkController.text}',
+                                  'https://bingwa.bsat.co.ke/${_linkController.text}',
                             ),
                           );
 
@@ -187,7 +187,7 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                                         .pop(); // close loading dialog
                                     showSuccessDialog(context,
                                         text:
-                                            "Link updated successfully to https://buy.bsat.co.ke/$linkExtension");
+                                            "Link updated successfully to https://bingwa.bsat.co.ke/$linkExtension");
                                   }
                                   setState(() {});
                                 } else {

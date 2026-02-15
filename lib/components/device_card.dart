@@ -16,34 +16,39 @@ Widget deviceCard({
       color: Theme.of(context).cardColor,
     ),
     child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Icon(iconData, size: 40.0),
-        const SizedBox(width: kPagePadding / 1.5),
-        Column(
+        Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              deviceName,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16.0,
-              ),
+            Icon(iconData, size: 40.0, color: kIndigoColor),
+            const SizedBox(width: kPagePadding / 1.5),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  deviceName,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    // fontSize: 16.0,
+                  ),
+                ),
+                Text(
+                  deviceDetails,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    // fontSize: 14.0,
+                  ),
+                ),
+              ],
             ),
-            Text(
-              deviceDetails,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14.0,
-              ),
-            ),
-            if (trailing != null) ...[
-              const SizedBox(height: 8.0),
-              trailing,
-            ],
+            // const SizedBox(width: kPagePadding / 4),
           ],
         ),
-        const SizedBox(width: kPagePadding / 4),
+        if (trailing != null) ...[
+          const SizedBox(height: 8.0),
+          trailing,
+        ],
       ],
     ),
   );

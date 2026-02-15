@@ -4,6 +4,8 @@ import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../../services/backend_service.dart';
+
 class SendMessagePage extends StatefulWidget {
   const SendMessagePage({super.key});
 
@@ -17,92 +19,101 @@ class _SendMessagePageState extends State<SendMessagePage> {
   bool _isLoading = false;
 
   void _handleSend() async {
-    if (_titleController.text.isEmpty || _bodyController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter both title and message")),
-      );
-      return;
-    }
+    final BackendService _backendService = BackendService();
+    
+    final result = await _backendService.sendMessage(
+    title: "Hello",
+    body: "World",
+    topic: "general"
+  );
 
-    setState(() => _isLoading = true);
+    debugPrint("Send Message Result: $result");
+    // if (_titleController.text.isEmpty || _bodyController.text.isEmpty) {
+    //   ScaffoldMessenger.of(context).showSnackBar(
+    //     const SnackBar(content: Text("Please enter both title and message")),
+    //   );
+    //   return;
+    // }
 
-    try {
-      // For local testing, we connect to a backend server running on our machine
-      // This is because the FCM HTTP v1 API requires server-side authentication.
-      // 1. Run the server: `cd server && npm install && node index.js`
-      // 2. Connect device via USB and run `adb reverse tcp:3000 tcp:3000` (for Android)
-      //    This maps the device's localhost:3000 to your PC's localhost:3000
+    // setState(() => _isLoading = true);
 
-      // Use `http://10.0.2.2:3000/send` for Android Emulator
-      // Use `http://localhost:3000/send` for iOS Simulator
-      // Use `http://192.168.x.x:3000/send` for real device over Wi-Fi
+    // try {
+    //   // For local testing, we connect to a backend server running on our machine
+    //   // This is because the FCM HTTP v1 API requires server-side authentication.
+    //   // 1. Run the server: `cd server && npm install && node index.js`
+    //   // 2. Connect device via USB and run `adb reverse tcp:3000 tcp:3000` (for Android)
+    //   //    This maps the device's localhost:3000 to your PC's localhost:3000
+
+    //   // Use `http://10.0.2.2:3000/send` for Android Emulator
+    //   // Use `http://localhost:3000/send` for iOS Simulator
+    //   // Use `http://192.168.x.x:3000/send` for real device over Wi-Fi
       
-      // We'll assume successful ADB reverse mapping for real Android devices
-      const String serverUrl = 'http://127.0.0.1:3000/send'; 
+    //   // We'll assume successful ADB reverse mapping for real Android devices
+    //   const String serverUrl = 'http://api.bsat.co.ke/api/fcm/send'; 
 
-      final response = await http.post(
-        Uri.parse(serverUrl),
-        headers: <String, String>{
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(
-          <String, dynamic>{
-            'title': _titleController.text,
-            'body': _bodyController.text,
-            'topic': 'general',
-          },
-        ),
-      );
+    //   final response = await http.post(
+    //     Uri.parse(serverUrl),
+    //     headers: <String, String>{
+    //       'Content-Type': 'application/json',
+    //     },
+    //     body: jsonEncode(
+    //       <String, dynamic>{
+    //         'title': _titleController.text,
+    //         'body': _bodyController.text,
+    //         'topic': 'general',
+    //       },
+    //     ),
+    //   );
 
-      debugPrint("Server Response: ${response.statusCode} - ${response.body}");
+    //   debugPrint("Server Response: ${response.statusCode} - ${response.body}");
 
-      setState(() => _isLoading = false);
+    //   setState(() => _isLoading = false);
 
-      if (mounted) {
-        if (response.statusCode == 200) {
-          showCupertinoDialog(
-            context: context,
-            builder: (ctx) => CupertinoAlertDialog(
-              title: const Text("Message Sent"),
-              content: const Text(
-                  "Your message has been queued successfully via the backend."),
-              actions: [
-                CupertinoDialogAction(
-                  child: const Text("OK"),
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ],
-            ),
-          );
-        } else {
-          // Fallback message if server is unreachable
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  "Failed to send: ${response.statusCode}. Is the server running?"),
-              action: SnackBarAction(
-                label: "Retry",
-                onPressed: _handleSend,
-              ),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      setState(() => _isLoading = false);
-      debugPrint("Error sending request to backend: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Error connecting to server: $e\nEnsure 'adb reverse tcp:3000 tcp:3000' is run."),
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
-    }
+    //   if (mounted) {
+    //     if (response.statusCode == 200) {
+    //       showCupertinoDialog(
+    //         context: context,
+    //         builder: (ctx) => CupertinoAlertDialog(
+    //           title: const Text("Message Sent"),
+    //           content: const Text(
+    //               "Your message has been queued successfully via the backend."),
+    //           actions: [
+    //             CupertinoDialogAction(
+    //               child: const Text("OK"),
+    //               onPressed: () {
+    //                 Navigator.of(ctx).pop();
+    //                 Navigator.of(context).pop();
+    //               },
+    //             ),
+    //           ],
+    //         ),
+    //       );
+    //     } else {
+    //       // Fallback message if server is unreachable
+    //       ScaffoldMessenger.of(context).showSnackBar(
+    //         SnackBar(
+    //           content: Text(
+    //               "Failed to send: ${response.statusCode}. Is the server running?"),
+    //           action: SnackBarAction(
+    //             label: "Retry",
+    //             onPressed: _handleSend,
+    //           ),
+    //         ),
+    //       );
+    //     }
+    //   }
+    // } catch (e) {
+    //   setState(() => _isLoading = false);
+    //   debugPrint("Error sending request to backend: $e");
+    //   if (mounted) {
+    //     ScaffoldMessenger.of(context).showSnackBar(
+    //       SnackBar(
+    //         content: Text("Error connecting to server: $e\nEnsure 'adb reverse tcp:3000 tcp:3000' is run."),
+    //         duration: const Duration(seconds: 5),
+    //       ),
+    //     );
+    //   }
+    // }
   }
 
   @override

@@ -1,8 +1,8 @@
 // import 'dart:ui';
 
 import 'package:bsat/firebase_options.dart';
-import 'package:bsat/screens/dashboard/dashboard.dart';
-import 'package:bsat/screens/dashboard/home.dart';
+import 'package:bsat/screens/home/dashboard/dashboard.dart';
+import 'package:bsat/screens/home/home.dart';
 import 'package:bsat/screens/onboarding/main_page.dart';
 import 'package:bsat/services/firebase_messaging_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
@@ -33,8 +33,8 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   
-  // Initialize Firebase Messaging
-  await FirebaseMessagingService().initNotifications();
+  // Initialize Firebase Messaging (Don't await to prevent blocking startup)
+  FirebaseMessagingService().initNotifications();
 
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 

@@ -1,4 +1,4 @@
-import 'package:bsat/screens/dashboard/dashboard.dart';
+import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
@@ -28,11 +28,13 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBgColor,
+      // backgroundColor: kBgColor,
       extendBody: true,
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _pages,
+      body: SafeArea(
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: _pages,
+        ),
       ),
       bottomNavigationBar: Container(
         margin: const EdgeInsets.fromLTRB(
@@ -42,7 +44,8 @@ class _HomePageState extends State<HomePage> {
           borderRadius: BorderRadius.circular(kBorderRadius),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.8),
+              // color: Colors.black.withOpacity(0.8),
+              color: kIndigoColor,
               blurRadius: 0,
               offset: const Offset(5, 5),
             ),

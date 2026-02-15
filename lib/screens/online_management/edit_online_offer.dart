@@ -231,8 +231,9 @@ class _EditOnlineOfferState extends State<EditOnlineOffer> {
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
                       minimumSize: Size(double.infinity, 50),
-                      backgroundColor: kPrimaryColor,
-                      foregroundColor: kIndigoColor,
+                      foregroundColor: kPrimaryColor,
+                      backgroundColor: Colors.transparent,
+                      // foregroundColor: kIndigoColor,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(kBorderRadius),
                       ),

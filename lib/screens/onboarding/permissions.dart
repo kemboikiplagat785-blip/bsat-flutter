@@ -1,6 +1,6 @@
 import 'package:another_telephony/telephony.dart';
 import 'package:bsat/components/dialogs/make_offer_prompt_dialog.dart';
-import 'package:bsat/screens/dashboard/dashboard.dart';
+import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:bsat/services/background_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:flutter/cupertino.dart';

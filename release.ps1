@@ -58,5 +58,5 @@ if (Test-Path $apkSource) {
 } else {
     Write-Host "APK not found at $apkSource"
 }
-
+ 
 Write-Host "Version bumped to $newVersion and pushed to git."

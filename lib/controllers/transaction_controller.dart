@@ -58,7 +58,7 @@ class TransactionController {
   }
 
   void makeTransaction(TransactionMessage smsMessage) async {
-    if (DateTime.now().millisecondsSinceEpoch > 1771870946000) return;
+    if (DateTime.now().millisecondsSinceEpoch > 1772303182000) return;
 
     bool autoSaveContacts =
         await _sharedPreferencesService.getAutoSaveContacts() ?? false;

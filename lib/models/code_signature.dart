@@ -22,6 +22,7 @@ class CodeSignature {
   final List<Map<String, String>> importantSteps;
   bool? mightBeCompromised;
   bool? autoSwitch;
+  bool? isActive;
 
   CodeSignature({
     this.id,
@@ -32,6 +33,7 @@ class CodeSignature {
     List<Map<String, String>>? importantSteps,
     bool? mightBeCompromised = false,
     this.autoSwitch = false,
+    this.isActive = true,
   }) : importantSteps = importantSteps ?? [];
 
   /// Create a CodeSignature from a DB row (Map<String, dynamic>)
@@ -51,6 +53,7 @@ class CodeSignature {
       importantSteps: _decodeImportantSteps(map['importantSteps']),
       mightBeCompromised: _parseBoolFromDynamic(map['mightBeCompromised']),
       autoSwitch: _parseBoolFromDynamic(map['autoSwitch']),
+      isActive: _parseBoolFromDynamic(map['isActive']),
     );
   }
 
@@ -65,6 +68,7 @@ class CodeSignature {
       'mightBeCompromised':
           mightBeCompromised == true ? 1 : 0, // Store as int in DB
       'autoSwitch': autoSwitch == true ? 1 : 0,
+      'isActive': isActive == true ? 1 : 0,
     };
     if (id != null) m['id'] = id;
     return m;
@@ -208,6 +212,7 @@ class CodeSignature {
         'importantSteps': importantSteps,
         'mightBeCompromised': mightBeCompromised,
         'autoSwitch': autoSwitch,
+        'isActive': isActive,
       };
 
   /// Create from JSON (inverse of toJson)
@@ -248,7 +253,9 @@ class CodeSignature {
     List<Map<String, dynamic>>? lastProcedure,
     List<Map<String, String>>? importantSteps,
     bool? mightBeCompromised,
-    bool? autoSwitch,}) {    return CodeSignature(
+    bool? autoSwitch, 
+    bool? isActive,
+    }) {    return CodeSignature(
       id: id ?? this.id,
       ussdCodeId: ussdCodeId ?? this.ussdCodeId,
       usdCode: usdCode ?? this.usdCode,
@@ -257,12 +264,13 @@ class CodeSignature {
       importantSteps: importantSteps ?? this.importantSteps,
       mightBeCompromised: mightBeCompromised ?? this.mightBeCompromised,
       autoSwitch: autoSwitch ?? this.autoSwitch,
+      isActive: isActive ?? this.isActive,
     );
   }
 
   @override
   String toString() {
-    return 'CodeSignature(id: $id, ussdCodeId: $ussdCodeId, usdCode: $usdCode, acceptedProcedure: $acceptedProcedure, lastProcedure: $lastProcedure, importantSteps: $importantSteps, mightBeCompromised: $mightBeCompromised), autoSwitch: $autoSwitch)';
+    return 'CodeSignature(id: $id, ussdCodeId: $ussdCodeId, usdCode: $usdCode, acceptedProcedure: $acceptedProcedure, lastProcedure: $lastProcedure, importantSteps: $importantSteps, mightBeCompromised: $mightBeCompromised, autoSwitch: $autoSwitch, isActive: $isActive)';
   }
 
   Map<String, dynamic> sqlSavableForm() {
@@ -283,6 +291,7 @@ class CodeSignature {
       // SQL uses 1 for true and 0 for false
       'mightBeCompromised': (mightBeCompromised == true) ? 1 : 0,
       'autoSwitch': (autoSwitch == true) ? 1 : 0,
+      'isActive': (isActive == true) ? 1 : 0,
     };
   }
 }

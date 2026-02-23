@@ -124,6 +124,7 @@ class SQLiteService {
           token_count INTEGER DEFAULT 0
         )''',
     );
+    
     await db.execute(
       '''CREATE TABLE blacklist (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,7 +191,8 @@ class SQLiteService {
           lastProcedure TEXT,
           importantSteps TEXT,
           mightBeCompromised INTEGER DEFAULT 0,
-          autoSwitch INTEGER DEFAULT 0
+          autoSwitch INTEGER DEFAULT 0,
+          isActive INTEGER DEFAULT 1
         )''',
     );
 
@@ -292,7 +294,8 @@ class SQLiteService {
           lastProcedure TEXT,
           importantSteps TEXT,
           mightBeCompromised INTEGER DEFAULT 0,
-          autoSwitch INTEGER DEFAULT 0
+          autoSwitch INTEGER DEFAULT 0,
+          isActive INTEGER DEFAULT 1
           )''',
       );
 
@@ -362,6 +365,13 @@ class SQLiteService {
       try {
         await db.execute(
             'ALTER TABLE codeSignature ADD COLUMN autoSwitch INTEGER DEFAULT 0');
+      } catch (e) {
+        // column may already exist
+      }
+      // Add isActive column to codeSignature table
+      try {
+        await db.execute(
+            'ALTER TABLE codeSignature ADD COLUMN isActive INTEGER DEFAULT 1');
       } catch (e) {
         // column may already exist
       }

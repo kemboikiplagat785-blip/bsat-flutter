@@ -373,7 +373,8 @@ class DashboardToolsSection extends StatelessWidget {
                         // SharedPreferencesService().printAll();
 
                         int startTime = DateTime.now().millisecondsSinceEpoch;
-                        for (int i = 0; i < 2; i++) {
+                        for (int i = 0; i < 5; i++) {
+                          print("Making transaction $i");
                           await TransactionController().makeTransactionGivenSmsBody(
                               "UBF896PLG2 Confirmed.You have received Ksh1.00 from ANTONY  NJAU 0742342297 on 15/2/26 at 4:13 PM  New M-PESA balance is Ksh1.00. Earn interest daily on Ziidi MMF,Dial *334#");
                         }
@@ -414,7 +415,7 @@ class DashboardToolsSection extends StatelessWidget {
                             (value) => onReload(),
                           );
 // print("took ")
-                    // }
+                    // }  AA
                   },
                   const Icon(CupertinoIcons.star, color: kIndigoColor),
                   "Black screen",

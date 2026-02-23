@@ -205,7 +205,6 @@ class PaymentOps {
           .queryAll('ussdCodes', limit: 1, orderBy: 'id DESC'))[0]['dialSim'];
     }
 
-
     print("Auto renewing subscription with amount: $amount, subId: $subId, planId: $planId, lastPlan: $lastPlan");
 
     return await payCore(

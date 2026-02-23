@@ -15,7 +15,7 @@ if ($currentVersion -match "^(?<ver>\d+\.\d+\.\d+)(\+(?<build>\d+))?") {
     $parts = $ver -split "\."
     $major = $parts[0]
     $minor = $parts[1]
-    $patch = [int]$parts[2] + 1
+    $patch = [int]$parts[2]
     $newVersion = "$major.$minor.$patch+$build"
     # $newVersion = "3.7.0+1"
 } else {

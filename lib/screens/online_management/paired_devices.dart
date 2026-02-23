@@ -141,6 +141,7 @@ class _PairedDevicesState extends State<PairedDevices> {
         .then((response) async {
       if (response['success']) {
         print("Whitelisted devices from server: ${response['data']}");
+        await SQLiteService().deleteWhere('whitelistedDevices', '1=1', []);
         final data = response['data'];
         if (data != null && data['devices'] != null) {
           List<Map<String, dynamic>> devices =
@@ -156,14 +157,10 @@ class _PairedDevicesState extends State<PairedDevices> {
         return <Map<String, dynamic>>[];
       } else {
         print("Failed to fetch whitelisted devices: ${response['message']}");
+        pairedDevices = await SQLiteService().queryAll('whitelistedDevices');
         return <Map<String, dynamic>>[];
       }
     });
-
-    if (pairedDevices.isEmpty) {
-      // If we couldn't fetch from server, fallback to local database
-      pairedDevices = await SQLiteService().queryAll('whitelistedDevices');
-    }
 
     forwardingDevices = await SQLiteService().queryAll('forwardingDevices');
 

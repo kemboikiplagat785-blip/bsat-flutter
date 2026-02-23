@@ -477,10 +477,14 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 label: 'Signature',
                 subtitle:
                     'Teach the app to recognize this code\'s USSD responses to detect harmful changes',
-                value: signature.acceptedProcedure != null,
-                onChanged: (val) => setState(() => hasAcceptedProcedure = val),
+                value: signature.isActive ?? false,
+                onChanged: (val) => setState(() {
+                  hasAcceptedProcedure = val;
+                  signature = signature.copyWith(isActive: val);
+                  setState(() {});
+                }),
               ),
-              if (hasAcceptedProcedure) ...[
+              if (hasAcceptedProcedure && signature.isActive == true) ...[
                 Column(
                   children: [
                     _buildSwitchTile(
@@ -502,195 +506,165 @@ class _EditOfferPageState extends State<EditOfferPage> {
                             padding: const EdgeInsets.all(16.0),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(20),
-                              child: BackdropFilter(
-                                // 1. The Blur Effect
-                                filter: ImageFilter.blur(
-                                    sigmaX: 10.0, sigmaY: 10.0),
-                                child: Container(
-                                  padding: const EdgeInsets.all(16.0),
-                                  decoration: BoxDecoration(
-                                    // 2. The Glass Tint (Semi-transparent white)
-                                    color: Colors.white.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                    // 3. The "Shine" Border
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.2),
-                                      width: 1.5,
+                              child: Container(
+                                padding: const EdgeInsets.all(16.0),
+                                decoration: BoxDecoration(
+                                  // 2. The Glass Tint (Semi-transparent white)
+                                  borderRadius: BorderRadius.circular(20),
+                                  // 3. The "Shine" Border
+                                  border: Border.all(
+                                    color: Theme.of(context).hintColor,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Column(
+                                  children: [
+                                    // Header Row
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        const Text(
+                                          'Option',
+                                        ),
+                                        Row(
+                                          children: const [
+                                            Text(
+                                              'Text',
+                                            ),
+                                            SizedBox(width: 20),
+                                            Text(
+                                              'Important',
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                     ),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      // Header Row
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          const Text(
-                                            'Choice',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white),
-                                          ),
-                                          Row(
-                                            children: const [
-                                              Text(
-                                                'Options',
-                                                style: TextStyle(
-                                                    color: Colors.white70),
-                                              ),
-                                              SizedBox(width: 20),
-                                              Text(
-                                                'Important',
-                                                style: TextStyle(
-                                                    color: Colors.white70),
-                                              ),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 10),
-                                      const Divider(
-                                        color: Colors.white24,
-                                      ),
+                                    const SizedBox(height: 10),
+                                    const Divider(
+                                      color: Colors.white24,
+                                    ),
 
-                                      // The List Items
-                                      ...signature.acceptedProcedure!.map((e) {
-                                        int index = signature.acceptedProcedure!
-                                            .indexOf(e);
+                                    // The List Items
+                                    ...signature.acceptedProcedure!.map((e) {
+                                      int index = signature.acceptedProcedure!
+                                          .indexOf(e);
 
-                                        return Theme(
-                                          // This makes the CheckboxListTile transparent to not break the glass
-                                          data: ThemeData(
-                                            checkboxTheme: CheckboxThemeData(
-                                              fillColor:
-                                                  MaterialStateProperty.all(
-                                                      Colors.white24),
-                                              checkColor:
-                                                  MaterialStateProperty.all(
-                                                      Colors.white),
+                                      return Theme(
+                                        data: ThemeData(),
+                                        child: Container(
+                                          margin: const EdgeInsets.only(
+                                            bottom: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            border: Border(
+                                              bottom: BorderSide(
+                                                  color: Theme.of(context)
+                                                      .hintColor),
                                             ),
                                           ),
-                                          child: Container(
-                                            margin: const EdgeInsets.only(
-                                                bottom: 4),
-                                            decoration: BoxDecoration(
-                                              border: Border(
-                                                bottom: BorderSide(
-                                                  color: Colors.white
-                                                      .withOpacity(0.05),
-                                                ),
-                                              ),
+                                          child: CheckboxListTile(
+                                            contentPadding: EdgeInsets
+                                                .zero, // Clean alignment
+                                            onChanged: (value) {
+                                              setState(() {
+                                                if (value == true) {
+                                                  importantSteps.add({
+                                                    'stepPosition':
+                                                        index.toString(),
+                                                    'option': CodeSignature
+                                                        .extractChosenOption(e),
+                                                    'choice': e['choice'] ?? '',
+                                                  });
+                                                } else {
+                                                  importantSteps.removeWhere(
+                                                      (step) =>
+                                                          step[
+                                                              'stepPosition'] ==
+                                                          index.toString());
+                                                }
+                                                print(
+                                                    "Important Steps: $importantSteps");
+                                              });
+                                            },
+                                            value: importantSteps.any(
+                                              (step) =>
+                                                  step['stepPosition'] ==
+                                                  index.toString(),
                                             ),
-                                            child: CheckboxListTile(
-                                              contentPadding: EdgeInsets
-                                                  .zero, // Clean alignment
-                                              onChanged: (value) {
-                                                setState(() {
-                                                  if (value == true) {
-                                                    importantSteps.add({
-                                                      'stepPosition':
-                                                          index.toString(),
-                                                      'option': CodeSignature
-                                                          .extractChosenOption(
-                                                              e),
-                                                      'choice':
-                                                          e['choice'] ?? '',
-                                                    });
-                                                  } else {
-                                                    importantSteps.removeWhere(
-                                                        (step) =>
-                                                            step[
-                                                                'stepPosition'] ==
-                                                            index.toString());
-                                                  }
-                                                  print(
-                                                      "Important Steps: $importantSteps");
-                                                });
-                                              },
-                                              value: importantSteps.any(
-                                                  (step) =>
-                                                      step['stepPosition'] ==
-                                                      index.toString()),
-                                              controlAffinity:
-                                                  ListTileControlAffinity
-                                                      .trailing, // Move checkbox to right
-                                              title: Text(
-                                                CodeSignature
-                                                    .extractChosenOption(e),
-                                                style: const TextStyle(
-                                                    fontSize: 14,
-                                                    color: Colors.white),
-                                              ),
-                                              secondary: Text(
-                                                e['choice'].toString(),
-                                                style: const TextStyle(
-                                                    color: Colors.white70),
-                                              ),
+                                            controlAffinity: ListTileControlAffinity
+                                                .trailing, // Move checkbox to right
+                                            title: Text(
+                                              CodeSignature.extractChosenOption(
+                                                  e),
+                                              style:
+                                                  const TextStyle(fontSize: 14),
+                                            ),
+                                            secondary: Text(
+                                              e['choice'].toString(),
                                             ),
                                           ),
-                                        );
-                                      }).toList(),
-                                    ],
-                                  ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ],
                                 ),
                               ),
                             ),
                           ),
                         ],
                       ),
-                    
-                      Container(
-                        margin: const EdgeInsets.all(16.0),
-                        decoration: BoxDecoration(
-                          // color: Theme.of(context).cardColor,
-                          borderRadius: BorderRadius.circular(kBorderRadius),
-                          border: Border.all(
-                            color:
-                                Theme.of(context).dividerColor.withOpacity(0.1),
-                          ),
-                        ),
-                        child: toolButton(
-                          () async {
-                            var code =
-                                TransactionController().replaceNWithNumber(
-                              _codeTextController.text,
-                              0722000000,
-                            );
-                            // PhoneService phoneService = PhoneService();
-                            print(
-                                "Making request with code: $code on sim: $_dialSim");
-                            List res = await PhoneService().makeAdvancedRequest(
-                              code,
-                              _dialSim,
-                              isGettingSignature: true,
-                            );
-                            print(res);
-
-                            signature = signature.copyWith(
-                              usdCode: _codeTextController.text,
-                              acceptedProcedure: res[2],
-                              lastProcedure: (res[2] as List?)
-                                  ?.cast<Map<String, dynamic>>(),
-                            );
-
-                            setState(() {});
-
-                            if (signature.acceptedProcedure == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Failed to get signature. Please ensure the USSD code is correct and try again. ${signature.toString()}',
-                                  ),
-                                ),
-                              );
-                              return;
-                            }
-                          },
-                          Icon(CupertinoIcons.add),
-                          "Create Signature",
-                          context,
+                    Container(
+                      margin: const EdgeInsets.all(16.0),
+                      decoration: BoxDecoration(
+                        // color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(kBorderRadius),
+                        border: Border.all(
+                          color:
+                              Theme.of(context).dividerColor.withOpacity(0.1),
                         ),
                       ),
+                      child: toolButton(
+                        () async {
+                          var code = TransactionController().replaceNWithNumber(
+                            _codeTextController.text,
+                            0722000000,
+                          );
+                          // PhoneService phoneService = PhoneService();
+                          print(
+                              "Making request with code: $code on sim: $_dialSim");
+                          List res = await PhoneService().makeAdvancedRequest(
+                            code,
+                            _dialSim,
+                            isGettingSignature: true,
+                          );
+                          print(res);
+
+                          signature = signature.copyWith(
+                            usdCode: _codeTextController.text,
+                            acceptedProcedure: res[2],
+                            lastProcedure:
+                                (res[2] as List?)?.cast<Map<String, dynamic>>(),
+                          );
+
+                          setState(() {});
+
+                          if (signature.acceptedProcedure == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Failed to get signature. Please ensure the USSD code is correct and try again. ${signature.toString()}',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+                        },
+                        Icon(CupertinoIcons.shield_lefthalf_fill, color: kWarningColor,),
+                        "Click to Edit Signature",
+                        context,
+                      ),
+                    ),
                   ],
                 ),
               ],

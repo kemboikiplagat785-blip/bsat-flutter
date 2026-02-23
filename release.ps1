@@ -11,13 +11,12 @@ $currentVersion = ($line -split ":")[1].Trim()
 # Step 2: Split version and build number
 if ($currentVersion -match "^(?<ver>\d+\.\d+\.\d+)(\+(?<build>\d+))?") {
     $ver = $matches['ver']
-    $build = if ($matches['build']) { [int]$matches['build'] } else { 0 }
+    # Changed $build to $currentBuild to fix the missing variable bug in Step 3
+    $currentBuild = if ($matches['build']) { [int]$matches['build'] } else { 0 }
     $parts = $ver -split "\."
     $major = $parts[0]
     $minor = $parts[1]
     $patch = [int]$parts[2]
-    $newVersion = "$major.$minor.$patch+$build"
-    # $newVersion = "3.7.0+1"
 } else {
     throw "Could not parse version string: $currentVersion"
 }
@@ -35,6 +34,20 @@ if (-not [string]::IsNullOrWhiteSpace($Version)) {
     $patch = $patch + 1
     $newVersion = "$major.$minor.$patch+$currentBuild"
 }
+
+# --- NEW STEP: Write new version to pubspec.yaml ---
+Write-Host "Bumping version from $currentVersion to $newVersion in pubspec.yaml..."
+$pubspecContent = Get-Content "pubspec.yaml"
+$pubspecContent = $pubspecContent | ForEach-Object {
+    if ($_ -match "^version:") {
+        "version: $newVersion"
+    } else {
+        $_
+    }
+}
+# Explicitly use UTF8 encoding to prevent formatting issues in pubspec
+Set-Content -Path "pubspec.yaml" -Value $pubspecContent -Encoding UTF8
+# ---------------------------------------------------
 
 # Step 4: Git operations
 git add .
@@ -54,9 +67,9 @@ $apkSource = "C:\Users\USER\code\bsat-flutter\build\app\outputs\flutter-apk\app-
 $apkDest = "C:\Users\USER\code\bsat-flutter\build\app\outputs\flutter-apk\bsat.Nitro.$newVersion.apk"
 if (Test-Path $apkSource) {
     Rename-Item -Path $apkSource -NewName ("bsat.Nitro.$newVersion.apk")
-    Write-Host "APK renamed to bsat.Nitro ($newVersion).apk"
+    Write-Host "APK renamed to bsat.Nitro.$newVersion.apk"
 } else {
-    Write-Host "APK not found at $apkSource"
+    Write-Host "APK not found at $apkSource" -ForegroundColor Red
 }
  
-Write-Host "Version bumped to $newVersion and pushed to git."
+Write-Host "Version bumped to $newVersion and pushed to git." -ForegroundColor Green

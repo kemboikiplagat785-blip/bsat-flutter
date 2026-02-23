@@ -14,6 +14,7 @@ import '../../components/chip_input_field.dart';
 import '../../components/device_card.dart';
 import '../../components/dialogs/loading_dialog.dart';
 import '../../components/dialogs/show_error_dialog.dart';
+import '../../services/shared_preferences_service.dart';
 import '../../services/sqlite_service.dart';
 import 'search_device.dart';
 
@@ -28,10 +29,13 @@ class EditForwarder extends StatefulWidget {
 class _EditForwarderState extends State<EditForwarder> {
   Map deviceToReceive = {};
   List<int> amountsToForward = [];
+  String myDeviceName = '';
+
   final TextEditingController _amountsToForwardTextController =
       TextEditingController();
 
   void fetchData() async {
+    myDeviceName = await SharedPreferencesService().getDeviceName() ?? "Unknown Device";
     if (widget.dbId != null) {
       List<Map<String, dynamic>> results = await SQLiteService().rawQueryInput(
         'SELECT * FROM forwardingDevices WHERE id = ?',
@@ -39,6 +43,7 @@ class _EditForwarderState extends State<EditForwarder> {
       );
 
       if (results.isNotEmpty) {
+        print("Fetched Forwarded Device: ${results.first}");
         setState(() {
           deviceToReceive = results.first;
           amountsToForward = List<int>.from(
@@ -51,24 +56,19 @@ class _EditForwarderState extends State<EditForwarder> {
   Future<void> postData() async {
     showLoadingDialog(context, text: "Saving...");
 
+    print("osting data with myDeviceName: $myDeviceName, targetDeviceName: ${deviceToReceive}");
+
+     final backendService = BackendService();
+
     try {
       final backendService = BackendService();
-      final myDeviceId = await AuthService().getDeviceId();
-
-      if (myDeviceId == null) {
-        if (mounted) {
-          Navigator.pop(context); // Hide loading
-          showErrorDialog(
-              context, "Error", "Could not determine local device ID.");
-        }
-        return;
-      }
+      
 
       // Using a likely endpoint. Update if the server expects a different one.
       final response =
           await backendService.post('/api/devices/request-pairing', body: {
-        'myDeviceId': myDeviceId,
-        'targetDeviceId': deviceToReceive['device_id'],
+        'myDeviceName': myDeviceName,
+        'targetDeviceName': deviceToReceive['device_name'],
       });
 
       print("Pairing response: $response");

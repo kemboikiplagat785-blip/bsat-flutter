@@ -9,31 +9,6 @@ class SharedPreferencesService {
   final String runningStatus = "running_status";
   int sid = 2;
 
-  Future<bool> setSubscriptionId(int id) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    try {
-      await prefs.setInt(offerChosen, id);
-      return true;
-    } catch (e) {
-      if (kDebugMode) {
-        // //print(e.toString());
-      }
-    }
-    // sid = id;
-
-    return false;
-  }
-
-  // get uid from shared preferences
-  Future<int?> getSubscriptionId() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    int? uid = prefs.getInt(offerChosen);
-
-    return uid;
-  }
-
   // add uid to shared preferences
   Future<bool> setRunningStatus(bool isRunning) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -622,6 +597,27 @@ class SharedPreferencesService {
     return name;
   }
 
+  // user_phone_number
+  Future<bool> setPhoneNumber(String phoneNumber) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString('user_phone_number', phoneNumber);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+  Future<String?> getPhoneNumber() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? phoneNumber = prefs.getString('user_phone_number');
+    return phoneNumber;
+  }
+
   // device_id
   Future<bool> setDeviceId(String deviceId) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -643,6 +639,27 @@ class SharedPreferencesService {
     return deviceId;
   }
 
+  Future<bool> setDeviceName(String deviceName) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString('user_device_name', deviceName);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  } 
+
+  Future<String?> getDeviceName() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? deviceName = prefs.getString('user_device_name');
+    return deviceName;
+  }
+
   // link extension
   Future<bool> setLinkExtension(String extension) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -662,6 +679,48 @@ class SharedPreferencesService {
     await prefs.reload();
     String? extension = prefs.getString('user_link_extension');
     return extension;
+  }
+
+  Future<bool?> getCanAutoSwitch() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    bool? autoSwitch = prefs.getBool("can_auto_switch");
+    return autoSwitch;
+  }
+
+  Future<bool> setCanAutoSwitch(bool autoSwitch) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setBool("can_auto_switch", autoSwitch);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
+  Future<bool?> getUseSignature() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    bool? useSignature = prefs.getBool("use_signature");
+    return useSignature;
+  }
+
+  Future<bool?> setUseSignature(bool useSignature) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setBool("use_signature", useSignature);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
   }
 
   void printAll() async {

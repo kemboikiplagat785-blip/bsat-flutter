@@ -37,7 +37,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // myHeroWidget(context),
+            // const MyHeroWidget(),
             header(context, 'OTP Verification'),
             const SizedBox(height: kPagePadding * 3),
             if (error == '')

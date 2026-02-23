@@ -1,4 +1,4 @@
-package com.bsat.app.USSDService
+package com.bsat.app
 
 import android.content.Context
 import android.content.Intent
@@ -12,7 +12,7 @@ object UssdController {
 
     // Provide a callback to Flutter when process is done or failed
     var resultCallback: ((Boolean, String) -> Unit)? = null
-
+ 
     fun startSession(context: Context, sequence: List<String>) {
         if (sequence.isEmpty()) return
         

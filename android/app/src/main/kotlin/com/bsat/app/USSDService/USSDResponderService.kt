@@ -6,6 +6,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 import com.bsat.app.UssdSession
 import com.bsat.app.UssdResponseHandler
+import com.bsat.app.Utils.MiscUtils
 
 import android.os.Bundle
 import android.widget.EditText
@@ -45,21 +46,6 @@ class USSDResponderService : AccessibilityService() {
         val packageName = event?.packageName?.toString()
         val className = event?.className?.toString()
 
-        Log.d("UssdSession", "Event: $event")
-        
-// if((event?.text?.joinToString(" ") ?: "").length > 80) {
-//         // TODO: Delete the following section. 
-//         // For debugging ONLY
-//         // end session
-//         Log.d("UssdSession", "Ending session due to long response text.")
-//         UssdSession.ussdSteps.clear()
-//         UssdSession.currentStepIndex = 0
-//         UssdSession.isRunning = false
-//         UssdSession.finalResponse = "$event"
-//         UssdResponseHandler.sendSuccess(event?.text?.joinToString(" ") ?: "") // Notify the MethodChannel
-// }
-        // Log.d("NodetreeUssdSession", "Package: $packageName")
-
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED 
             && className in allowedClasses 
             && packageName in allowedPackages
@@ -72,8 +58,6 @@ class USSDResponderService : AccessibilityService() {
 
             val rootPackageName = root.packageName?.toString()
             if (rootPackageName !in allowedPackages) {
-                // Log.d("UssdSession", "Root package name $rootPackageName is not in allowedPackages.")
-                // Log.d("UssdSession", "Unexpected package name: $rootPackageName")
                 return
             }
 
@@ -83,40 +67,75 @@ class USSDResponderService : AccessibilityService() {
 
             if (sendBtn == null) {
                     return
-            } else {
-                Log.d("UssdSession", "Found send button: ${sendBtn.text}")
             }
 
             val responseText = extractAllTextNodes(root)
 
             if (UssdSession.currentStepIndex < UssdSession.ussdSteps.size) {
-                val nextInput = UssdSession.ussdSteps[UssdSession.currentStepIndex++]
+                var nextInput = UssdSession.ussdSteps[UssdSession.currentStepIndex++]
 
-                Log.d("UssdSession", "Response text: $responseText")
-                Log.d("UssdSession", "Next input: $nextInput")
-                Log.d("UssdSession", "currentStepIndex: ${UssdSession.currentStepIndex}, UssdStepsSize: ${UssdSession.ussdSteps.size}")
+                    var optionText: String? = MiscUtils().extractOptionText(responseText, nextInput)
 
+                    if(UssdSession.acceptedProcedure.isNotEmpty()) {
+                        val expectedOption = UssdSession.acceptedProcedure[UssdSession.currentStepIndex-2]["option"] as? String
+                        // check if the expected option text contains the extracted option text. This is to handle cases where the USSD response might have additional text around the option number.
+                        if(expectedOption != null && optionText != null) {
+                            if(!expectedOption.contains(optionText, ignoreCase = true)) {
+                                if(UssdSession.autoSwitch) {
+
+                                    var nextBestOption = MiscUtils().findOptionIndex(responseText, expectedOption)
+                                
+                                    if(nextBestOption == null) {
+                                        val cancelBtn = findButtonByText(root, "Cancel") ?: findButtonByText(root, "Close")
+                                        UssdSession.finalResponse = "Offer might have changed. Cannot find expected option $expectedOption"
+                                        UssdResponseHandler.sendSuccess(UssdSession.finalResponse) // Notify the MethodChannel
+                                        cancelBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                        return
+                                    }
+                                    else {
+                                        nextInput = nextBestOption
+                                    }
+                                } else {
+                                    val cancelBtn = findButtonByText(root, "Cancel") ?: findButtonByText(root, "Close")
+                                    UssdSession.finalResponse = "Offer might have changed. Transaction might not go through."
+                                    UssdResponseHandler.sendSuccess(UssdSession.finalResponse) // Notify the MethodChannel
+                                    cancelBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                    return
+                                }
+                            } else {
+                                Log.d("UssdSession", "Auto-switching to stopped. Expected option: $expectedOption, Extracted option: $optionText, Next input: $nextInput")
+                            }
+                        }
+                    }
+                UssdSession.wholeConversation[responseText] = nextInput
+            
                 val inputNode = findNodeByClass(root, EditText::class.java.name)
-                // val inputNode = findEditTextInDialog(root)
-                // Log.d("UssdSession", "Input node: $inputNode\nParent: ${inputNode?.parent}")
 
-                inputNode?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
-                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, nextInput)
-                })
+                if(UssdSession.isGettingSignature && UssdSession.currentStepIndex == UssdSession.ussdSteps.size) {
+                    // If we're in the process of getting a signature, we want to capture the response text of each step without sending any input. So we set the nextInput to an empty string to avoid sending anything.
+                    nextInput = ""
+                    // press "cancel" or "close" button if it exists to end the session after capturing the final response
+                    val cancelBtn = findButtonByText(root, "Cancel") ?: findButtonByText(root, "Close")
+                    UssdSession.finalResponse = "sd"
+                    UssdResponseHandler.sendSuccess(responseText) // Notify the MethodChannel
+                    cancelBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
+                else {
+                    inputNode?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, nextInput)
+                    })
 
-                sendBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-
+                    sendBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
                 // end session if inputnode is null.
                 if (inputNode == null) {
-                    Log.d("UssdSession", "Input node is null, ending session.")
                     UssdSession.finalResponse = responseText
                     UssdResponseHandler.sendSuccess(responseText)
                     return
                 }
-
-                Log.d("UssdSession", "Input sent: $nextInput")
             } else {
                 Log.d("UssdSession", "Final response: $responseText")
+                Log.d("UssdSession", "Whole conversation: ${UssdSession.wholeConversation}")
                 UssdSession.finalResponse = responseText
                 UssdResponseHandler.sendSuccess(responseText) // Notify the MethodChannel
 

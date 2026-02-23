@@ -17,6 +17,8 @@ import 'package:sqflite/sqflite.dart';
 
 import 'providers/theme_provider.dart';
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -58,6 +60,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<ThemeProvider>(builder: (context, themeProvider, child) {
       return MaterialApp(
+        navigatorKey: navigatorKey,
         title: 'BSAT',
         theme: themeProvider.currentTheme,
         home: FutureBuilder<bool?>(

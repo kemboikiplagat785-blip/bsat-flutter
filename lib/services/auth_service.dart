@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:bsat/services/backend_service.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -9,13 +10,13 @@ class AuthService {
   final SharedPreferencesService _prefs = SharedPreferencesService();
 
   // ping to check if phone is online
-  Future<bool> pingServer() async {
+  Future<bool> pingDevice(String deviceName) async {
     try {
+      // final response = await BackendService().get('/api/auth/ping?deviceName=$deviceName');
+      // return response['status'] == 200;
       final response = await http.get(
         Uri.parse('https://google.com'),
-        headers: {'Content-Type': 'application/json'},
       );
-
       return response.statusCode == 200;
     } catch (e) {
       return false;
@@ -33,6 +34,7 @@ class AuthService {
       //print everything
       //print('Email: $email');
       //print('Name: $name');
+      //print('Phone Number: $phoneNumber');
       //print('Password: $password');
       //print('Link Extension: $linkExtension');
       //print("url: $baseUrl/api/auth/register");
@@ -42,12 +44,12 @@ class AuthService {
       //reove other special characters except _ and -
       linkExtension = linkExtension.replaceAll(RegExp(r'[^\w\-]'), '');
 
-
       final linkAvailable = await getLinkAvailable(linkExtension);
       if (!linkAvailable['success']) {
         return {
           'success': false,
-          'message': linkAvailable['message'] ?? 'Link extension is already taken',
+          'message':
+              linkAvailable['message'] ?? 'Link extension is already taken',
         };
       }
 
@@ -85,11 +87,12 @@ class AuthService {
         };
       } else {
         final error = jsonDecode(response.body);
+        print('Signup failed, status: ${response.body}');
         // final error = response.body;
         return {
           'success': false,
           // 'message': error,
-          'message': error['message'] ?? 'Signup failed',
+          'message': error['error'] ?? 'Signup failed',
         };
       }
     } catch (e) {
@@ -153,7 +156,8 @@ class AuthService {
       if (!linkAvailable['success']) {
         return {
           'success': false,
-          'message': linkAvailable['message'] ?? 'Link extension is already taken',
+          'message':
+              linkAvailable['message'] ?? 'Link extension is already taken',
         };
       }
 
@@ -192,7 +196,7 @@ class AuthService {
     }
   }
 
-  Future<Map<String, dynamic>> isDeviceRegisteredToMe() async {
+  Future<Map<String, dynamic>> isDeviceNameTaken(String name) async {
     try {
       var jwtToken = await getToken();
 
@@ -204,20 +208,25 @@ class AuthService {
         };
       }
 
-      var deviceInfo = await DeviceInfoPlugin().androidInfo;
-
-      print('device id: ${deviceInfo.id}');
-
       final response = await http.post(
-        Uri.parse('$baseUrl/api/device/isregistered'),
+        Uri.parse('$baseUrl/api/device/isunique'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $jwtToken',
         },
         body: jsonEncode({
-          'deviceId': deviceInfo.id,
+          'name': name,
         }),
       );
+
+      String error = jsonDecode(response.body)['error'] ?? '';
+
+      if (error != '') {
+        return {
+          'success': false,
+          'message': error,
+        };
+      }
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -240,81 +249,80 @@ class AuthService {
     }
   }
 
-  // get device id device_info_plus
-  Future<String?> getDeviceId() async {
-    var deviceInfo = await DeviceInfoPlugin().androidInfo;
-    return deviceInfo.id;
-  }
-  
-
   // register device info
   // user_id, device_name, device_id, model, android_version, created_at
-  Future<void> registerDeviceInfo({String? name}) async {
-    try {
-      var jwtToken = await getToken();
+  Future<Map<String, dynamic>> registerDeviceInfo(String name) async {
+    // try {
+    var jwtToken = await getToken();
 
-      if (jwtToken == null || jwtToken.isEmpty) {
-        //print('No JWT token available');
-        return;
-      }
-
-      var deviceInfo = await DeviceInfoPlugin().androidInfo;
-
-      String? fcmToken = await FirebaseMessaging.instance.getToken();
-
-      final userInfo = await getUserInfo();
-      final userId = userInfo['id'] ?? '';
-
-      //print('Registering device info: ${jsonEncode({
-          //   'userId': userId,
-          //   'deviceName': name ?? deviceInfo.device,
-          //   'deviceId': deviceInfo.id,
-          //   'model': deviceInfo.model,
-          //   'androidVersion': deviceInfo.version.release,
-          // })}');
-
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/device/register'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $jwtToken',
-        },
-        body: jsonEncode({
-          'deviceName': name ?? deviceInfo.device,
-          'deviceId': deviceInfo.id,
-          'fcmToken': fcmToken,
-          'model': deviceInfo.model,
-          'androidVersion': deviceInfo.version.release,
-          'createdAtMillis': DateTime.now().millisecondsSinceEpoch,
-          // 'created_at_millis': DateTime.now().toIso8601String(),
-        }),
-      );
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        await _prefs.setDeviceId(deviceInfo.id);
-      } else if (response.statusCode == 409) {
-        // Device already registered
-        //print('Device already registered. changing owner');
-
-        await http.post(
-          Uri.parse('$baseUrl/api/device/changeowner'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $jwtToken',
-          },
-          body: jsonEncode({
-            'deviceId': deviceInfo.id,
-            'newOwnerId': userId,
-          }),
-        );
-
-        await _prefs.setDeviceId(deviceInfo.id);
-      } else {
-        //print('Failed to register device info, status: ${response.body}');
-      }
-    } catch (e) {
-      //print('Error registering device info: ${e.toString()}');
+    if (jwtToken == null || jwtToken.isEmpty) {
+      //print('No JWT token available');
+      return {
+        'success': false,
+        'message': 'No JWT token available',
+      };
     }
+
+    // check if device is already registered
+    final isRegistered = await isDeviceNameTaken(name);
+    if (isRegistered['success'] == false) {
+      return {
+        'success': false,
+        'message': isRegistered['message'] ?? 'Name already taken. try another',
+      };
+    }
+
+    var deviceInfo = await DeviceInfoPlugin().androidInfo;
+    var deviceId = deviceInfo.id;
+
+    String? fcmToken = await FirebaseMessaging.instance.getToken();
+
+    final userInfo = await getUserInfo();
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/device/register'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $jwtToken',
+      },
+      body: jsonEncode({
+        'deviceName': name,
+        'deviceId': deviceId,
+        'fcmToken': fcmToken,
+        'model': deviceInfo.model,
+        'androidVersion': deviceInfo.version.release,
+        'createdAtMillis': DateTime.now().millisecondsSinceEpoch,
+        // 'created_at_millis': DateTime.now().toIso8601String(),
+      }),
+    );
+
+    print(
+        'Register Device Response status: ${response.statusCode}, body: ${jsonDecode(response.body)}');
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      await _prefs.setDeviceId(deviceId);
+      await _prefs.setDeviceName(name);
+      return {
+        'success': true,
+        'message': 'Device registered successfully',
+      };
+    }
+
+    return {
+      'success': false,
+      'message': 'Failed to register device info',
+    };
+    // }catch (e) {
+
+    //print('Failed to register device info, status: ${response.body}');
+
+    // } catch (e) {
+    //   print('Error registering device info: ${e.toString()}');
+    //   return {
+    //     'success': false,
+    //     'message': 'Error registering device info: ${e.toString()}',
+    //   };
+    // }
   }
 
   // search for device using email, id or name
@@ -439,6 +447,9 @@ class AuthService {
             await _prefs.setUserName(data['user']['name'] ?? '');
             await _prefs.setUserId(data['user']['id']?.toString() ?? '');
             await _prefs.setLinkExtension(data['user']['link_extension'] ?? '');
+            if (data['user']['phone_number'] != null) {
+              await _prefs.setPhoneNumber(data['user']['phone_number']);
+            }
           }
         }
 
@@ -474,7 +485,8 @@ class AuthService {
         }),
       );
 
-      print('Response status: ${response.body}, uri: $baseUrl/api/auth/send-otp');
+      print(
+          'Response status: ${response.body}, uri: $baseUrl/api/auth/send-otp');
 
       if (response.statusCode == 200) {
         //print('OTP requested successfully');
@@ -770,12 +782,29 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    String deviceName = await _prefs.getDeviceName() ?? "Unknown Device";
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/auth/logout'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ${await getToken()}',
+      },
+      body: jsonEncode({
+        'deviceName': deviceName,
+      }),
+    );
+
+    print('Logout Response status: ${response.body}');
+
     await _prefs.setJwtToken("");
     await _prefs.setUserEmail("");
     await _prefs.setUserName("");
     await _prefs.setUserId("");
     await _prefs.setDeviceId("");
     await _prefs.setLinkExtension("");
+    await _prefs.setPhoneNumber("");
+
+    // notify the backend about logout if needed
   }
 
   // Check if user is logged in

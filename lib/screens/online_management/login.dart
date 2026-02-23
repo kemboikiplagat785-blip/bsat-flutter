@@ -3,6 +3,7 @@ import 'package:bsat/components/hero.dart';
 import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import './otp.dart';
+import 'package:bsat/screens/online_management/register_device.dart';
 import 'package:bsat/screens/online_management/reset_password.dart';
 import './signup.dart';
 import 'package:bsat/screens/online_management/online_management.dart';
@@ -44,7 +45,7 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: kPagePadding * 3),
             Container(
               // height: 150,
-              child: myHeroWidget(context),
+              child: const MyHeroWidget(),
             ),
             const SizedBox(height: kPagePadding * 2),
             Container(
@@ -79,7 +80,8 @@ class _LoginPageState extends State<LoginPage> {
                             margin: const EdgeInsets.only(bottom: kPagePadding),
                             decoration: BoxDecoration(
                               color: kErrorColor.withAlpha(20),
-                              borderRadius: BorderRadius.circular(kBorderRadius),
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
                             ),
                             child: Column(
                               children: [
@@ -109,9 +111,11 @@ class _LoginPageState extends State<LoginPage> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
+                            
                             style: ElevatedButton.styleFrom(
+                              elevation: 0,
                               padding: kPagePaddingInsets,
-                              backgroundColor: kPrimaryColor,
+                              backgroundColor: kPrimaryColorLight,
                               shape: RoundedRectangleBorder(
                                 borderRadius:
                                     BorderRadius.circular(kBorderRadius),
@@ -123,72 +127,52 @@ class _LoginPageState extends State<LoginPage> {
                             child: Text(
                               'LOGIN',
                               style: TextStyle(
-                                color: kIndigoColor,
+                                color: kPrimaryColor,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
                         ),
                         const SizedBox(height: kPagePadding),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildOutlinedButton(
-                            () {
-                              Navigator.of(context).pushReplacement(
-                                PageRouteBuilder(
-                                  pageBuilder: (
-                                    context,
-                                    animation,
-                                    secondaryAnimation,
-                                  ) =>
-                                      SignupPage(),
-                                  transitionsBuilder: (
-                                    context,
-                                    animation,
-                                    secondaryAnimation,
-                                    child,
-                                  ) {
-                                    return CupertinoPageTransition(
-                                      primaryRouteAnimation: animation,
-                                      secondaryRouteAnimation:
-                                          secondaryAnimation,
-                                      linearTransition: true,
-                                      child: child,
-                                    );
-                                  },
-                                ),
-                              );
-                            },
-                            const Text("Create account"),
-                          ),
-                          _buildOutlinedButton(
-                            () async {
-                              Map result = await Navigator.of(context).push(
-                                PageRouteBuilder(
-                                  pageBuilder: (context, animation,
-                                          secondaryAnimation) =>
-                                      OtpVerificationPage(),
-                                  transitionsBuilder: (context, animation,
-                                      secondaryAnimation, child) {
-                                    return CupertinoPageTransition(
-                                      primaryRouteAnimation: animation,
-                                      secondaryRouteAnimation:
-                                          secondaryAnimation,
-                                      linearTransition: true,
-                                      child: child,
-                                    );
-                                  },
-                                ),
-                              );
-
-                              if (result['verified'] == true) {
-                                Navigator.of(context).push(
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildOutlinedButton(
+                              () {
+                                Navigator.of(context).pushReplacement(
+                                  PageRouteBuilder(
+                                    pageBuilder: (
+                                      context,
+                                      animation,
+                                      secondaryAnimation,
+                                    ) =>
+                                        SignupPage(),
+                                    transitionsBuilder: (
+                                      context,
+                                      animation,
+                                      secondaryAnimation,
+                                      child,
+                                    ) {
+                                      return CupertinoPageTransition(
+                                        primaryRouteAnimation: animation,
+                                        secondaryRouteAnimation:
+                                            secondaryAnimation,
+                                        linearTransition: true,
+                                        child: child,
+                                      );
+                                    },
+                                  ),
+                                );
+                              },
+                              const Text("Create account"),
+                            ),
+                            _buildOutlinedButton(
+                              () async {
+                                Map result = await Navigator.of(context).push(
                                   PageRouteBuilder(
                                     pageBuilder: (context, animation,
                                             secondaryAnimation) =>
-                                        ResetPasswordPage(
-                                            email: result['email']),
+                                        OtpVerificationPage(),
                                     transitionsBuilder: (context, animation,
                                         secondaryAnimation, child) {
                                       return CupertinoPageTransition(
@@ -201,14 +185,34 @@ class _LoginPageState extends State<LoginPage> {
                                     },
                                   ),
                                 );
-                              }
-                            },
-                            const Text("Forgot Password"),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+
+                                if (result['verified'] == true) {
+                                  Navigator.of(context).push(
+                                    PageRouteBuilder(
+                                      pageBuilder: (context, animation,
+                                              secondaryAnimation) =>
+                                          ResetPasswordPage(
+                                              email: result['email']),
+                                      transitionsBuilder: (context, animation,
+                                          secondaryAnimation, child) {
+                                        return CupertinoPageTransition(
+                                          primaryRouteAnimation: animation,
+                                          secondaryRouteAnimation:
+                                              secondaryAnimation,
+                                          linearTransition: true,
+                                          child: child,
+                                        );
+                                      },
+                                    ),
+                                  );
+                                }
+                              },
+                              const Text("Forgot Password"),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -298,31 +302,18 @@ class _LoginPageState extends State<LoginPage> {
       });
       showLoadingDialog(context, text: "Signing you in");
       try {
-        final result =
-            await AuthService().login(email: email, password: password);
+        final result = await AuthService().login(
+          email: email,
+          password: password,
+        );
 
         Navigator.of(context).pop(); // Close loading dialog
 
         if (result['success']) {
-          showLoadingDialog(context);
-          if ((await AuthService().isDeviceRegisteredToMe())['success']) {
-            await SharedPreferencesService()
-                .setDeviceId(await AuthService().getDeviceId() ?? '');
-            Navigator.of(context).pop(); // Close loading dialog
-            Navigator.of(context).pushReplacement(
-              CupertinoPageRoute(
-                builder: (context) => OnlineManagementScreen(),
-              ),
-            );
-            return;
-          }
-          String deviceName =
-              await showAskDeviceNameDialog(context, 'My 5th Device') ?? "";
-          await AuthService().registerDeviceInfo(name: deviceName);
-          Navigator.of(context).pop(); // Close loading dialog
+          // showLoadingDialog(context);
           Navigator.of(context).pushReplacement(
             CupertinoPageRoute(
-              builder: (context) => OnlineManagementScreen(),
+              builder: (context) => RegisterDevicePage(),
             ),
           );
         } else {

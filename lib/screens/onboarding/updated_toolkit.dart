@@ -25,7 +25,7 @@ class UpdatedToolkitPageSplashState extends State<UpdatedToolkitPageSplash> {
       body: Column(
         children: [
           const Spacer(),
-          myHeroWidget(context),
+          const MyHeroWidget(),
           const Spacer(),
           Image.asset('assets/images/suite.png'),
           const Spacer(),

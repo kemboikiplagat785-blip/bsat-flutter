@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../utils/constants.dart';
 
-Widget header(BuildContext context, String title, {bool isDashboard = false}) {
+Widget header(BuildContext context, String title, {bool hideBack = false}) {
   var textTheme = Theme.of(context).textTheme;
   return Container(
     decoration: BoxDecoration(
@@ -20,15 +20,25 @@ Widget header(BuildContext context, String title, {bool isDashboard = false}) {
           padding: kPagePaddingInsets,
           child: Row(
             children: [
-              isDashboard
+              hideBack
                 ? const SizedBox()
-                : GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: const Icon(
-                  CupertinoIcons.back,
-                  size: 14,
+                : Container(
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).scaffoldBackgroundColor,
+                    borderRadius: BorderRadius.circular(kBorderRadius),
+                    // border: Border.all(
+                    //   color: kIndigoColor,
+                    //   width: 2,
+                    // ),
+                  ),
+                  child: IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(
+                    CupertinoIcons.back,
+                    size: 14,
+                  ),
+                                ),
                 ),
-              ),
               const SizedBox(width: kPagePadding),
               Text(
                 title,

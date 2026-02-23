@@ -22,11 +22,19 @@ import android.telecom.PhoneAccountHandle
 import android.content.ComponentName
 
 import com.bsat.app.UssdSession
+import com.bsat.app.UssdPlugin
 import android.util.Log
+
+import android.os.PowerManager
+import android.app.KeyguardManager
+import android.view.WindowManager
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.bsat.app"
     private val REQUEST_CALL = 1
+    
+    // Wakelock to keep screen on
+    private var wakeLock: PowerManager.WakeLock? = null
 
     // UssdSession.ussdSteps = "".split("*").filter { it.isNotEmpty() && it != "#" }.toMutableList()
     // Reset step index
@@ -34,18 +42,38 @@ class MainActivity: FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        flutterEngine.plugins.add(UssdPlugin())
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
+
+
+            /// args:
+            /// 
+            ///  "sequence": String (e.g. "*123*1*2#")
+            ///  "subscriptionId":  int
+            ///  "acceptedProcedure": List<MAp<String, any>>
+            ///  "autoSwitch": bool
+            ///  "isGettingSignature": bool
+            /// 
+
                 if (call.method == "runUssdSequence") {
 
                     if (UssdSession.ussdSteps.isNotEmpty() || UssdSession.isRunning || UssdSession.currentStepIndex > 0) {
                         // If there is an ongoing USSD session, return an error
-                        Log.d("UssdSession", "USSD session already in progress. Current steps: ${UssdSession.ussdSteps}, Current index: ${UssdSession.currentStepIndex}")
+                        // Log.d("UssdSession", "USSD session already in progress. Current steps: ${UssdSession.ussdSteps}, Current index: ${UssdSession.currentStepIndex}")
                         result.success("USSD session already in progress. Please wait for it to finish.")
                         return@setMethodCallHandler
                     }
 
                     Log.d("UssdSession", "Starting newUSSD session")
+
+                    UssdSession.acceptedProcedure = call.argument<List<Map<String, Any>>>("acceptedProcedure") ?: listOf()
+                    UssdSession.autoSwitch = call.argument<Boolean>("autoSwitch") ?: false
+
+                    UssdSession.isGettingSignature = call.argument<Boolean>("isGettingSignature") ?: false
+
+                    // Log.d("UssdSession", "Accepted Procedure: ${UssdSession.acceptedProcedure}, AutoSwitch: ${UssdSession.autoSwitch}")
 
                     UssdSession.currentStepIndex = 1
                     var sequence = call.argument<String>("sequence") ?: ""
@@ -53,13 +81,14 @@ class MainActivity: FlutterActivity() {
                         sequence = sequence.substring(0, sequence.length - 1)
                     }
                     UssdSession.ussdSteps = sequence.split("*").filter { it.isNotEmpty()}.toMutableList()
-                    Log.d("UssdSession", "UssdSteps: ${UssdSession.ussdSteps}")
-
+                    UssdSession.usedUssdSteps.clear()
+                    // Log.d("UssdSession", "UssdSteps: ${UssdSession.ussdSteps}")
                     
                     val subscriptionId = call.argument<Int>("subscriptionId") ?: 0
                     val firstCode = "*${UssdSession.ussdSteps[0]}#"
+                    UssdSession.ussdDialed = firstCode
                     dialUssd(firstCode, subscriptionId, result)
-                    Log.d("UssdSession", "Dialing USSD code: $firstCode")
+                    // Log.d("UssdSession", "Dialing USSD code: $firstCode")
 
                     waitForUssdResponse(result)
                 } else {
@@ -70,7 +99,7 @@ class MainActivity: FlutterActivity() {
 
     // ...existing code...
 private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChannel.Result) {
-    val encodedHash = Uri.encode("#")
+    val encodedHash = Uri.encode("#") 
     val uri = "tel:" + ussdCode.replace("#", encodedHash)
     val intent = Intent(Intent.ACTION_CALL, Uri.parse(uri))
 
@@ -95,7 +124,7 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
         return
     }
     val slotIndex = subInfo.simSlotIndex
-    Log.d("UssdSession", "Found SubscriptionInfo: $subInfo (slot=$slotIndex)")
+    // Log.d("UssdSession", "Found SubscriptionInfo: $subInfo (slot=$slotIndex)")
 
     // Find the best matching PhoneAccountHandle
     val handles = telecomManager.callCapablePhoneAccounts
@@ -120,7 +149,7 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
         phoneAccountHandle = handles[slotIndex]
     }
 
-    Log.d("UssdSession", "Selected PhoneAccountHandle: $phoneAccountHandle")
+    // Log.d("UssdSession", "Selected PhoneAccountHandle: $phoneAccountHandle")
 
     if (phoneAccountHandle == null) {
         Toast.makeText(this, "Could not resolve SIM for subscriptionId: $subscriptionId", Toast.LENGTH_SHORT).show()
@@ -142,6 +171,7 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
     if (!UssdSession.isRunning) {
         UssdSession.isRunning = true
     } else {
+        // Log.d("UssdSession", "USSD session already in progress. Adding to queue")
         result.success("USSD session already in progress. Added to queue")
         return
     }
@@ -151,32 +181,59 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
 // ...existing code...
 
 
-    private fun waitForUssdResponse(result: MethodChannel.Result, maxRetries: Int = 20, delayMillis: Long = 1000, currentRetry: Int = 1, somethingIsGoingOn: Boolean = false) {
+    private fun waitForUssdResponse(result: MethodChannel.Result, maxRetries: Int = 20, delayMillis: Long = 1000, currentRetry: Int = 1) {
+        // Helper to convert wholeConversation to List<Map<String, Any?>>
+        fun buildResponseList(): List<Map<String, Any?>> {
+            val list = mutableListOf<Map<String, Any?>>()
+            // Preserve insertion order if possible by iterating entries
+            for ((key, value) in UssdSession.wholeConversation) {
+                val map = mapOf<String, Any?>(
+                    "options" to key,
+                    "choice" to value
+                )
+                list.add(map)
+            }
+            return list
+        }
+
         if (UssdSession.finalResponse.isNotEmpty()) {
-            // If the response is ready, return it to Flutter
-            val res = UssdSession.finalResponse
+            // If the response is ready, return the conversation list to Flutter
+            val resList = buildResponseList()
+
+            result.success(mapOf(
+                "lastresponse" to UssdSession.finalResponse,
+                "conversation" to resList
+            ))
             UssdSession.finalResponse = "" // Reset for future requests
             UssdSession.ussdSteps.clear() // Clear the steps
             UssdSession.currentStepIndex = 0 // Reset step index
             UssdSession.isRunning = false // Reset running state
-            result.success(res)
+            UssdSession.wholeConversation.clear()
+
+            // create  "lastresponse": UssdSession.finalResponse, "conversation": resList
+
             return
         }
 
         if (currentRetry >= maxRetries) {
+            // Timeout: return whatever we have (possibly empty)
+            val resList = buildResponseList()
+            result.success(mapOf(
+                "lastresponse" to UssdSession.finalResponse,
+                "conversation" to resList,
+                "timeout" to true
+            ))
             UssdSession.finalResponse = "" // Reset for future requests
             UssdSession.ussdSteps.clear() // Clear the steps
             UssdSession.currentStepIndex = 0 // Reset step index
             UssdSession.isRunning = false // Reset running state
-
+            UssdSession.wholeConversation.clear()
             return
         }
-
-        // Log.d("UssdSession", "Waiting for response... $currentRetry")
 
         // Schedule the next check
         android.os.Handler(mainLooper).postDelayed({
             waitForUssdResponse(result, maxRetries, delayMillis, currentRetry + 1)
         }, delayMillis)
     }
-}
+} 

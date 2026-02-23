@@ -23,6 +23,8 @@ class _InboxPageState extends State<InboxPage> {
   List<SmsMessage> smsList = [];
 
   bool loading = true;
+  final Set<int> _selected = {};
+  bool selectionMode = false;
 
   @override
   void initState() {
@@ -30,7 +32,7 @@ class _InboxPageState extends State<InboxPage> {
 
     int limit = 400;
 
-    if(kDebugMode) {
+    if (kDebugMode) {
       limit = 20;
     }
 
@@ -70,22 +72,52 @@ class _InboxPageState extends State<InboxPage> {
                     const SizedBox(height: kPagePadding * 2),
                     Padding(
                       padding: kPagePaddingInsets,
-                      child: Row(
-                        children: [
-                          IconButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(
-                              CupertinoIcons.back,
-                              size: 14,
+                      child: _selected.isEmpty
+                          ? Row(
+                              children: [
+                                IconButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  icon: const Icon(
+                                    CupertinoIcons.back,
+                                    size: 14,
+                                  ),
+                                ),
+                                const SizedBox(width: kPagePadding / 2),
+                                Text(
+                                  'Inbox',
+                                  style: textTheme.titleLarge,
+                                ),
+                              ],
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      onPressed: () => setState(() => _selected.clear()),
+                                      icon: const Icon(Icons.close),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text('${_selected.length} selected'),
+                                  ],
+                                ),
+                                Row(
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Retry selected',
+                                      onPressed: _retrySelected,
+                                      icon: const Icon(Icons.refresh),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Copy numbers',
+                                      onPressed: _copySelectedNumbers,
+                                      icon: const Icon(Icons.copy),
+                                    ),
+                                  ],
+                                )
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: kPagePadding / 2),
-                          Text(
-                            'Inbox',
-                            style: textTheme.titleLarge,
-                          ),
-                        ],
-                      ),
                     ),
                     Padding(
                       padding: kPagePaddingInsets,
@@ -101,9 +133,7 @@ class _InboxPageState extends State<InboxPage> {
                         ),
                         onChanged: (value) async {
                           smsList = await searchSms(value);
-                          setState(() {
-                            // //print(smsList.length);
-                          });
+                          setState(() {});
                         },
                       ),
                     )
@@ -120,7 +150,37 @@ class _InboxPageState extends State<InboxPage> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemBuilder: (context, index) {
-                          return smsListItem(smsList[index], textTheme);
+                          final item = smsList[index];
+                          final selected = _selected.contains(index);
+                          return GestureDetector(
+                            onLongPress: () {
+                              setState(() {
+                                if (selected) {
+                                  _selected.remove(index);
+                                } else {
+                                  _selected.add(index);
+                                }
+                              });
+                            },
+                            onTap: () {
+                              if (_selected.isNotEmpty) {
+                                setState(() {
+                                  if (selected) _selected.remove(index);
+                                  else _selected.add(index);
+                                });
+                              } else {
+                                int number = extract9DigitNumber(item.body ?? "");
+                                Clipboard.setData(ClipboardData(text: '0$number'));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('0$number copied to clipboard')),
+                                );
+                              }
+                            },
+                            child: Container(
+                              color: selected ? Theme.of(context).highlightColor : Theme.of(context).cardColor,
+                              child: smsListItem(item, textTheme, index, selected),
+                            ),
+                          );
                         },
                         // children: smsList.map((listItem) {
                         //   return smsListItem(listItem, textTheme);
@@ -134,9 +194,8 @@ class _InboxPageState extends State<InboxPage> {
     );
   }
 
-  Container smsListItem(SmsMessage listItem, TextTheme textTheme) {
+  Container smsListItem(SmsMessage listItem, TextTheme textTheme, int index, bool selected) {
     return Container(
-      color: Theme.of(context).cardColor,
       padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
       child: Column(
         children: [
@@ -144,9 +203,21 @@ class _InboxPageState extends State<InboxPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                listItem.address ?? "",
-                style: textTheme.titleLarge,
+              Row(
+                children: [
+                  if (selected)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8.0),
+                      child: Icon(
+                        Icons.check_box,
+                        size: 18,
+                      ),
+                    ),
+                  Text(
+                    listItem.address ?? "",
+                    style: textTheme.titleLarge,
+                  ),
+                ],
               ),
               Text(
                   '${getNormalTime(DateTime.fromMillisecondsSinceEpoch(listItem.date ?? 0))} $interpunct ${getNormalDate(DateTime.fromMillisecondsSinceEpoch(listItem.date ?? 0))}'
@@ -162,50 +233,45 @@ class _InboxPageState extends State<InboxPage> {
             children: [
               Row(
                 children: [
-                if(listItem.address == "MPESA")
-                  colouredButton(
-                    () {
-                      tillDoneDialogue(
-                        context,
-                        Padding(
-                          padding: kPagePaddingInsets,
-                          child: Text("Redialing"),
-                        ),
-                        () async {
-                          await Future.delayed(
-                            Duration(seconds: 3),
-                          );
-                          onMessageReceive(listItem);
-                          
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text('Redialed')),
-                          );
-                        },
-                      );
-                    },
-                    kPrimaryColor,
-                    kPrimaryColor.withOpacity(.2),
-                    Icon(
-                      Icons.refresh,
-                      color: kPrimaryColor,
-                      size: 16,
+                  if (listItem.address == "MPESA")
+                    colouredButton(
+                      () {
+                        tillDoneDialogue(
+                          context,
+                          Padding(
+                            padding: kPagePaddingInsets,
+                            child: Text("Redialing"),
+                          ),
+                          () async {
+                            onMessageReceive(listItem);
+
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Redialed')),
+                            );
+                          },
+                        );
+                      },
+                      kPrimaryColor,
+                      kPrimaryColor.withOpacity(.2),
+                      Icon(
+                        Icons.refresh,
+                        color: kPrimaryColor,
+                        size: 16,
+                      ),
                     ),
-                  ),
                   SizedBox(width: kPagePadding / 4),
                   colouredButton(
                     () async {
                       int number = extract9DigitNumber(listItem.body ?? "");
                       // onMessageReceive(listItem);
                       // tillDoneDialogue(context, Text("Adding to blacklist"), () async {
-                      await TransactionController().addNumberToBlacklist(
+                      await TransactionController().changeBlackListStatus(
                         number,
                       );
 
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(content: Text('0$number added to blacklist')),
                       );
-                      // });
                     },
                     kErrorColor,
                     kErrorColor.withOpacity(.2),
@@ -252,7 +318,9 @@ class _InboxPageState extends State<InboxPage> {
                 },
                 child: Text(
                   'Copy number',
-                  style: TextStyle(color: Theme.of(context).indicatorColor, fontWeight: FontWeight.w900),
+                  style: TextStyle(
+                      color: Theme.of(context).indicatorColor,
+                      fontWeight: FontWeight.w900),
                 ),
               )
             ],
@@ -290,5 +358,33 @@ class _InboxPageState extends State<InboxPage> {
         child: content,
       ),
     );
+  }
+
+  void _retrySelected() {
+    if (_selected.isEmpty) return;
+    for (final i in _selected) {
+      if (i >= 0 && i < smsList.length) {
+        final msg = smsList[i];
+        onMessageReceive(msg);
+      }
+    }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Retried ${_selected.length} messages')));
+    setState(() => _selected.clear());
+  }
+
+  void _copySelectedNumbers() async {
+    if (_selected.isEmpty) return;
+    final numbers = <String>[];
+    for (final i in _selected) {
+      if (i >= 0 && i < smsList.length) {
+        final msg = smsList[i];
+        final n = extract9DigitNumber(msg.body ?? "");
+        numbers.add('0$n');
+      }
+    }
+    final text = numbers.join(', ');
+    await Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Copied ${numbers.length} numbers')));
+    setState(() => _selected.clear());
   }
 }

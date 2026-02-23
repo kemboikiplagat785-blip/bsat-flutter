@@ -1,4 +1,6 @@
 import 'package:bsat/screens/home/dashboard/dashboard.dart';
+import 'package:bsat/screens/home/settings_page.dart';
+import 'package:bsat/screens/home/tools_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
@@ -6,6 +8,7 @@ import '../transactions/transaction_history.dart';
 import '../settings/settings.dart';
 import '../stats/statistics.dart';
 import '../messaging/send_message_page.dart';
+import 'data_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -20,9 +23,9 @@ class _HomePageState extends State<HomePage> {
   final List<Widget> _pages = [
     // const _DashboardHome(),
     const DashBoardPage(isDashboard: true),
-    const TransactionHistoryPage(isDashboard: true),
-    const StatisticsPage(isDashboard: true),
-    const SettingsPage(isDashboard: true),
+    const DataPage(),
+    const ToolsPage(),
+    const HomeSettingsPage(),
   ];
 
   @override
@@ -42,14 +45,17 @@ class _HomePageState extends State<HomePage> {
         decoration: BoxDecoration(
           color: Theme.of(context).scaffoldBackgroundColor,
           borderRadius: BorderRadius.circular(kBorderRadius),
-          boxShadow: [
-            BoxShadow(
-              // color: Colors.black.withOpacity(0.8),
+          border: Border (
+            bottom: BorderSide(
               color: kIndigoColor,
-              blurRadius: 0,
-              offset: const Offset(5, 5),
+              width: 3,
             ),
-          ],
+            right: BorderSide(
+              color: kIndigoColor,
+              width: 3,
+            ),
+
+          )
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(0),
@@ -93,14 +99,14 @@ class _HomePageState extends State<HomePage> {
                   label: 'Home',
                 ),
                 NavigationDestination(
-                  icon: Icon(CupertinoIcons.list_bullet),
-                  selectedIcon: Icon(CupertinoIcons.list_bullet_indent),
-                  label: 'History',
+                  icon: Icon(CupertinoIcons.doc_chart),
+                  selectedIcon: Icon(CupertinoIcons.doc_chart_fill),
+                  label: 'Data',
                 ),
                 NavigationDestination(
-                  icon: Icon(CupertinoIcons.chart_bar),
-                  selectedIcon: Icon(CupertinoIcons.chart_bar_fill),
-                  label: 'Stats',
+                  icon: Icon(CupertinoIcons.wrench),
+                  selectedIcon: Icon(CupertinoIcons.wrench_fill),
+                  label: 'Tools',
                 ),
                 NavigationDestination(
                   icon: Icon(CupertinoIcons.settings),

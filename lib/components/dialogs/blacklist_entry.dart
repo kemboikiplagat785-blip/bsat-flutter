@@ -26,7 +26,7 @@ Future<String?> showBlacklistEntryDialog(BuildContext context) {
           TextButton(
             onPressed: () {
               TransactionController()
-                  .addNumberToBlacklist(int.parse(textController.text));
+                  .changeBlackListStatus(int.parse(textController.text));
               Navigator.of(context)
                   .pop(textController.text); // Return the entered text
             },

@@ -99,7 +99,7 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Spacer(),
-          myHeroWidget(context),
+          const MyHeroWidget(),
           const Spacer(
             flex: 3,
           ),

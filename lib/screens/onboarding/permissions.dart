@@ -87,7 +87,7 @@ class _PermissionsPageState extends State<PermissionsPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Spacer(),
-                    myHeroWidget(context),
+                    const MyHeroWidget(),
 
           const Spacer(
             flex: 1,

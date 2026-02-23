@@ -1,6 +1,8 @@
 import 'package:bsat/components/dialogs/use_another_phone_dialog.dart';
 import 'package:bsat/components/tool_button.dart';
+import 'package:bsat/screens/black_screen.dart';
 import 'package:bsat/screens/blacklist.dart';
+import 'package:bsat/screens/clients/clients.dart';
 import 'package:bsat/screens/dialpad.dart';
 import 'package:bsat/screens/inbox.dart';
 import 'package:bsat/screens/messaging/send_message_page.dart';
@@ -10,7 +12,7 @@ import 'package:bsat/screens/replies/replies.dart';
 import 'package:bsat/screens/settings/about.dart';
 import 'package:bsat/screens/settings/settings.dart';
 import 'package:bsat/screens/stats/statistics.dart';
-import 'package:bsat/screens/subscriptions/subscription.dart';
+import 'package:bsat/screens/settings/subscription.dart';
 import 'package:bsat/screens/tasks/tasks.dart';
 import 'package:bsat/screens/transactions/transaction_history.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
@@ -18,6 +20,8 @@ import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import '../../../controllers/transaction_controller.dart';
 
 /// Collection of “My tools” shortcuts used on the dashboard.
 class DashboardToolsSection extends StatelessWidget {
@@ -41,13 +45,16 @@ class DashboardToolsSection extends StatelessWidget {
       child: Container(
         padding: kPagePaddingInsets / 2,
         decoration: BoxDecoration(
-          color: Theme.of(context).primaryColor.withOpacity(.05),
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(kBorderRadius / 2),
-          image: DecorationImage(
-            image: const AssetImage('assets/images/mesh.png'),
-            fit: BoxFit.cover,
-            opacity: 0.05,
+          border: Border.all(
+            color: Theme.of(context).primaryColor.withOpacity(.1),
           ),
+          // image: DecorationImage(
+          //   image: const AssetImage('assets/images/mesh.png'),
+          //   fit: BoxFit.cover,
+          //   opacity: 0.3,
+          // ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -306,6 +313,31 @@ class DashboardToolsSection extends StatelessWidget {
                           PageRouteBuilder(
                             pageBuilder:
                                 (context, animation, secondaryAnimation) =>
+                                    ClientsPage(),
+                            transitionsBuilder: (context, animation,
+                                secondaryAnimation, child) {
+                              return CupertinoPageTransition(
+                                primaryRouteAnimation: animation,
+                                secondaryRouteAnimation: secondaryAnimation,
+                                linearTransition: true,
+                                child: child,
+                              );
+                            },
+                          ),
+                        )
+                        .then((value) => onReload());
+                  },
+                  Icon(CupertinoIcons.group_solid, color: kPrimaryColor),
+                  "Clients",
+                  context,
+                ),
+                toolButton(
+                  () {
+                    Navigator.of(context)
+                        .push(
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
                                     BlacklistPage(),
                             transitionsBuilder: (context, animation,
                                 secondaryAnimation, child) {
@@ -338,13 +370,56 @@ class DashboardToolsSection extends StatelessWidget {
                   toolButton(
                     () async {
                       if (kDebugMode) {
-                        SharedPreferencesService().printAll();
+                        // SharedPreferencesService().printAll();
+
+                        int startTime = DateTime.now().millisecondsSinceEpoch;
+                        for (int i = 0; i < 2; i++) {
+                          await TransactionController().makeTransactionGivenSmsBody(
+                              "UBF896PLG2 Confirmed.You have received Ksh1.00 from ANTONY  NJAU 0742342297 on 15/2/26 at 4:13 PM  New M-PESA balance is Ksh1.00. Earn interest daily on Ziidi MMF,Dial *334#");
+                        }
+                        double timeTakenInSeconds =
+                            (DateTime.now().millisecondsSinceEpoch -
+                                    startTime) /
+                                1000;
+                        print("took $timeTakenInSeconds seconds");
                       }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),
                     "Test",
                     context,
                   ),
+                toolButton(
+                  () async {
+                    // if (kDebugMode) {
+                      // SharedPreferencesService().printAll();
+
+                      Navigator.of(context)
+                          .push(
+                            PageRouteBuilder(
+                              pageBuilder:
+                                  (context, animation, secondaryAnimation) =>
+                                      const BlackoutScreen(),
+                              transitionsBuilder: (context, animation,
+                                  secondaryAnimation, child) {
+                                return CupertinoPageTransition(
+                                  primaryRouteAnimation: animation,
+                                  secondaryRouteAnimation: secondaryAnimation,
+                                  linearTransition: true,
+                                  child: child,
+                                );
+                              },
+                            ),
+                          )
+                          .then(
+                            (value) => onReload(),
+                          );
+// print("took ")
+                    // }
+                  },
+                  const Icon(CupertinoIcons.star, color: kIndigoColor),
+                  "Black screen",
+                  context,
+                ),
                 toolButton(
                   () {
                     Navigator.of(context)
@@ -415,7 +490,9 @@ class DashboardToolsSection extends StatelessWidget {
                             },
                           ),
                         )
-                        .then((value) => onReload());
+                        .then(
+                          (value) => onReload(),
+                        );
                   },
                   const Icon(CupertinoIcons.gear, color: kPrimaryColor),
                   "Settings",

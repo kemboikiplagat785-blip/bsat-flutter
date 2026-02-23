@@ -35,7 +35,7 @@ class SQLiteService {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'bsat_app.db');
     return await openDatabase(path,
-        version: 3,
+        version: 8,
         onCreate: onCreate,
         onUpgrade: onUpgrade,
         singleInstance: true);
@@ -116,7 +116,12 @@ class SQLiteService {
       '''CREATE TABLE payments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           till INTEGER,
-          sim INTEGER
+          sim INTEGER,
+          plan_id INTEGER DEFAULT -1,
+          amount INTEGER DEFAULT 0,
+          payment_date INTEGER DEFAULT 0,
+          type TEXT DEFAULT 'subscription',
+          token_count INTEGER DEFAULT 0
         )''',
     );
     await db.execute(
@@ -132,7 +137,8 @@ class SQLiteService {
           numberToReceive INTEGER,
           amounts TEXT,
           isActive INTEGER DEFAULT 1,
-          simSlot INTEGER DEFAULT 1
+          simSlot INTEGER DEFAULT 1,
+          paused INTEGER DEFAULT 0
         )''',
     );
     await db.execute(
@@ -157,7 +163,7 @@ class SQLiteService {
       '''CREATE TABLE IF NOT EXISTS whitelistedDevices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         device_name TEXT NOT NULL,
-        device_id TEXT NOT NULL UNIQUE,
+        device_id TEXT NOT NULL,
         owner_email TEXT NOT NULL,
         user_id INTEGER
       )''',
@@ -170,7 +176,21 @@ class SQLiteService {
           device_id TEXT NOT NULL UNIQUE,
           owner_email TEXT NOT NULL,
           user_id INTEGER,
-          amounts_to_forward TEXT
+          amounts_to_forward TEXT,
+          paused INTEGER DEFAULT 0
+        )''',
+    );
+
+    await db.execute(
+      '''CREATE TABLE IF NOT EXISTS codeSignature (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ussdCodeId INTEGER,
+          usdCode TEXT,
+          acceptedProcedure TEXT,
+          lastProcedure TEXT,
+          importantSteps TEXT,
+          mightBeCompromised INTEGER DEFAULT 0,
+          autoSwitch INTEGER DEFAULT 0
         )''',
     );
 
@@ -206,12 +226,12 @@ class SQLiteService {
     if (oldVersion < newVersion) {
       await db.execute(
         '''CREATE TABLE IF NOT EXISTS whitelistedDevices (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      device_name TEXT NOT NULL,
-      device_id TEXT NOT NULL UNIQUE,
-      owner_email TEXT NOT NULL,
-      user_id INTEGER
-    )''',
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_name TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          owner_email TEXT NOT NULL,
+          user_id INTEGER
+        )''',
       );
 
       await db.execute(
@@ -262,6 +282,47 @@ class SQLiteService {
           'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_device_id ON forwardingDevices(device_id)');
       await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_user_id ON forwardingDevices(user_id)');
+
+      await db.execute(
+        '''CREATE TABLE IF NOT EXISTS codeSignature (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ussdCodeId INTEGER,
+          usdCode TEXT,
+          acceptedProcedure TEXT,
+          lastProcedure TEXT,
+          importantSteps TEXT,
+          mightBeCompromised INTEGER DEFAULT 0,
+          autoSwitch INTEGER DEFAULT 0
+          )''',
+      );
+
+      if (oldVersion < 4) {
+        // Remove UNIQUE constraint on whitelistedDevices.device_id by recreating the table.
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS whitelistedDevices_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_name TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            owner_email TEXT NOT NULL,
+            user_id INTEGER
+          )''');
+
+        await db.execute('''
+          INSERT INTO whitelistedDevices_new (id, device_name, device_id, owner_email, user_id)
+          SELECT id, device_name, device_id, owner_email, user_id FROM whitelistedDevices
+        ''');
+
+        await db.execute('DROP TABLE IF EXISTS whitelistedDevices');
+        await db.execute(
+            'ALTER TABLE whitelistedDevices_new RENAME TO whitelistedDevices');
+
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)');
+      }
       // Add new columns to ussdCodes table
       try {
         await db.execute(
@@ -289,6 +350,71 @@ class SQLiteService {
       } catch (e) {
         //print('Column bongaPointsPerTransaction already exists or error: $e');
       }
+
+      // Add mightBeCompromised column to codeSignature table
+      try {
+        await db.execute(
+            'ALTER TABLE codeSignature ADD COLUMN mightBeCompromised INTEGER DEFAULT 0');
+      } catch (e) {
+        // column may already exist
+      }
+      // Add autoSwitch column to codeSignature table
+      try {
+        await db.execute(
+            'ALTER TABLE codeSignature ADD COLUMN autoSwitch INTEGER DEFAULT 0');
+      } catch (e) {
+        // column may already exist
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE payments ADD COLUMN plan_id INTEGER DEFAULT ');
+      } catch (e) {
+        //print('Column plan_id already exists or error: $e');
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE payments ADD COLUMN amount INTEGER DEFAULT 0');
+      } catch (e) {
+        //print('Column amount already exists or error: $e');
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE payments ADD COLUMN payment_date INTEGER DEFAULT 0');
+      } catch (e) {
+        //print('Column payment_date already exists or error: $e');
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE payments ADD COLUMN type TEXT DEFAULT "Offline"');
+      } catch (e) {
+        //print('Column type already exists or error: $e');
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE payments ADD COLUMN token_count INTEGER DEFAULT 0');
+      } catch (e) {
+        //print('Column token_count already exists or error: $e');
+      }
+
+      // Add paused column to forwarded table
+      try {
+        await db.execute(
+            'ALTER TABLE forwarded ADD COLUMN paused INTEGER DEFAULT 0');
+      } catch (e) {
+        //print('Column paused already exists or error: $e');
+      }
+      // Add paused column to forwardingDevices table
+      try {
+        await db.execute(
+            'ALTER TABLE forwardingDevices ADD COLUMN paused INTEGER DEFAULT 0');
+      } catch (e) {
+        //print('Column paused already exists or error: $e');
+      }
     }
   }
 
@@ -306,6 +432,8 @@ class SQLiteService {
     int? limit,
     String? orderBy,
     int? offset,
+    String? where,
+    List<Object?>? whereArgs,
   }) async {
     Database db = await database;
     if (!db.isOpen) {
@@ -317,6 +445,8 @@ class SQLiteService {
       limit: limit,
       orderBy: orderBy,
       offset: offset,
+      where: where,
+      whereArgs: whereArgs,
     );
   }
 

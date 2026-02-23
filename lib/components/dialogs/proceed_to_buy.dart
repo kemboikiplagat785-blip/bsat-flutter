@@ -8,7 +8,7 @@ import 'show_error_dialog.dart';
 import 'success_dialog.dart';
 
 Future<bool?> proceedToPayDialog(BuildContext context, int amount, int days,
-    int subId, String name, String expiryDate) {
+    int subId, String name, String expiryDate, int planId, String tier,) {
   var textTheme = Theme.of(context).textTheme;
   return showDialog<bool>(
     barrierDismissible: false,
@@ -48,7 +48,7 @@ Future<bool?> proceedToPayDialog(BuildContext context, int amount, int days,
               showLoadingDialog(context);
 
               await PaymentOps()
-                  .payCore(amount, days, subId)
+                  .payCore(amount, days, subId, planId, tier)
                   // _phoneService
                   //     .makeMyRequest("*140*${amount}*0702015937#",
                   //         s.subscriptionId)

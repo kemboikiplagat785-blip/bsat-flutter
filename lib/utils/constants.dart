@@ -93,49 +93,96 @@ class TransactionStatuses {
   };
 }
 
-List<Map<String, dynamic>> kSubscriptions = [
+List<Map<String, dynamic>> kSubscriptionTiers = [
   {
     "id": 0,
-    "durationString": "day",
-    "durationDays": 1,
-    "discount": 0,
-    "value": 10,
-    "details": "- 1 day",
+    "tier": "Free",
+    "features": [
+      "Forwarding MPesa texts (online and offline)",
+    ],
+    "plans": [
+      {"plan_id": -1, "durationString": "Free Forever", "durationDays": 36500, "amount": 0},
+    ],
+    "color": kGrayColor,
   },
   {
     "id": 1,
-    "durationString": "week",
-    "durationDays": 5,
-    "discount": 0,
-    "value": 50,
-    "details": "- 5 days",
+    "tier": "Offline",
+    "features": [
+      "Everything in Free",
+      "Calculator",
+      "Process offline transactions",
+      "Reply to customers",
+      "Statistics dashboard",
+      "Schedule tasks",
+    ],
+    "plans": [
+      {"plan_id": 0, "durationString": "Day", "durationDays": 1, "amount": 10},
+      {"plan_id": 1, "durationString": "5 Days", "durationDays": 5, "amount": 50},
+      {"plan_id": 2, "durationString": "Month", "durationDays": 30, "amount": 300},
+    ],
+    "tokens": [
+      {"token_id": 0, "amount": 100, "value": 15, "details": "10 tokens"},
+      {"token_id": 1, "amount": 250, "value": 30, "details": "20 tokens"},
+      {"token_id": 2, "amount": 800, "value": 90, "details": "50 tokens"}
+    ],
+    "color": kWarningColor,
   },
   {
     "id": 2,
-    "durationString": "month",
-    "durationDays": 30,
-    "discount": 0,
-    "value": 300,
-    "details": "- 30 days",
-  }
+    "tier": "Online",
+    "features": [
+      "Everything in Offline",
+      "Process requests from online",
+      "Link devices",
+      "Online link to sell data",
+    ],
+    "plans": [
+      {"plan_id": 3, "durationString": "Day", "durationDays": 1, "amount": 20},
+      {"plan_id": 4, "durationString": "5 Days", "durationDays": 5, "amount": 100},
+      {"plan_id": 5, "durationString": "Month", "durationDays": 30, "amount": 600},
+    ],
+    "tokens": [
+      {"token_id": 3, "amount": 150, "value": 20, "details": "20 tokens"},
+      {"token_id": 4, "amount": 500, "value": 75, "details": "50 tokens"},
+      {"token_id": 5, "amount": 900, "value": 120, "details": "100 tokens"}
+    ],
+    "color": kIndigoColor,
+  },
+  {
+    "id": 3,
+    "tier": "Online +",
+    "features": [
+      "Everything in Online",
+      "Control portal",
+      "AI chat",
+      "Whatsapp bot",
+    ],
+    "plans": [
+      {"plan_id": 6, "durationString": "Day", "durationDays": 1, "amount": 25},
+      {"plan_id": 7, "durationString": "5 Days", "durationDays": 5, "amount": 120},
+      {"plan_id": 8, "durationString": "Month", "durationDays": 30, "amount": 700},
+    ],
+    "color": kPrimaryColor,
+  },
 ];
 
 List<Map<String, dynamic>> kTokens = [
   {
     "id": 0,
-    "amount": 200,
+    "amount": 100,
     "value": 15,
     "details": "10 tokens",
   },
   {
     "id": 1,
-    "amount": 450,
+    "amount": 250,
     "value": 30,
     "details": "20 tokens",
   },
   {
     "id": 2,
-    "amount": 1000,
+    "amount": 800,
     "value": 90,
     "details": "50 tokens",
   }

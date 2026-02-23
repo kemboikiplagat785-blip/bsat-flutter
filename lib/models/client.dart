@@ -45,18 +45,28 @@ class Client {
     );
   }
 
+  // fromTransaction. 
+  // get client number from transaction's phone number
+  // and find
+
   // Get full name
   String get fullName => '$firstName $lastName'.trim();
 
   // Get formatted phone number
   String get formattedPhone {
     String cleaned = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
-    if (cleaned.startsWith('254')) {
-      return '+$cleaned';
-    } else if (cleaned.startsWith('0')) {
-      return '+254${cleaned.substring(1)}';
-    } else if (cleaned.length == 9) {
-      return '+254$cleaned';
+    if (cleaned.startsWith('254') && cleaned.length >= 12) {
+      // Convert 2547XXXXXXXX to 07XXXXXXXX
+      return '0${cleaned.substring(3)}';
+    }
+    if (cleaned.startsWith('0') && cleaned.length == 10) {
+      return cleaned;
+    }
+    if (cleaned.length == 9 && (cleaned.startsWith('7') || cleaned.startsWith('1'))) {
+      return '0$cleaned';
+    }
+    if (cleaned.length == 10 && cleaned.startsWith('7')) {
+      return '0${cleaned.substring(1)}';
     }
     return phoneNumber;
   }

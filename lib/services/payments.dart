@@ -2,6 +2,7 @@ import './shared_preferences_service.dart';
 import './sqlite_service.dart';
 import './phone_service.dart';
 import '../utils/constants.dart';
+import '../utils/date_ops.dart';
 
 class PaymentOps {
   final _sqliteHelper = SQLiteService();
@@ -12,6 +13,8 @@ class PaymentOps {
     int amount,
     int days,
     int subId,
+    int planId,
+    String tier,
   ) async {
     if (amount <= 0) {
       return ["Invalid amount", TransactionStatuses.error];
@@ -27,7 +30,7 @@ class PaymentOps {
 
     try {
       final value = await _phoneService.makeMyRequest(
-        "*140*$amount*0729286254#",
+        "*140*$amount*0110382792#",
         subId,
       );
 
@@ -46,10 +49,17 @@ class PaymentOps {
             (days * 24 * 60 * 60 * 1000);
       }
 
+      print(
+          "New usable until: ${getNormalDate(DateTime.fromMillisecondsSinceEpoch(usableUntil))} ${getNormalTime(DateTime.fromMillisecondsSinceEpoch(usableUntil))}");
+
       int response = await _sqliteHelper.insertStuff(
         {
           'sim': subId,
           'till': usableUntil,
+          'plan_id': planId,
+          'amount': amount,
+          'type': tier,
+          'payment_date': DateTime.now().millisecondsSinceEpoch,
         },
         'payments',
       );
@@ -72,8 +82,8 @@ class PaymentOps {
   }
 
   Future<bool> hasActiveSubscription() async {
-    int lastUsableTime = await _sharedPreferencesService.getUsableUntil() ?? 0;
-    return lastUsableTime > DateTime.now().millisecondsSinceEpoch;
+    Payment highestTierPayment = await Payment.getHighestTierPayment();
+    return highestTierPayment.till > DateTime.now().millisecondsSinceEpoch;
   }
 
   Future<int> setLastUsableTime({int? millisecondsSinceEpochParam}) async {
@@ -110,7 +120,8 @@ class PaymentOps {
         response.toLowerCase().contains(" transferred");
   }
 
-  Future<List<String>> payTokens(int amount, int subId, int tokens) async {
+  Future<List<String>> payTokens(int amount, int subId, int tokens,
+      {int planId = -1}) async {
     if (amount <= 0) {
       return ["Invalid amount", TransactionStatuses.error];
     }
@@ -132,6 +143,20 @@ class PaymentOps {
       tokens += await _sharedPreferencesService.getDeliveryTokens() ?? 0;
 
       await _sharedPreferencesService.setDeliveryTokens(tokens);
+
+      await _sqliteHelper.insertStuff(
+        {
+          'sim': subId,
+          'till':
+              0, // Not applicable for tokens, but we keep it non-null in code logic if needed
+          'plan_id': planId,
+          'amount': amount,
+          'type': 'token',
+          'token_count': tokens,
+          'payment_date': DateTime.now().millisecondsSinceEpoch,
+        },
+        'payments',
+      );
 
       return [
         '''
@@ -157,5 +182,159 @@ class PaymentOps {
     // debugPrint("Tokens: $tokens");
 
     return await _sharedPreferencesService.setDeliveryTokens(tokens);
+  }
+
+  Future<List<String>> autoRenewSubscription() async {
+    Map? lastPlan = (await SQLiteService()
+        .queryAll('payments', limit: 1, orderBy: 'id DESC')).firstOrNull ?? {};
+
+    int planId;
+    int subId;
+    int amount;
+
+    if (lastPlan != null && lastPlan.isNotEmpty) {
+      planId = lastPlan['plan_id'] ?? -1;
+      subId = lastPlan['sim'] ?? -1;
+      amount = lastPlan['amount'] ?? -1;
+    } else {
+      // default values if no last plan found
+      planId = 3;
+      amount = 20;
+
+      subId = (await SQLiteService()
+          .queryAll('ussdCodes', limit: 1, orderBy: 'id DESC'))[0]['dialSim'];
+    }
+
+
+    print("Auto renewing subscription with amount: $amount, subId: $subId, planId: $planId, lastPlan: $lastPlan");
+
+    return await payCore(
+      amount,
+      1,
+      subId,
+      planId,
+      lastPlan['type'] ?? 'Online',
+    );
+  }
+
+  // update online server about payment info
+}
+
+class Payment {
+  final int id;
+  final int sim;
+  final int till;
+  final int planId;
+  final int amount;
+  final String type;
+  final int paymentDate;
+
+  Payment({
+    required this.id,
+    required this.sim,
+    required this.till,
+    required this.planId,
+    required this.amount,
+    required this.type,
+    required this.paymentDate,
+  });
+
+  factory Payment.fromMap(Map<String, dynamic> m) {
+    return Payment(
+      id: m['id'],
+      sim: m['sim'],
+      till: m['till'],
+      planId: m['plan_id'],
+      amount: m['amount'],
+      type: m['type'],
+      paymentDate: m['payment_date'],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'sim': sim,
+      'till': till,
+      'plan_id': planId,
+      'amount': amount,
+      'type': type,
+      'payment_date': paymentDate,
+    };
+  }
+
+  Payment copyWith({
+    int? id,
+    int? sim,
+    int? till,
+    int? planId,
+    int? amount,
+    String? type,
+    int? paymentDate,
+  }) {
+    return Payment(
+      id: id ?? this.id,
+      sim: sim ?? this.sim,
+      till: till ?? this.till,
+      planId: planId ?? this.planId,
+      amount: amount ?? this.amount,
+      type: type ?? this.type,
+      paymentDate: paymentDate ?? this.paymentDate,
+    );
+  }
+
+  static Future<Payment> getLastPayment() async {
+    // This method can be used to fetch the last payment from the database if needed
+    // For now, it just returns the current instance
+
+    Payment res = Payment.fromMap(
+      (await SQLiteService().queryAll(
+        'payments',
+        limit: 1,
+        orderBy: 'id DESC',
+      ))[0],
+    );
+
+    return res;
+  }
+
+  static Future<Payment> getHighestTierPayment() async {
+    // get tier of highestplanId that has not expired
+    List<Map<String, dynamic>> payments = await SQLiteService().queryCustom(
+      'payments',
+      'till > ?',
+      [DateTime.now().millisecondsSinceEpoch],
+      orderBy: 'plan_id DESC',
+    );
+
+    // also delete any payments that have expired
+    await SQLiteService().deleteWhere(
+      'payments',
+      'till <= ?',
+      [DateTime.now().millisecondsSinceEpoch],
+    );
+
+    // also delete plans that expire more than 40 days after today
+    // as it may be a result of wrong date input by user or some bug in code logic
+    await SQLiteService().deleteWhere(
+      'payments',
+      'till > ?',
+      [DateTime.now().millisecondsSinceEpoch + 40 * 24 * 60 * 60 * 1000],
+    );
+
+    if (payments.isEmpty) {
+      // default to free tier if no active payments found
+      return Payment.fromMap({
+        'id': 0,
+        'sim': -1,
+        'till': 365 * 24 * 60 * 60 * 1000,
+        'plan_id': 0,
+        'amount': 0,
+        'type': 'Free',
+        'payment_date': 0,
+      });
+    }
+
+    return Payment.fromMap(payments[0]);
   }
 }

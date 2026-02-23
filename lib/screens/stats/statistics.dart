@@ -31,7 +31,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             header(context, 'Business Insights',
-                isDashboard: widget.isDashboard),
+                hideBack: widget.isDashboard),
             const SizedBox(height: kPagePadding),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: kPagePadding),

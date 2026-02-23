@@ -45,15 +45,20 @@ class _DialPadScreenState extends State<DialPadScreen> {
   Future<void> _fetchOffers() async {
     List offers = await _sqLiteService.queryAll('ussdCodes');
     setState(() {
-      myOffers = offers
-          .map((offer) => {
-                'amount': offer['amount'],
-                'isAdvanced': offer['isAdvanced'],
-                'code': offer['code'],
-              })
-          .toList();
+      myOffers = List<Map<String, dynamic>>.from(offers.map((offer) => {
+            'amount': offer['amount'],
+            'isAdvanced': offer['isAdvanced'],
+            'code': offer['code'],
+          }));
     });
   }
+
+  // Future<void> _getContacts() async {
+  //   if (await FlutterContacts.requestPermission()) {
+  //     List<Contact> contacts = await FlutterContacts.getContacts();
+  //     // debugPrint(contacts);
+  //   }
+  // }
 
   Future<void> _getClipboardContent() async {
     ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -81,51 +86,100 @@ class _DialPadScreenState extends State<DialPadScreen> {
 
   @override
   Widget build(BuildContext context) {
+    var titleLarge = Theme.of(context).textTheme.titleLarge;
     return Scaffold(
       body: SingleChildScrollView(
         child: Column(
           children: [
             header(context, 'Dialpad'),
+            const SizedBox(height: kPagePadding),
             Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: TextField(
-                // focusNode: focusNode,
-                controller: _controller,
-                // readOnly: true, // Disable typing with keyboard
-                style: const TextStyle(fontSize: 20),
-                decoration: const InputDecoration(
-                    // border: InputBorder.none,
+              padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(kBorderRadius),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
                     ),
-                showCursor: true,
-                onTap: () {
-                  // focusNode.unfocus();
-                },
-                onChanged: (text) {
-                  setState(() {
-                    clipboardContent = text;
-                  });
-                },
+                  ],
+                ),
+                child: TextField(
+                  controller: _controller,
+                  style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    hintText: "Enter number",
+                    prefixIcon:
+                        Icon(CupertinoIcons.phone, color: kPrimaryColor),
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.paste),
+                      onPressed: _getClipboardContent,
+                      tooltip: "Paste",
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(kBorderRadius),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Theme.of(context).cardColor,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: kPagePadding, vertical: kPagePadding * 0.8),
+                  ),
+                  onChanged: (text) {
+                    setState(() {
+                      clipboardContent = text;
+                    });
+                  },
+                ),
               ),
             ),
-            // Dialpad keys
-            Column(
-              children: [
-                Container(
-                  padding: kPagePaddingInsets / 2,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(kBorderRadius / 2),
-                  ),
-                  child: Text(
-                    clipboardContent.isNotEmpty
-                        ? "Select offer to recommend for ${_controller.text}"
-                        : "",
-                  ),
+            const SizedBox(height: kPagePadding * 1.5),
+            if (clipboardContent.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "Offers for $clipboardContent",
+                        style: TextStyle(
+                          color: Theme.of(context).hintColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                Wrap(
-                  children: myOffers.map((offer) {
-                    return GestureDetector(
+              ),
+            const SizedBox(height: kPagePadding),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
+              child: GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: kPagePadding,
+                  mainAxisSpacing: kPagePadding,
+                  childAspectRatio: 1.2,
+                ),
+                itemCount: myOffers.length,
+                itemBuilder: (context, index) {
+                  final offer = myOffers[index];
+                  return Material(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(kBorderRadius),
+                    elevation: 1,
+                    shadowColor: Colors.black.withOpacity(0.05),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(kBorderRadius),
                       onTap: () async {
-                        // debugPrint("Offer: $offer");
                         SimCard? chosen = await chooseSim(context, sims);
 
                         if (chosen == null) {
@@ -141,28 +195,50 @@ class _DialPadScreenState extends State<DialPadScreen> {
                         );
                       },
                       child: Container(
-                        padding: kPagePaddingInsets,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(kBorderRadius),
+                          border: Border.all(
+                            color: kGrayColor.withOpacity(0.1),
+                            width: 1,
+                          ),
+                        ),
                         child: Column(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Container(
-                              decoration: BoxDecoration(),
-                              child: Text('Ksh ${offer['amount']} '),
+                            Text(
+                              '${offer['amount']}',
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: kPrimaryColor,
+                              ),
                             ),
+                            Text(
+                              'Ksh',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Theme.of(context).hintColor,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
                             Text(
                               offer['code'],
                               style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(context).indicatorColor,
+                                fontSize: 9,
+                                color: Theme.of(context).hintColor,
+                                fontFamily: 'Monospace',
                               ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-              ],
+                    ),
+                  );
+                },
+              ),
             ),
             const SizedBox(height: kPagePadding * 2),
           ],

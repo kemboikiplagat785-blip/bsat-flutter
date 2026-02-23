@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:sim_data/sim_data.dart';
 
+import '../../services/sms_sevice.dart';
 import '../../services/sqlite_service.dart';
 import '../../utils/numbers.dart';
 
@@ -23,6 +24,7 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
   int defaultSimSubId = -1;
   List<SimCard> simCards = [];
   List<int> balances = [];
+  List<int> numbers = [];
 
   int airtimeDay = 0;
   int airtimeYesterday = 0;
@@ -186,7 +188,7 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
     debugPrint("Getting balances");
     if (!mounted) return;
 
-    if(_showAirtimeBalances) {
+    if (_showAirtimeBalances) {
       setState(() {
         balances.clear();
       });
@@ -200,11 +202,17 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
       int balance = await PhoneService()
           .getAirtimeBalance(subscriptionId: i.subscriptionId);
 
+      int number = extract9DigitNumber(
+          (await PhoneService().makeMyRequest("*100*4*1#", i.subscriptionId))
+                  .first ??
+              "");
+
       if (!mounted) return;
       debugPrint("Balance: $balance");
 
       setState(() {
         balances.add(balance);
+        numbers.add(number);
       });
     }
   }
@@ -281,6 +289,16 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
                     children: [
                       Text(
                         '''${entry.value.displayName} ${Numbers.formatNumber(entry.value.slotIndex + 1)} ${entry.value.subscriptionId == defaultSimSubId ? '(Default)' : ''} ''',
+                        style: TextStyle(
+                            // fontSize: 16,
+                            // color: Theme.of(context).textTheme.bodyText1?.color,
+                            ),
+                      ),
+                      const SizedBox(height: kPagePadding / 4),
+                      Text(
+                        (entry.key < numbers.length)
+                            ? "${numbers[entry.key]}"
+                            : '...',
                         style: TextStyle(
                             // fontSize: 16,
                             // color: Theme.of(context).textTheme.bodyText1?.color,

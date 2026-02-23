@@ -121,18 +121,6 @@ class BackendService {
     });
   }
 
-  Future<Map<String, dynamic>> sendMessageAuthenticated({
-    required String title,
-    required String body,
-    String? topic,
-  }) async {
-    return await post('/api/fcm/send-secure', body: {
-      'title': title,
-      'body': body,
-      'topic': topic ?? 'general',
-    });
-  }
-  
   // Example: Get user transactions
   Future<Map<String, dynamic>> getTransactions() async {
     return await get('/api/transactions');

@@ -5,51 +5,76 @@ import '../../utils/constants.dart';
 
 Future<SimCard?> chooseSim(
   BuildContext context,
-  List<SimCard> sims,
-) {
+  List<SimCard> sims, {
+  bool isBoth = false,
+}) {
   return showDialog<SimCard>(
     context: context,
     builder: (BuildContext context) {
       return AlertDialog(
-        title: Text(
-          'Choose sim card',
-          style: const TextStyle(
-              // color: kDullColor,
-              ),
-        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text("Select a sim card to use"),
-            Container(
-              padding: kPagePaddingInsets,
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(kBorderRadius),
-              ),
+            const SizedBox(height: kPagePadding),
+            Center(child: Text("Select a sim card to use")),
+            Padding(
+              padding: const EdgeInsets.all(kPagePadding),
               child: Row(
-                children: sims.map((s) {
-                  return Expanded(
-                    child: InkWell(
+                children: [
+                  ...sims.map((s) {
+                    return GestureDetector(
                       onTap: () {
                         Navigator.pop(context, s);
                       },
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.sim_card_rounded,
-                            size: 40,
-                            color: kPrimaryColor,
-                          ),
-                          const SizedBox(height: kPagePadding / 2),
-                          Text(s.displayName, style: TextStyle(color: kPrimaryColor.withValues(alpha: 0.7)),),
-                        ],
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: kPrimaryColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: kPrimaryColor),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.sim_card,
+                                size: 14, color: kPrimaryColor),
+                            const SizedBox(width: 4),
+                            Text(s.displayName,
+                                style: TextStyle(
+                                    color: kPrimaryColor,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                  if (isBoth)
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.pop(context, -1);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isBoth
+                              ? kPrimaryColor.withOpacity(0.1)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: isBoth
+                                  ? kPrimaryColor
+                                  : kGrayColor.withOpacity(0.2)),
+                        ),
+                        child: Text('Both',
+                            style: TextStyle(
+                                color: isBoth ? kPrimaryColor : kGrayColor,
+                                fontWeight: FontWeight.bold)),
                       ),
                     ),
-                  );
-                }).toList(),
+                ],
               ),
             ),
           ],

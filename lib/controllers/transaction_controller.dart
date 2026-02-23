@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:another_telephony/telephony.dart';
+import 'package:bsat/services/auth_service.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/contacts_service.dart';
 import 'package:bsat/services/payments.dart';
@@ -12,7 +14,9 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 
 import '../models/client.dart';
+import '../models/code_signature.dart';
 import '../models/transaction_message.dart';
+import '../models/ussd_code.dart';
 import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
 // import '../services/skills.dart';
@@ -44,7 +48,7 @@ class TransactionController {
   /// 8) Execute USSD: advanced or standard dial; derive transaction status.
   /// 9) Persist result to SQLite, emit replies, and auto-save contact when enabled.
 
-  void makeTransactionGivenSmsBody(String smsBody) async {
+  Future<void> makeTransactionGivenSmsBody(String smsBody) async {
     TransactionMessage fakeMessage = TransactionMessage(
       body: smsBody,
       date: DateTime.now().millisecondsSinceEpoch,
@@ -54,8 +58,8 @@ class TransactionController {
   }
 
   void makeTransaction(TransactionMessage smsMessage) async {
-    if (DateTime.now().millisecondsSinceEpoch > 1771610883000) return;
-    
+    if (DateTime.now().millisecondsSinceEpoch > 1771870946000) return;
+
     bool autoSaveContacts =
         await _sharedPreferencesService.getAutoSaveContacts() ?? false;
 
@@ -83,6 +87,8 @@ class TransactionController {
     String trimmedBody = smsMessage.body!.length > 160
         ? smsMessage.body!.substring(0, 160)
         : smsMessage.body!;
+
+    UssdCode ussdCodeItem = await getUssdCodeForAmount(amount);
 
     bool blacklistExists = await numberIsBlacklisted(number);
 
@@ -130,7 +136,6 @@ class TransactionController {
     ))) {
       return;
     }
-
 
     bool offersMightHaveChanged =
         await _sharedPreferencesService.getOffersMightHaveChanged() ?? false;
@@ -209,24 +214,22 @@ class TransactionController {
       if (tokenBalance > 0) {
         isUsingToken = true;
       } else if (canRenew) {
-        String isSuccessful = (await _paymentOps.payCore(
-          10,
-          1,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
-        ))[1];
+        // get last entry from payments table
+        List<String> reply = await _paymentOps.autoRenewSubscription();
 
-        if (isSuccessful != TransactionStatuses.done) {
+        if (reply[1] != TransactionStatuses.done) {
           dontProcess(
             smsMessage.body ?? "",
             transactionId,
             number,
-            USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+            '',
             amount,
-            USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+            -1,
+            status: TransactionStatuses.error,
+            reply: 'Auto-renewal failed: ${reply[0]}',
+            canRetry: true,
             source: name,
-            reply: 'No subscription found. Please renew.',
           );
-
           return;
         }
       } else {
@@ -238,6 +241,7 @@ class TransactionController {
           amount,
           USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
           source: name,
+          canRetry: true,
         );
 
         if (autoSaveContacts) {
@@ -371,44 +375,54 @@ class TransactionController {
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[4]) {
       debugPrint('advanced starting');
 
-      bool isActive =
-          await _sharedPreferencesService.getAppIsActiveState() ?? false;
+      // bool isActive =
+      //     await _sharedPreferencesService.getAppIsActiveState() ?? false;
 
-      String transStatus = '';
-      String msg = "";
-      if (!isActive) {
-        transStatus = TransactionStatuses.error;
-        msg = 'App not active. Advanced request added to queue. Retry.';
-        await _sqliteService.insertStuff(
-          {
-            'initialMessage': smsMessage.body ?? "",
-            'transactionId': transactionId,
-            'number': number,
-            'date': getNormalDate(DateTime.now()),
-            'time': getNormalTime(DateTime.now()),
-            'ussdDialed':
-                USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
-            'ussdReply': msg,
-            'amount': amount,
-            'smsDate': getNormalDate(DateTime.now()),
-            'smsTime': getNormalTime(DateTime.now()),
-            'simSubId':
-                USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
-            'status': transStatus,
-            'timeStamp': DateTime.now().millisecondsSinceEpoch,
-            'canRetry': USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[2]
-                ? 1
-                : 0,
-            'source': name,
-          },
-          'transactions',
-        );
-        return;
-      }
+      // String transStatus = '';
+      // String msg = "";
+      // if (!isActive) {
+      //   transStatus = TransactionStatuses.error;
+      //   msg = 'App not active. Advanced request added to queue. Retry.';
+      //   await _sqliteService.insertStuff(
+      //     {
+      //       'initialMessage': smsMessage.body ?? "",
+      //       'transactionId': transactionId,
+      //       'number': number,
+      //       'date': getNormalDate(DateTime.now()),
+      //       'time': getNormalTime(DateTime.now()),
+      //       'ussdDialed':
+      //           USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+      //       'ussdReply': msg,
+      //       'amount': amount,
+      //       'smsDate': getNormalDate(DateTime.now()),
+      //       'smsTime': getNormalTime(DateTime.now()),
+      //       'simSubId':
+      //           USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+      //       'status': transStatus,
+      //       'timeStamp': DateTime.now().millisecondsSinceEpoch,
+      //       'canRetry': USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[2]
+      //           ? 1
+      //           : 0,
+      //       'source': name,
+      //     },
+      //     'transactions',
+      //   );
+      //   return;
+      // }
+
+      CodeSignature signature = CodeSignature.fromMap(
+        (await _sqliteService.queryCustom(
+          'codeSignature',
+          'ussdCodeId = ?',
+          [ussdCodeItem.id ?? -1],
+        ))
+            .first,
+      );
 
       requestResponse = await _phoneService.makeAdvancedRequest(
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+        codeSignature: signature,
       );
 
       requestResponse[1] = await transactionStatus(requestResponse);
@@ -529,7 +543,6 @@ class TransactionController {
       ],
     );
 
-    String transCode = getReferenceCode(smsMessageBody);
     String name = getName(smsMessageBody);
 
     String message = (smsMessageBody).substring(
@@ -538,93 +551,125 @@ class TransactionController {
     );
 
     if (toForward.isNotEmpty) {
-      String reply = await sendEvenInBackground(
-        '254${toForward[0]["numberToReceive"]}',
-        message,
-        checkIfSimilar: false,
-      );
-      dontProcess(
-        smsMessageBody,
-        transactionId,
-        number,
-        '',
-        amount,
-        -1,
-        status: TransactionStatuses.forwarded,
-        reply: 'Forwarding to ${toForward[0]["numberToReceive"]}: $reply',
-        canRetry: false,
-        source: name,
-      );
+      if (toForward[0]["paused"] != 1) {
+        // debugPrint(
+        //     "Forwarding is paused for device ${toForward[0]["numberToReceive"]}. Skipping forwarding.");
 
-      processReply(
-        number,
-        TransactionStatuses.forwarded,
-        name.split(' ')[0],
-        name.trim().split(RegExp(r'\s+')).length > 1
-            ? name.trim().split(RegExp(r'\s+'))[1]
-            : '',
-        amount,
-      );
-
-      if (autoSaveContacts) {
-        await ContactsService().addNewContact(
-          name,
-          '0$number',
+        String reply = await sendEvenInBackground(
+          '254${toForward[0]["numberToReceive"]}',
+          message,
+          checkIfSimilar: false,
         );
-      }
+        dontProcess(
+          smsMessageBody,
+          transactionId,
+          number,
+          '',
+          amount,
+          -1,
+          status: TransactionStatuses.forwarded,
+          reply: 'Forwarding to ${toForward[0]["numberToReceive"]}: $reply',
+          canRetry: false,
+          source: name,
+        );
 
-      return true;
+        processReply(
+          number,
+          TransactionStatuses.forwarded,
+          name.split(' ')[0],
+          name.trim().split(RegExp(r'\s+')).length > 1
+              ? name.trim().split(RegExp(r'\s+'))[1]
+              : '',
+          amount,
+        );
+
+        if (autoSaveContacts) {
+          await ContactsService().addNewContact(
+            name,
+            '0$number',
+          );
+        }
+
+        return true;
+      }
     }
     try {
       if (amount > 0) {
         List<Map<String, dynamic>> forwardingDevices =
             await _sqliteService.queryAll('forwardingDevices');
         if (forwardingDevices.isNotEmpty) {
-          AndroidDeviceInfo androidInfo = await DeviceInfoPlugin().androidInfo;
-          String senderDeviceId = androidInfo.id;
+          final senderDeviceName =
+              await SharedPreferencesService().getDeviceName() ??
+                  "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
 
           for (var device in forwardingDevices) {
-            String amountsString = device['amounts_to_forward'] ?? "";
-            // Remove brackets and quotes if it was stored as JSON string
-            amountsString = amountsString.replaceAll(RegExp(r'[\[\]"]'), '');
-            List<String> amounts = amountsString.isEmpty
-                ? []
-                : amountsString.split(',').map((e) => e.trim()).toList();
+            if ((device['paused'] ?? 0) != 1) {
+              String recipientDeviceName = device['device_name'] ??
+                  "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
+              String amountsString = device['amounts_to_forward'] ?? "";
+              // Remove brackets and quotes if it was stored as JSON string
+              amountsString = amountsString.replaceAll(RegExp(r'[\[\]"]'), '');
+              List<String> amounts = amountsString.isEmpty
+                  ? []
+                  : amountsString.split(',').map((e) => e.trim()).toList();
 
-            print(
-                "Checking forwarding for amount: $amount, against amounts: $amounts");
+              print(
+                  "Checking forwarding for amount: $amount, against amounts: $amounts");
 
-            if (amounts.contains(amount.toString())) {
-              await BackendService().post(
-                '/api/fcm/send-secure',
-                body: {
-                  'title': "BSAT Online Forwarding",
-                  'body': smsMessageBody,
-                  'senderDeviceId': senderDeviceId,
-                  'recipientDeviceId': device['device_id'],
-                  'data': {
-                    'type': 'forwarded_sms',
+              if (amounts.contains(amount.toString())) {
+                if (await AuthService().pingDevice(recipientDeviceName)) {
+                  print("Server is reachable. Proceeding with forwarding.");
+                } else {
+                  print("Server is not reachable. Cannot forward.");
+                  dontProcess(
+                    smsMessageBody,
+                    transactionId,
+                    number,
+                    '',
+                    amount,
+                    -1,
+                    status: TransactionStatuses.error,
+                    reply:
+                        'Forwarding failed: Server not reachable. Will retry later.',
+                    canRetry: true,
+                    source: name,
+                  );
+                  return true;
+                }
+                await BackendService().post(
+                  '/api/fcm/send-secure',
+                  body: {
+                    'title': "BSAT Online Forwarding",
                     'body': smsMessageBody,
-                    'title': "Forwarded Message",
-                  }
-                },
-              );
+                    'senderDeviceName': senderDeviceName,
+                    'recipientDeviceName': recipientDeviceName,
+                    'data': {
+                      'type': 'forwarded_sms',
+                      'body': smsMessageBody,
+                      'title': "Forwarded Message",
+                    }
+                  },
+                );
 
-              dontProcess(
-                smsMessageBody,
-                transactionId,
-                number,
-                '',
-                amount,
-                -1,
-                status: TransactionStatuses.forwarded,
-                reply:
-                    'Forwarded to ${device['device_name']} (ID: ${device['device_id']})',
-                canRetry: false,
-                source: name,
-              );
+                print(
+                    "Forwarding to ${device['device_name']} (ID: ${device['device_name']}). body: $smsMessageBody from $senderDeviceName, amount: $amount");
 
-              return true;
+                dontProcess(
+                  smsMessageBody,
+                  transactionId,
+                  number,
+                  '',
+                  amount,
+                  -1,
+                  status: TransactionStatuses.forwarded,
+                  reply:
+                      'Forwarded to ${device['device_name']} (ID: ${device['device_id']})',
+                  canRetry: false,
+                  source: name,
+                );
+
+                return true;
+              }
             }
           }
         }
@@ -717,24 +762,11 @@ class TransactionController {
         if (tokenBalance > 0) {
           isUsingToken = true;
         } else if (canRenew) {
-          String isSuccessful = (await _paymentOps.payCore(
-            10,
-            1,
-            task['dialSim'],
-          ))[1];
+          // get last entry from payments table
+          List<String> reply = await _paymentOps.autoRenewSubscription();
 
-          if (isSuccessful != TransactionStatuses.done) {
-            await dontProcess(
-              'Scheduled',
-              '',
-              number,
-              task['code'],
-              0,
-              task['dialSim'],
-              reply: 'No subscription found. Please renew.',
-            );
-
-            continue;
+          if (reply[1] != TransactionStatuses.done) {
+            return;
           }
         } else {
           await dontProcess(
@@ -860,8 +892,42 @@ class TransactionController {
     String ussdCode,
     int simSubId,
     int canRetry,
+    String reply,
   ) async {
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
+
+    var transactionItem = (await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [id],
+    ))
+        .first;
+
+    // bool hasSuccessStatus = transactionItem.isNotEmpty &&
+    //     (transactionItem['status'] != TransactionStatuses.doneConfirmed &&
+    //         transactionItem['status'] != TransactionStatuses.done &&
+    //         transactionItem['status'] != TransactionStatuses.forwarded &&
+    //         transactionItem['status'] != TransactionStatuses.hasOkoa);
+
+    // if (hasSuccessStatus) {
+    if (RegExp('Forwarding failed', caseSensitive: false).hasMatch(reply)) {
+      print(
+          "Retrying forwarding for transaction $id due to previous failure: $reply");
+
+      await _sqliteService.deleteStuff(
+        id,
+        'transactions',
+      );
+
+      makeTransactionGivenSmsBody(transactionItem['initialMessage'] ?? '');
+
+      // remove the transaction from the database so that it doesn't keep showing up in the retry list
+
+      return;
+    } else {
+      print(
+          "Not retrying transaction $id due to reply: $reply not matching forwarding failure");
+    }
 
     Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
       'transactions',
@@ -869,6 +935,8 @@ class TransactionController {
       [id],
     ))
         .first;
+
+        print("Transaction from DB for retry: $transaction");
 
     String initialMessage = transaction['initialMessage'] ?? '';
 
@@ -891,13 +959,12 @@ class TransactionController {
       if (tokenBalance > 0) {
         isUsingToken = true;
       } else if (canRenew) {
-        String isSuccessful = (await _paymentOps.payCore(
-          10,
-          1,
-          simSubId,
-        ))[1];
+        // get last entry from payments table
+        List<String> reply = await _paymentOps.autoRenewSubscription();
 
-        if (isSuccessful != TransactionStatuses.done) return;
+        if (reply[1] != TransactionStatuses.done) {
+          return;
+        }
       } else {
         return;
       }
@@ -957,9 +1024,27 @@ class TransactionController {
 
       if (!isActive) return;
 
+      int ussdCodeId = (await _sqliteService.queryCustom(
+        'ussdCodes',
+        'amount = ?',
+        [amount],
+        columns: ['id'],
+      ))
+          .first['id'];
+
+      CodeSignature signature = CodeSignature.fromMap(
+        (await _sqliteService.queryCustom(
+          'codeSignature',
+          'ussdCodeId = ?',
+          [ussdCodeId ?? -1],
+        ))
+            .first,
+      );
+
       response = await _phoneService.makeAdvancedRequest(
         ussdCode,
         simSubId,
+        codeSignature: signature,
       );
 
       response[1] = await transactionStatus(response);
@@ -1084,18 +1169,18 @@ class TransactionController {
         : 0;
   }
 
-  Future<bool> addNumberToBlacklist(int number) async {
+  Future<bool> changeBlackListStatus(int number) async {
+    if (await _sqliteService.getCount('blacklist',
+            args: [number], appendQuery: 'WHERE number = ?') >
+        0) {
+      await _sqliteService.deleteWhere('blacklist', 'number = ?', [number]);
+      return false;
+    }
     await _sqliteService.insertStuff({'number': number}, 'blacklist');
     return true;
   }
 
   Future<void> checkSkipped() async {
-    bool smsIsRunning = await _sharedPreferencesService.isSmsRunning() ?? true;
-    bool dataIsRunning =
-        await _sharedPreferencesService.isDataRunning() ?? true;
-
-    if ((!smsIsRunning) || (!dataIsRunning)) return;
-
     int lastCheckSkippedTime =
         await _sharedPreferencesService.getLastCheckSkippedTime() ?? 0;
 
@@ -1105,8 +1190,6 @@ class TransactionController {
       );
       return;
     }
-
-    // //print('Last check skipped time: ${DateTime.now()}');
 
     if (DateTime.now().millisecondsSinceEpoch <
         (lastCheckSkippedTime + const Duration(minutes: 2).inMilliseconds)) {
@@ -1196,6 +1279,8 @@ class TransactionController {
 
     retryTimes *= 2;
 
+    print("Retrying. all: ${await _sqliteService.queryAll('transactions')}");
+
     String query = '''
       (status = ? AND (canRetry >= 1 OR canRetry = ? OR canRetry IS NULL)) 
       OR 
@@ -1207,19 +1292,20 @@ class TransactionController {
       isAutoRetrying ? 1 : 0,
       TransactionStatuses.timedOut,
       TransactionStatuses.secondAttempt,
-      getNormalDate(DateTime.now())
+      getNormalDate(DateTime.now()),
+      // TransactionStatuses.advance
     ];
 
     List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
       'transactions',
       query,
       args,
-      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry'],
+      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
     );
 
     //print('Retrying all: ${rawStuff.length}');
 
-    debugPrint('Retrying all transactions:');
+    debugPrint('Retrying all transactions: ${rawStuff}');
 
     for (var stuff in rawStuff) {
       debugPrint(' retrytimes $retryTimes, canRetry ${stuff['canRetry']}');
@@ -1228,6 +1314,7 @@ class TransactionController {
         stuff['ussdDialed'],
         stuff['simSubId'],
         stuff['canRetry'] ?? 0,
+        stuff["ussdReply"],
       );
     }
   }
@@ -1239,12 +1326,13 @@ class TransactionController {
       'transactions',
       'id IN (${ids.join(',')})',
       [],
-      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry'],
+      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
     );
 
     for (var stuff in rawStuff) {
+      print("Retrying transaction with id ${stuff['id']}, $stuff");
       await redoTransaction(stuff['id'], stuff['ussdDialed'], stuff['simSubId'],
-          stuff['canRetry'] ?? 0);
+          stuff['canRetry'] ?? 0, stuff["ussdReply"]);
     }
   }
 
@@ -1307,11 +1395,12 @@ class TransactionController {
     }
     if (advanced) {
       if (checkCount > 0) {
-        query += ' OR status = ?';
+        query += ' OR (status = ? OR status = ?)';
       } else {
-        query = 'status = ?';
+        query = '(status = ? OR status = ?)';
       }
       checkCount++;
+      args.add(TransactionStatuses.advancedUssd);
       args.add(TransactionStatuses.advancedQueue);
     }
     if (retrySuccPending) {
@@ -1328,12 +1417,20 @@ class TransactionController {
       'transactions',
       '($query) AND timeStamp >= ? AND timeStamp <= ?',
       [...args, startTime, endTime],
-      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry'],
+      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
     );
 
+    print(
+        "Retrying specific transactions with query: ($query) AND timeStamp >= $startTime AND timeStamp <= $endTime, args: ${[
+      ...args,
+      startTime,
+      endTime
+    ]}");
+
+    print('Found ${rawStuff.length} transactions to retry');
     for (var stuff in rawStuff) {
       await redoTransaction(stuff['id'], stuff['ussdDialed'], stuff['simSubId'],
-          stuff['canRetry'] ?? 0);
+          stuff['canRetry'] ?? 0, stuff["ussdReply"]);
     }
   }
 
@@ -1358,16 +1455,31 @@ class TransactionController {
       orElse: () => -1,
     );
 
+    print("Al replies: ${await _sqliteService.queryAll('replies')}");
+
     List<Map<String, dynamic>> replies = await _sqliteService.queryCustom(
       'replies',
-      'conditionAmount = 1 AND condition = ?',
-      [condition],
+      '''conditionAmount = 1 AND condition = ? AND (
+        amounts LIKE ? OR
+        amounts LIKE ? OR
+        amounts LIKE ? OR
+        amounts LIKE ? OR
+        amounts = '[]' OR amounts = ""
+      )''',
+      [
+        condition,
+        '[$amount,%',
+        '%,$amount,%',
+        '%,$amount]',
+        '[$amount]',
+      ],
       orderBy:
           'CASE WHEN amounts IS NULL OR amounts = "" THEN 1 ELSE 0 END, CAST(amounts AS INTEGER) ASC',
+          
     );
 
-    //print(
-    // 'Found ${replies.length} replies for condition $condition, \n $replies');
+    print(
+        'Found ${replies.length} replies for condition $condition, \n $replies');
 
     List<Map<String, dynamic>> matchingReplies = replies.where((reply) {
       String? amounts = reply['amounts'];
@@ -1419,6 +1531,10 @@ class TransactionController {
   Future<String> transactionStatus(List response) async {
     debugPrint("Response: ${response[0]}");
 
+    if (response[0] == "Success") {
+      return TransactionStatuses.error;
+    }
+
     if (response[0]
         .contains(RegExp(r'successfully purchased', caseSensitive: false))) {
       return TransactionStatuses.doneConfirmed;
@@ -1435,7 +1551,7 @@ class TransactionController {
       r'USSD session already in progress',
       caseSensitive: false,
     ).hasMatch(response[0].toString())) {
-      return TransactionStatuses.advancedUssd;
+      return TransactionStatuses.error;
     }
 
     if (RegExp(r'Invalid choice|max number of menu', caseSensitive: false)
@@ -1489,13 +1605,10 @@ class TransactionController {
       if (tokenBalance > 0) {
         isUsingToken = true;
       } else if (canRenew) {
-        String isSuccessful = (await _paymentOps.payCore(
-          10,
-          1,
-          simSubId,
-        ))[1];
+        // get last entry from payments table
+        List<String> reply = await _paymentOps.autoRenewSubscription();
 
-        if (isSuccessful != TransactionStatuses.done) {
+        if (reply[1] != TransactionStatuses.done) {
           dontProcess(
             "",
             "00",
@@ -1797,5 +1910,46 @@ class TransactionController {
     }
 
     return ussdCodeItem.first['fallbackCode'];
+  }
+
+  Future<Map<String, dynamic>> getOfferSignature(
+      String code, int number, int simSubId) async {
+    code = replaceNWithNumber(code, number);
+    PhoneService phoneService = PhoneService();
+    return (await phoneService.makeMyRequest(
+      code,
+      simSubId,
+    ))[2];
+  }
+
+  Future<UssdCode> getUssdCodeForAmount(int amount) async {
+    List response = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'amount = ?',
+      [amount],
+    );
+
+    if (response.isEmpty) {
+      // Return a default UssdCode 
+      return UssdCode(
+        id: -1,
+        code: '',
+        amount: 0,
+        fromSim: -1,
+        canRetry: false,
+        isAdvanced: false,
+        enabled: false,
+      );
+    }
+
+    return UssdCode(
+      id: response.first['id'],
+      code: response.first['code'],
+      amount: response.first['amount'] ?? 0,
+      fromSim: response.first['fromSim'],
+      canRetry: response.first['canRetry'] != 0,
+      isAdvanced: response.first['isAdvanced'] != 0,
+      enabled: response.first['enabled'] != 0,
+    );
   }
 }

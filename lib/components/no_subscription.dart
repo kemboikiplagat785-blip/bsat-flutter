@@ -1,4 +1,4 @@
-import 'package:bsat/screens/subscriptions/subscription.dart';
+import 'package:bsat/screens/settings/subscription.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';

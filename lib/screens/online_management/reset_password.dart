@@ -27,7 +27,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
         child: Column(
           spacing: kPagePadding / 2,
           children: [
-            // myHeroWidget(context),
+            // const MyHeroWidget(),
             header(context, 'Reset Password'),
             const SizedBox(height: kPagePadding * 3),
               if (error == '')

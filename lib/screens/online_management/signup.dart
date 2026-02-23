@@ -6,10 +6,12 @@ import 'package:bsat/utils/constants.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 // import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../components/hero.dart';
-import '../../services/auth_service.dart';
+import 'package:bsat/screens/online_management/register_device.dart';
+import 'package:bsat/services/auth_service.dart';
 import '../online_management/login.dart';
 
 class SignupPage extends StatefulWidget {
@@ -35,37 +37,32 @@ class _SignupPageState extends State<SignupPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              const SizedBox(height: kPagePadding * 3),
-              Container(
-                // height: 150,
-                child: myHeroWidget(context),
-              ),
-              const SizedBox(height: kPagePadding * 2),
-              Container(
-                decoration: const BoxDecoration(
-                  // color: Colors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            const SizedBox(height: kPagePadding * 3),
+            const MyHeroWidget(),
+            const SizedBox(height: kPagePadding * 2),
+            Container(
+              decoration: const BoxDecoration(
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
                 ),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: AutofillGroup(
                   child: Form(
                     key: _formKey,
                     child: Column(
                       children: [
                         Text(
                           'Sign Up',
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
                           ),
-                          // style: Theme.of(context).textTheme.headline6,
                         ),
                         const SizedBox(height: kPagePadding),
                         if (error == '')
@@ -94,19 +91,20 @@ class _SignupPageState extends State<SignupPage> {
                           (value) => email = value,
                           keyboardType: TextInputType.emailAddress,
                           isEmail: true,
+                          autofillHints: const [AutofillHints.email],
+                          textInputAction: TextInputAction.next,
                         ),
                         const SizedBox(height: kPagePadding),
                         _buildTextField(
                           'Name',
                           (value) => name = value,
+                          autofillHints: const [AutofillHints.name],
+                          textInputAction: TextInputAction.next,
                         ),
                         const SizedBox(height: kPagePadding),
                         Container(
                           padding: const EdgeInsets.only(
                             left: kPagePadding,
-                            // right: 2,
-                            // top: kPagePadding,
-                            // bottom: kPagePadding,
                           ),
                           decoration: BoxDecoration(
                             color: kGrayColor.withAlpha(30),
@@ -117,11 +115,13 @@ class _SignupPageState extends State<SignupPage> {
                           ),
                           child: Row(
                             children: [
-                              Text('bingwa.bsat.co.ke/'),
+                              const Text('bingwa.bsat.co.ke/'),
                               Expanded(
                                 child: _buildTextField(
                                   'Link url',
                                   (value) => linkUrl = value,
+                                  autofillHints: const [AutofillHints.username],
+                                  textInputAction: TextInputAction.next,
                                 ),
                               ),
                             ],
@@ -132,12 +132,16 @@ class _SignupPageState extends State<SignupPage> {
                           'Password',
                           (value) => password = value,
                           isPassword: true,
+                          autofillHints: const [AutofillHints.newPassword],
+                          textInputAction: TextInputAction.next,
                         ),
                         const SizedBox(height: kPagePadding),
                         _buildTextField(
                           'Confirm Password',
                           (value) => confirmPassword = value,
                           isPassword: true,
+                          autofillHints: const [AutofillHints.newPassword],
+                          textInputAction: TextInputAction.done,
                         ),
                         const SizedBox(height: kPagePadding * 2),
                         SizedBox(
@@ -145,19 +149,18 @@ class _SignupPageState extends State<SignupPage> {
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               padding: kPagePaddingInsets,
-                              backgroundColor: kPrimaryColor,
+                              elevation: 0,
+                              backgroundColor: kPrimaryColorLight,
                               shape: RoundedRectangleBorder(
                                 borderRadius:
                                     BorderRadius.circular(kBorderRadius),
                               ),
                             ),
-                            onPressed: () {
-                              _handleSignup();
-                            },
-                            child: Text(
+                            onPressed: _handleSignup,
+                            child: const Text(
                               'SIGN UP',
                               style: TextStyle(
-                                color: kIndigoColor,
+                                color: kPrimaryColor,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -169,12 +172,11 @@ class _SignupPageState extends State<SignupPage> {
                           children: [
                             TextButton(
                               onPressed: () {
-                                // Navigator.of(context).pop();
                                 Navigator.of(context).pushReplacement(
                                   PageRouteBuilder(
                                     pageBuilder: (context, animation,
                                             secondaryAnimation) =>
-                                        LoginPage(),
+                                        const LoginPage(),
                                     transitionsBuilder: (context, animation,
                                         secondaryAnimation, child) {
                                       return CupertinoPageTransition(
@@ -197,9 +199,9 @@ class _SignupPageState extends State<SignupPage> {
                   ),
                 ),
               ),
-              const SizedBox(height: kPagePadding * 2),
-            ],
-          ),
+            ),
+            const SizedBox(height: kPagePadding * 2),
+          ],
         ),
       ),
     );
@@ -211,10 +213,14 @@ class _SignupPageState extends State<SignupPage> {
     bool isPassword = false,
     bool isEmail = false,
     TextInputType? keyboardType,
+    List<String>? autofillHints,
+    TextInputAction? textInputAction,
   }) {
     return TextFormField(
       obscureText: isPassword && !showPassword,
       keyboardType: keyboardType,
+      autofillHints: autofillHints,
+      textInputAction: textInputAction,
       decoration: InputDecoration(
         labelText: label,
         border: OutlineInputBorder(
@@ -234,7 +240,6 @@ class _SignupPageState extends State<SignupPage> {
               )
             : null,
       ),
-      
       onChanged: onChanged,
       validator: (value) {
         if (value == null || value.isEmpty) {
@@ -263,23 +268,24 @@ class _SignupPageState extends State<SignupPage> {
       showLoadingDialog(context, text: "Creating your account");
       try {
         final result = await AuthService().signup(
-            email: email,
-            password: password,
-            name: name,
-            linkExtension: linkUrl);
+          email: email,
+          password: password,
+          name: name,
+          linkExtension: linkUrl,
+        );
+        // Offer saving credentials to Google / platform autofill providers.
+        TextInput.finishAutofillContext(shouldSave: true);
         Navigator.of(context).pop(); // Close loading dialog
         if (result['success']) {
           //print('Signup successful');
 
-          String deviceName =
-              (await DeviceInfoPlugin().androidInfo).name ?? "Unknown Device";
-          deviceName = await showAskDeviceNameDialog(context, deviceName) ?? "";
-          print("Device name: $deviceName");
-          await AuthService().registerDeviceInfo(name: deviceName);
-          //print('Device registered: $deviceName');
-          Navigator.of(context).pop(true);
+          Navigator.of(context).pushReplacement(
+            CupertinoPageRoute(
+              builder: (context) => RegisterDevicePage(),
+            ),
+          );
         } else {
-          //print('Signup failed: ${result['message']}');
+          print('Signup failed: ${result}');
           setState(() {
             error = result['message'] ?? 'Signup failed';
           });

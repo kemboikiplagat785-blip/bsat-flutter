@@ -13,7 +13,10 @@ Widget toolButton(
   String? otherText,
   int? otherTextSize,
   int? textSize,
+  Color? backgroundColor,
+  Color? borderColor,
 }) {
+  Color hintColor = Theme.of(context).hintColor;
   return FutureBuilder<String?>(
     future: SharedPreferencesService().getThemeMode(),
     builder: (context, snapshot) {
@@ -23,16 +26,16 @@ Widget toolButton(
         child: Container(
           padding: kPagePaddingInsets / 3,
           decoration: BoxDecoration(
-            color: Theme.of(context).scaffoldBackgroundColor,
+            color: backgroundColor ?? Theme.of(context).scaffoldBackgroundColor,
             border: Border(
               bottom: BorderSide(
-                // color: Theme.of(context).hintColor,
-                color: Colors.black.withOpacity(0.9),
+                color: (borderColor ?? hintColor.withOpacity(0.1)),
+                // color: Colors.black.withOpacity(0.9),
                 width: 1,
               ),
               right: BorderSide(
-                // color: Theme.of(context).hintColor,
-                color: Colors.black.withOpacity(0.9),
+                color: (borderColor ?? hintColor.withOpacity(0.1)),
+                // color: Colors.black.withOpacity(0.9),
                 width: 1,
               ),
             ),

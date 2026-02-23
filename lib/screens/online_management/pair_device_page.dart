@@ -5,6 +5,7 @@ import 'package:bsat/components/header.dart';
 import 'package:bsat/screens/online_management/search_device.dart';
 import 'package:bsat/services/auth_service.dart';
 import 'package:bsat/services/backend_service.dart';
+import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -19,9 +20,10 @@ class PairDevicePage extends StatefulWidget {
 
 class _PairDevicePageState extends State<PairDevicePage> {
   final TextEditingController _targetDeviceController = TextEditingController();
-  String _myDeviceId = "Loading...";
-  bool _isLoading = false;
-  List<dynamic> _pendingPairings = [];
+  // String _myDeviceId = "Loading...";
+  String myDeviceName = "Loading...";
+
+  // bool _isLoading = false;
   List<dynamic> _pairedDevices = [];
 
   @override
@@ -33,39 +35,10 @@ class _PairDevicePageState extends State<PairDevicePage> {
   }
 
   Future<void> _initData() async {
-    await _loadMyDeviceId();
-    await _loadPendingPairings();
-  }
-
-  Future<void> _loadPendingPairings() async {
-    if (_myDeviceId == "Loading..." || _myDeviceId == "Unknown") return;
-
-    showLoadingDialog(  context, text: "Loading pending pairings...");
-
-    try {
-      final backendService = BackendService();
-      final response = await backendService
-          .get('/api/device/pending-pairings?myDeviceId=$_myDeviceId');
-      if (response['success'] && mounted) {
-        setState(() {
-          _pendingPairings = response['data']['requests'] ?? [];
-        });
-        print("Pending Pairings: ${response['data']['requests']}");
-      }
-    } catch (e) {
-      debugPrint("Error loading pending pairings: $e");
-    }
-
-      Navigator.of(context).pop(); // Hide loading
-  }
-
-  Future<void> _loadMyDeviceId() async {
-    String? id = await AuthService().getDeviceId();
-    if (mounted) {
-      setState(() {
-        _myDeviceId = id ?? "Unknown";
-      });
-    }
+    myDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? "Unknown";
+    setState(() {});
+    // await _loadPendingPairings();
   }
 
   Future<void> _handleSearch(String query) async {
@@ -75,16 +48,17 @@ class _PairDevicePageState extends State<PairDevicePage> {
     );
 
     if (result != null && result is Map) {
-      // Assuming the device object has a 'device_id' or 'id' field
-      String? targetId = result['device_id'] ?? result['id'];
-      if (targetId != null) {
+      // Assuming the device object has a 'device_name' or 'name' field
+      print("Search result: $result");
+      String? targetName = result['device_name'];
+      if (targetName != null) {
         setState(() {
-          _targetDeviceController.text = targetId;
+          _targetDeviceController.text = targetName;
         });
       } else {
         if (mounted) {
           showErrorDialog(
-              context, "Error", "Selected device does not have a valid ID.");
+              context, "Error", "Selected device does not have a valid name.");
         }
       }
     }
@@ -93,12 +67,15 @@ class _PairDevicePageState extends State<PairDevicePage> {
   Future<void> _pairDevices() async {
     if (_targetDeviceController.text.isEmpty) {
       showErrorDialog(
-          context, "Error", "Please enter or select a target device ID.");
+          context, "Error", "Please enter or select a target device name.");
       return;
     }
 
-    if (_myDeviceId == "Loading..." || _myDeviceId == "Unknown") {
-      showErrorDialog(context, "Error", "Could not determine your device ID.");
+    print("Pairing Error: My device name is not available, $myDeviceName");
+
+    if (myDeviceName == "Loading..." || myDeviceName == "Unknown") {
+      showErrorDialog(
+          context, "Error", "Could not determine your device name.");
       return;
     }
 
@@ -109,8 +86,8 @@ class _PairDevicePageState extends State<PairDevicePage> {
       // Using a likely endpoint. Update if the server expects a different one.
       final response =
           await backendService.post('/api/devices/request-pairing', body: {
-        'myDeviceId': _myDeviceId,
-        'targetDeviceId': _targetDeviceController.text,
+        'myDeviceName': myDeviceName,
+        'targetDeviceName': _targetDeviceController.text,
       });
 
       // Hide loading dialog
@@ -148,7 +125,7 @@ class _PairDevicePageState extends State<PairDevicePage> {
     try {
       final backendService = BackendService();
       final response = await backendService
-          .get('/api/devices/paired-devices?myDeviceId=$_myDeviceId');
+          .get('/api/devices/paired-devices?myDeviceName=$myDeviceName');
       if (response['success'] && mounted) {
         _pairedDevices = response['data']['pairedDevices'] ?? [];
         print("Paired Devices: $_pairedDevices");
@@ -160,281 +137,220 @@ class _PairDevicePageState extends State<PairDevicePage> {
     }
   }
 
-  Future<void> _respondToPairing(String requestId, bool accept) async {
-    showLoadingDialog(context, text: accept ? "Accepting..." : "Rejecting...");
-
-    try {
-      final backendService = BackendService();
-      final response = await backendService.post(
-        '/api/device/respond-pairing',
-        body: {
-          'id': requestId,
-          'accept': accept,
-        },
-      );
-
-      // Hide loading dialog
-      if (mounted) Navigator.pop(context);
-
-      if (response['success']) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(accept ? "Pairing Accepted" : "Pairing Rejected"),
-            ),
-          );
-          // Refresh the list
-          _loadPendingPairings();
-        }
-      } else {
-        if (mounted) {
-          showErrorDialog(context, "Error",
-              response['message'] ?? "Failed to update pairing status.");
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Hide loading
-        showErrorDialog(context, "Error", "An error occurred: $e");
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      // backgroundColor: kBgColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            header(context, "Pair Device"),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: kPagePaddingInsets,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // const SizedBox(height: 24),
-                    const Text(
-                      "Target Device ID/Email",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: kPagePadding),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _targetDeviceController,
-                            onSubmitted: _handleSearch,
-                            decoration: InputDecoration(
-                              hintText: "Enter Target Device ID/email",
-                              filled: true,
-                              // fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius:
-                                    BorderRadius.circular(kBorderRadius),
-                                borderSide: BorderSide.none,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        ElevatedButton(
-                          onPressed: () =>
-                              _handleSearch(_targetDeviceController.text),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            // foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
-                            ),
-                            shadowColor: Colors.transparent,
-                            elevation: 0,
-                            padding: const EdgeInsets.all(14),
-                          ),
-                          child: const Icon(Icons.search),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: kPagePadding * 2),
-                    ElevatedButton(
-                      onPressed: _pairDevices,
-                      style: ElevatedButton.styleFrom(
-                        // backgroundColor: kPrimaryColor,
-                        // foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(kBorderRadius),
-                        ),
-                        elevation: 2,
-                      ),
-                      child: const Text(
-                        "PAIR DEVICES",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: kPagePadding * 3),
-                    const Text(
-                      "Connection Requests",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: kPagePadding / 2),
-                    if (_pendingPairings.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(8.0),
-                        child: Text("No pending pairings found.",
-                            style: TextStyle(color: Colors.grey)),
-                      )
-                    else
-                      ..._pendingPairings.map((pairing) {
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).cardColor,
-                            borderRadius: BorderRadius.circular(kBorderRadius),
-                            border:
-                                Border.all(color: Colors.grey.withOpacity(0.2)),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(Icons.phonelink_setup, color: Colors.orange),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                        "Req from: ${pairing['requester_name'] ?? 'Unknown'}",
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.bold)),
-                                    Text(
-                                        "ID: ${pairing['requester_device_id'] ?? ''}",
-                                        style: TextStyle(
-                                            fontSize: 12, color: Colors.grey)),
-                                    Text(
-                                        "Status: ${pairing['status'] ?? 'Pending'}",
-                                        style: TextStyle(fontSize: 12)),
-                                  ],
-                                ),
-                              ),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.check,
-                                        color: Colors.green),
-                                    onPressed: () => _respondToPairing(
-                                        pairing['id'].toString(), true),
-                                    tooltip: "Accept",
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.close,
-                                        color: Colors.red),
-                                    onPressed: () => _respondToPairing(
-                                        pairing['id'].toString(), false),
-                                    tooltip: "Reject",
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                    //   Container(
-                    //   padding: const EdgeInsets.all(16),
-                    //   decoration: BoxDecoration(
-                    //     // color: Colors.white,
-                    //     color: Theme.of(context).cardColor,
-                    //     borderRadius: BorderRadius.circular(kBorderRadius),
-                    //     border: Border(
-                    //       bottom: BorderSide(
-                    //         // color: Theme.of(context).hintColor,
-                    //         color: Colors.black.withOpacity(0.9),
-                    //         width: 4,
-                    //       ),
-                    //       right: BorderSide(
-                    //         // color: Theme.of(context).hintColor,
-                    //         color: Colors.black.withOpacity(0.9),
-                    //         width: 4,
-                    //       ),
-                    //     ),
-                    //   ),
-                    //   child: Column(
-                    //     crossAxisAlignment: CrossAxisAlignment.start,
-                    //     children: [
-                    //       const Text(
-                    //         "My Device ID",
-                    //         style: TextStyle(
-                    //           fontSize: 14,
-                    //           // color: Colors.grey,
-                    //         ),
-                    //       ),
-                    //       const SizedBox(height: 8),
-                    //       Row(
-                    //         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    //         children: [
-                    //           Row(
-                    //             children: [
-                    //               Icon(Icons.perm_device_information,
-                    //                   color: kPrimaryColor),
-                    //               const SizedBox(width: 10),
-                    //               Text(
-                    //                 _myDeviceId,
-                    //                 style: const TextStyle(
-                    //                   fontSize: 16,
-                    //                   fontWeight: FontWeight.bold,
-                    //                 ),
-                    //               ),
-                    //             ],
-                    //           ),
-                    //           IconButton(
-                    //             onPressed: () {
-                    //               // copy to clipboard
-                    //               Clipboard.setData(
-                    //                   ClipboardData(text: _myDeviceId));
-                    //               ScaffoldMessenger.of(context).showSnackBar(
-                    //                 const SnackBar(
-                    //                   content:
-                    //                       Text("Device ID copied to clipboard"),
-                    //                 ),
-                    //               );
-                    //             },
-                    //             icon: Icon(CupertinoIcons.doc_on_doc),
-                    //           )
-                    //         ],
-                    //       ),
-                    //     ],
-                    //   ),
-                    // ),
-                    const SizedBox(height: kPagePadding * 2),
-                    const Text(
-                      "Paired devices",
-                      style: TextStyle(
-                        // fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+      backgroundColor: theme.colorScheme.surface,
+      body: CustomScrollView(
+        slivers: [
+          // Elegant Header
+          SliverAppBar(
+            pinned: true,
+            leading: IconButton(
+              icon: const Icon(CupertinoIcons.back),
+              onPressed: () => Navigator.pop(context),
             ),
-          ],
+            backgroundColor: theme.colorScheme.surface,
+            elevation: 0,
+            title: const Text(
+              "Pair New Device",
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+            ),
+          ),
+
+          SliverPadding(
+            padding: const EdgeInsets.all(kPagePadding),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                _buildInfoCard(theme),
+                const SizedBox(height: kPagePadding * 2),
+
+                // Input Section
+                _buildSectionLabel("TARGET DEVICE"),
+                const SizedBox(height: kPagePadding),
+                _buildModernInputField(theme),
+
+                const SizedBox(height: kPagePadding * 2),
+
+                // Action Button
+                _buildPairButton(theme),
+
+                const SizedBox(height: kPagePadding * 2),
+                _buildSecurityNote(theme),
+              ]),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoCard(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(kPagePadding),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [kPrimaryColor, kPrimaryColor.withOpacity(0.7)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
+        borderRadius: BorderRadius.circular(kBorderRadius),
+        boxShadow: [
+          BoxShadow(
+            color: kPrimaryColor.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Your Identity",
+            style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            myDeviceName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(kBorderRadius),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.verified_user_outlined,
+                    color: Colors.white, size: 14),
+                SizedBox(width: 6),
+                Text("Broadcast Active",
+                    style: TextStyle(color: Colors.white, fontSize: 11)),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionLabel(String label) {
+    return Text(
+      label,
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.5,
+        color: Colors.grey,
+      ),
+    );
+  }
+
+  Widget _buildModernInputField(ThemeData theme) {
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _targetDeviceController,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+        decoration: InputDecoration(
+          hintText: "Enter device name...",
+          hintStyle: TextStyle(color: theme.hintColor.withOpacity(0.4)),
+          prefixIcon:
+              const Icon(CupertinoIcons.device_phone_portrait, size: 20),
+          suffixIcon: Container(
+            margin: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: kPrimaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.search_rounded,
+                  color: kPrimaryColor, size: 20),
+              onPressed: () => _handleSearch(_targetDeviceController.text),
+            ),
+          ),
+          border: InputBorder.none,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPairButton(ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      height: 60,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: kPrimaryColor.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: _pairDevices,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: kPrimaryColor,
+          foregroundColor: Colors.white,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          elevation: 0,
+        ),
+        child: const Text(
+          "Send Pairing Request",
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSecurityNote(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Colors.amber.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded, color: Colors.amber, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              "Make sure the target device is online and discoverable to receive the request.",
+              style: TextStyle(color: theme.hintColor, fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }

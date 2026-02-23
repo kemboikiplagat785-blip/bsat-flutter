@@ -25,7 +25,7 @@ class AutomatePageSplashState extends State<AutomatePageSplash> {
       body: Column(
         children: [
           const Spacer(),
-          myHeroWidget(context),
+          const MyHeroWidget(),
           const Spacer(),
           Image.asset('assets/images/automate.png'),
           const Spacer(),

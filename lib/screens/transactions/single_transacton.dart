@@ -1,6 +1,7 @@
 import 'package:bsat/components/dialogs/change%20category_dialog.dart';
 import 'package:bsat/components/dialogs/forward_text.dart';
 import 'package:bsat/components/header.dart';
+import 'package:bsat/models/client.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:flutter/cupertino.dart';
@@ -16,6 +17,7 @@ import '../../components/tool_button.dart';
 import '../../controllers/transaction_controller.dart';
 import '../../services/contacts_service.dart';
 import '../../utils/constants.dart';
+import '../clients/single_client.dart';
 import '../tasks/edit_task.dart';
 
 class SingleTransactionPage extends StatefulWidget {
@@ -35,6 +37,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
   final _contactService = ContactsService();
   bool showFullMpesaMessage = false;
   bool showFullReply = false;
+  bool _isBlacklisted = false;
+  Client? _client;
 
   List toForward = [];
 
@@ -54,6 +58,13 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
       _canRedial = true;
     });
 
+    _isBlacklisted = await _sqliteService.getCount(
+          'blacklist',
+          args: [_details['number']],
+          appendQuery: 'WHERE number = ?',
+        ) >
+        0;
+
     toForward = await _sqliteService.queryCustom(
       "forwarded",
       "(amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)",
@@ -64,6 +75,22 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
         '[${_details['amount']}]',
       ],
     );
+
+    try {
+      final numberStr = _details['number'].toString();
+      final clients = await _sqliteService.queryCustom(
+        'clients',
+        'phoneNumber LIKE ? OR phoneNumber LIKE ? OR phoneNumber LIKE ?',
+        ['%$numberStr%', '%$numberStr', '0$numberStr'],
+      );
+      if (clients.isNotEmpty) {
+        setState(() {
+          _client = Client.fromMap(clients.first);
+        });
+      }
+    } catch (e) {
+      debugPrint('Error fetching client: $e');
+    }
   }
 
   @override
@@ -75,6 +102,174 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             header(context, '0${_details["number"]}'),
+            if (_client != null)
+              Padding(
+                padding: kPagePaddingInsets,
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            SingleClientPage(id: _client!.id ?? -1),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: kPagePaddingInsets,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(kBorderRadius),
+                      border: Border(
+                        right: BorderSide(
+                          color: kIndigoColor,
+                          width: 4.0,
+                        ),
+                        bottom: BorderSide(
+                          color: kIndigoColor,
+                          width: 4.0,
+                        ),
+                      ),
+                      image: const DecorationImage(
+                        image: AssetImage('assets/images/mesh_distorted.png'),
+                        alignment: Alignment.centerLeft,
+                        fit: BoxFit.cover,
+                        opacity: 0.9,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor: kIndigoColor.withOpacity(0.1),
+                              child: Text(
+                                _client!.firstName.isNotEmpty
+                                    ? _client!.firstName[0].toUpperCase()
+                                    : "#",
+                                style: TextStyle(
+                                  color: kIndigoColor,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: kPagePadding),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _client!.firstName.isNotEmpty
+                                        ? _client!.fullName
+                                        : "Unknown Client",
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _client!.formattedPhone,
+                                    style: TextStyle(
+                                      color: kPrimaryColor,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_client!.noOfPurchases == 1 &&
+                                (_client!.daysSinceLastPurchase ?? 999) <= 1)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: kIndigoColor.withOpacity(0.1),
+                                  borderRadius:
+                                      BorderRadius.circular(kBorderRadius),
+                                ),
+                                child: Text(
+                                  "New Client",
+                                  style: TextStyle(
+                                    color: kIndigoColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: kPagePadding),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "${_client!.noOfPurchases} Purchases",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: kPrimaryColor,
+                              ),
+                            ),
+                            if (_isBlacklisted)
+                              InkWell(
+                                onTap: () async {
+                                  final nowBlacklisted =
+                                      await TransactionController()
+                                          .changeBlackListStatus(
+                                              _details['number']);
+                                  setState(() {
+                                    _isBlacklisted = nowBlacklisted;
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        '0${_details['number']} removed from blacklist',
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.person_remove_outlined,
+                                      color: kIndigoColor,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      "Unblacklist",
+                                      style: TextStyle(
+                                        color: kIndigoColor,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                        if (_client!.noOfPurchases == 1 &&
+                            (_client!.daysSinceLastPurchase ?? 999) <= 1)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              "1 new purchase in last day",
+                              style: TextStyle(
+                                color: kIndigoColor.withOpacity(0.7),
+                                fontSize: 11,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             // const Spacer(flex: 3),
             Padding(
               padding: kPagePaddingInsets,
@@ -279,11 +474,11 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                   () async {
                                     await TransactionController()
                                         .redoTransaction(
-                                      _details["id"],
-                                      _details["ussdDialed"],
-                                      _details["simSubId"],
-                                      _details["canRetry"],
-                                    );
+                                            _details["id"],
+                                            _details["ussdDialed"],
+                                            _details["simSubId"],
+                                            _details["canRetry"],
+                                            _details["ussdReply"]);
 
                                     getStuff();
                                   },
@@ -478,8 +673,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                     'transactions',
                                   );
 
-                                  showSuccessDialog(
-                                      context, text: 'Category changed to $status');
+                                  showSuccessDialog(context,
+                                      text: 'Category changed to $status');
 
                                   // Future.delayed(const Duration(seconds: 3),
                                   //     () {
@@ -502,22 +697,32 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                             ),
                             toolButton(
                               () async {
-                                await TransactionController()
-                                    .addNumberToBlacklist(_details['number']);
+                                final nowBlacklisted =
+                                    await TransactionController()
+                                        .changeBlackListStatus(
+                                            _details['number']);
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      '0${_details['number']} added to blacklist',
+                                      '0${_details['number']} ${nowBlacklisted ? "added to" : "removed from"} blacklist',
                                     ),
                                   ),
                                 );
+
+                                setState(() {
+                                  _isBlacklisted = nowBlacklisted;
+                                });
                               },
                               Icon(
-                                Icons.person_add_disabled_outlined,
+                                _isBlacklisted
+                                    ? Icons.person_remove_outlined
+                                    : Icons.person_add_disabled_outlined,
                                 color: Theme.of(context).indicatorColor,
                                 size: 14,
                               ),
-                              "Blacklist",
+                              _isBlacklisted
+                                  ? "Remove from blacklist"
+                                  : "Add to blacklist",
                               context,
                               textSize: 13,
                             ),

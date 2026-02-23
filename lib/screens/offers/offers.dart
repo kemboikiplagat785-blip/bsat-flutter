@@ -244,7 +244,8 @@ class _OffersPageState extends State<OffersPage> {
                         IconButton(
                           icon: const Icon(CupertinoIcons.delete),
                           onPressed: () async {
-                            bool isConfirmed = await showConfirmDeleteDialog(context,
+                            bool isConfirmed = await showConfirmDeleteDialog(
+                                    context,
                                     title: "Delete",
                                     message:
                                         "Are you sure you want to delete the selected offers?") ??
@@ -256,14 +257,14 @@ class _OffersPageState extends State<OffersPage> {
                                   'ussdCodes',
                                 );
                               }
+                              showSuccessDialog(context,
+                                  text: 'Deleted offers successfully');
                               setState(() {
                                 _selectionMode = false;
                                 _selectedTransactionIds.clear();
                               });
                             }
 
-                            showSuccessDialog(
-                                context, text: 'Deleted offers successfully');
                             getAllUSSDCodes();
                           },
                         ),
@@ -326,7 +327,7 @@ class _OffersPageState extends State<OffersPage> {
                           ).toList(),
                         ),
                       ),
-                      const SizedBox(height: kPagePadding * 2),
+                const SizedBox(height: kPagePadding * 2),
               ],
             ),
           ),
@@ -519,7 +520,8 @@ class _OffersPageState extends State<OffersPage> {
                 String filePath = await FileService.downloadOffersToCsv();
                 Navigator.pop(context);
                 if (filePath.isNotEmpty) {
-                  showSuccessDialog(context, text: "File downloaded to $filePath");
+                  showSuccessDialog(context,
+                      text: "File downloaded to $filePath");
                 }
               } else if (value == 'updateOffers') {
                 // Call a function to update offers

@@ -238,6 +238,7 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
                             Text("Forward messages for specific amounts"),
                             SizedBox(height: kPagePadding / 2),
                             ...(_forwards.map((forward) {
+                              bool isPaused = (forward['paused'] ?? 0) == 1;
                               return Padding(
                                 padding:
                                     const EdgeInsets.only(bottom: kPagePadding),
@@ -248,52 +249,77 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
                                     borderRadius: BorderRadius.circular(
                                       kBorderRadius / 2,
                                     ),
+                                    border: isPaused
+                                        ? Border.all(color: Colors.orange, width: 2)
+                                        : null,
                                   ),
                                   child: Column(
-                                    // mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
+                                      Text(
+                                        "To: ${forward['numberToReceive']}",
+                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        "Amounts: ${jsonDecode(forward['amounts']).join(', ')}",
+                                        style: TextStyle(color: Colors.grey[600]),
+                                      ),
+                                      if (isPaused)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4.0),
+                                          child: Text(
+                                            "PAUSED",
+                                            style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 12),
+                                          ),
+                                        ),
+                                      SizedBox(height: kPagePadding / 2),
+                                      Divider(),
                                       Row(
                                         mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
+                                            MainAxisAlignment.end,
                                         children: [
-                                          Expanded(
-                                            child: Text(
-                                              "Amounts: ${jsonDecode(forward['amounts'])}",
-                                              overflow: TextOverflow.ellipsis,
-                                              softWrap: true,
-                                              maxLines: 3,
-                                              // style: textTheme.caption,
-                                            ),
-                                          ),
-                                          InkWell(
-                                            onTap: () async {
-                                              // _amountsToForward =
-                                              //     jsonDecode(forward['amounts']);
-                                              // _forwards.remove(forward);
+                                          // Edit Button
+                                          IconButton(
+                                            icon: Icon(CupertinoIcons.pencil, color: kPrimaryColor),
+                                            tooltip: 'Edit',
+                                            onPressed: () async {
                                               await showForwardingDialog(
                                                 context,
                                                 id: forward['id'],
                                               );
                                               _getData();
                                             },
-                                            child: Icon(
-                                              Icons.edit,
-                                              color: kPrimaryColor,
+                                          ),
+                                          // Pause/Resume Button
+                                          IconButton(
+                                            icon: Icon(
+                                              isPaused ? CupertinoIcons.play_circle : CupertinoIcons.pause_circle,
+                                              color: isPaused ? Colors.green : Colors.orange,
                                             ),
+                                            tooltip: isPaused ? 'Resume' : 'Pause',
+                                            onPressed: () async {
+                                              try {
+                                                await _sqliteService.updateStuff(
+                                                {'paused': isPaused ? 0 : 1},
+                                                'id = ?',
+                                                [forward['id']],
+                                                'forwarded',
+                                              );
+                                              } catch (e) {
+                                                debugPrint("Error updating paused state: $e");
+                                              }
+                                              _getData();
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text(isPaused ? "Resumed" : "Paused")),
+                                              );
+                                            },
                                           ),
-                                        ],
-                                      ),
-                                      SizedBox(height: kPagePadding / 2),
-                                      Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            'Forwarding to: ${forward['numberToReceive']}',
-                                            // style: textTheme.headline6,
-                                          ),
-                                          GestureDetector(
-                                            onTap: () async {
+                                          // Delete Button
+                                          IconButton(
+                                            icon: Icon(Icons.delete, color: kErrorColor),
+                                            tooltip: 'Delete',
+                                            onPressed: () async {
                                               bool delete =
                                                   await showConfirmDeleteDialog(
                                                         context,
@@ -313,10 +339,6 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
                                               _getData();
                                               Navigator.pop(context);
                                             },
-                                            child: Icon(
-                                              Icons.delete,
-                                              color: kErrorColor,
-                                            ),
                                           ),
                                         ],
                                       ),
@@ -494,7 +516,7 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
                         spacing: kPagePadding / 3,
                         borderRadius: kBorderRadius,
                         addIconColor: kPrimaryColor,
-                      ), 
+                      ),
                       SizedBox(height: kPagePadding),
                       Text("Forwarding to (number)"),
                       SizedBox(height: kPagePadding / 3),
@@ -574,8 +596,8 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
                   return;
                 }
 
+                showLoadingDialog(context);
                 if (id > -1) {
-                  showLoadingDialog(context);
                   await _sqliteService.updateStuff(
                     {
                       'dialSim': _dialSim,
@@ -588,12 +610,14 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
                     [id],
                     'forwarded',
                   );
-                  Navigator.pop(context);
-                  showSuccessDialog(context, text: "Done.\n\nBe sure to whitelist your number on the other phone.");
                 } else {
                   await _addToForwardedDB();
                 }
                 Navigator.pop(context);
+                Navigator.pop(context);
+                showSuccessDialog(context,
+                    text:
+                        "Done.\n\nBe sure to whitelist your number on the other phone.");
                 _getData();
               },
               child: Text("Save"),

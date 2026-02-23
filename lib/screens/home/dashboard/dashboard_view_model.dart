@@ -18,6 +18,10 @@ class DashboardViewModel extends ChangeNotifier {
 
   Timer? _reloadTimer;
 
+  
+  bool isLightMode = true;
+
+
   // UI state
   bool showToolsSection = true;
   bool verboseMode = true;
@@ -72,6 +76,8 @@ class DashboardViewModel extends ChangeNotifier {
 
   Future<void> reload() async {
     userName = await _sharedPreferencesService.getUserName() ?? 'Bingwa';
+
+    isLightMode = await _sharedPreferencesService.getThemeMode() == 'light';
 
     final expiry = await _sharedPreferencesService.getUsableUntil() ?? 0;
     final tokenBal = await _sharedPreferencesService.getDeliveryTokens() ?? 0;

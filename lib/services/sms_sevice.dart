@@ -12,8 +12,29 @@ import 'package:telephony_sms/telephony_sms.dart';
 
 final telephony = Telephony.instance;
 
+// Helper to safely extract fields from different SmsMessage implementations
+dynamic _extractField(dynamic obj, String field) {
+  try {
+    if (obj == null) return null;
+    if (obj is Map) return obj[field];
+    switch (field) {
+      case 'address':
+        return obj.address;
+      case 'body':
+        return obj.body;
+      case 'subscriptionId':
+        return obj.subscriptionId;
+      case 'date':
+        return obj.date;
+      default:
+        return null;
+    }
+  } catch (e) {
+    return null;
+  }
+}
 @pragma('vm:entry-point')
-onBackgroundMessage(SmsMessage message) async {
+onBackgroundMessage(dynamic message) async {
   WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
   onNewMessage(message);
@@ -32,27 +53,32 @@ Future<void> initMessagesPlatformState() async {
   }
 }
 
-onNewMessage(SmsMessage smsMessage) {
-  debugPrint("Message from: 0 ${smsMessage.address}");
+onNewMessage(dynamic smsMessage) {
+  final addr = _extractField(smsMessage, 'address')?.toString() ?? 'unknown';
+  debugPrint("Message from: 0 $addr");
   onMessageReceive(smsMessage);
 }
 
-onMessageReceive(SmsMessage smsMessage) async {
-  debugPrint("Message from: 1 ${smsMessage.address}");
+onMessageReceive(dynamic smsMessage) async {
+  final addr = _extractField(smsMessage, 'address')?.toString() ?? '';
+  final body = _extractField(smsMessage, 'body')?.toString() ?? '';
+  final subscriptionId = _extractField(smsMessage, 'subscriptionId');
+  final date = _extractField(smsMessage, 'date');
 
-  if (smsMessage.address != "MPESA") {
-    if (smsMessage.address == "Safaricom" ||
-        smsMessage.address!
-            .contains(RegExp(r'SAF_OfaMOTO', caseSensitive: false))) {
+  debugPrint("Message from: 1 $addr");
+
+  if (addr != "MPESA") {
+    if (addr == "Safaricom" ||
+        addr.contains(RegExp(r'SAF_OfaMOTO', caseSensitive: false))) {
       TransactionController().updateWithMessage(
         TransactionMessage(
-          body: smsMessage.body,
-          subscriptionId: smsMessage.subscriptionId,
-          date: smsMessage.date,
+          body: body,
+          subscriptionId: subscriptionId,
+          date: date,
         ),
       );
     }
-    int numb = extract9DigitNumber(smsMessage.address ?? "");
+    int numb = extract9DigitNumber(addr);
     if (await SQLiteService().getCount(
           "processText",
           appendQuery: "WHERE number LIKE $numb",
@@ -62,7 +88,7 @@ onMessageReceive(SmsMessage smsMessage) async {
     }
   }
 
-  if (!messageIsReceived(smsMessage.body!)) return;
+  if (!messageIsReceived(body)) return;
 
   SharedPreferencesService sharedPreferencesService =
       SharedPreferencesService();
@@ -72,9 +98,9 @@ onMessageReceive(SmsMessage smsMessage) async {
 
   TransactionController().makeTransaction(
     TransactionMessage(
-      body: smsMessage.body,
-      subscriptionId: smsMessage.subscriptionId,
-      date: smsMessage.date,
+      body: body,
+      subscriptionId: subscriptionId,
+      date: date,
     ),
   );
 }
@@ -321,6 +347,7 @@ Future<String> sendEvenInBackground(
       simSlot: simSlot,
     ).onError((e, _) {
       //print("ERRRRO: $e");
+      DartPluginRegistrant.ensureInitialized();
       return backgroundSms.SmsStatus.failed;
     });
     //print(result);

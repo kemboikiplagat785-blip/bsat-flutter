@@ -16,13 +16,15 @@ import '../../components/dialogs/loading_dialog.dart';
 import '../../components/tool_button.dart';
 import '../../components/dialogs/till_done_dialogue.dart';
 
+import '../../models/client.dart';
 import '../../utils/constants.dart';
 
 class TransactionHistoryPage extends StatefulWidget {
   final String? query;
   final bool isDashboard;
 
-  const TransactionHistoryPage({super.key, this.query, this.isDashboard = false});
+  const TransactionHistoryPage(
+      {super.key, this.query, this.isDashboard = false});
 
   @override
   State<TransactionHistoryPage> createState() => _TransactionHistoryPageState();
@@ -287,10 +289,12 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                             setState(() {});
                           }
                         : () => Navigator.of(context).pop(),
-                    icon: (!widget.isDashboard || _selectionMode) ? const Icon(
-                      CupertinoIcons.back,
-                      size: 14,
-                    ) : const SizedBox.shrink(),
+                    icon: (!widget.isDashboard || _selectionMode)
+                        ? const Icon(
+                            CupertinoIcons.back,
+                            size: 14,
+                          )
+                        : const SizedBox.shrink(),
                   ),
                   const SizedBox(width: kPagePadding / 2),
                   Text(
@@ -522,6 +526,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         otherText: query == TransactionStatuses.doneConfirmed
                             ? 'Successful(Confirmed)'
                             : '',
+                            borderColor: kPrimaryColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -538,6 +543,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         withBorder: true,
                         accentColor: kPrimaryColor,
                         otherText: query == 'advanced' ? 'Advanced' : '',
+                        borderColor: kPrimaryColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -556,6 +562,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         otherText: query == TransactionStatuses.done
                             ? 'Successful(Pending)'
                             : '',
+                        borderColor: kWarningColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -577,6 +584,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         otherText: query == TransactionStatuses.forwarded
                             ? 'Forwarded'
                             : '',
+                        borderColor: kPrimaryColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -594,6 +602,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         accentColor: Theme.of(context).indicatorColor,
                         otherText:
                             query == TransactionStatuses.hasOkoa ? 'Okoa' : '',
+                        borderColor: Theme.of(context).indicatorColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -612,6 +621,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         otherText: query == TransactionStatuses.unavailableOffer
                             ? 'Unavailable Offer'
                             : '',
+                        borderColor: Theme.of(context).indicatorColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -630,6 +640,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         otherText: query == TransactionStatuses.secondAttempt
                             ? 'Second Attempt'
                             : '',
+                        borderColor: kWarningColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -647,6 +658,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         accentColor: kWarningColor,
                         otherText:
                             query == TransactionStatuses.paused ? 'Paused' : '',
+                        borderColor: kWarningColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -665,6 +677,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         otherText: query == TransactionStatuses.blacklisted
                             ? 'Blacklisted'
                             : '',
+                        borderColor: kErrorColor,
                       ),
                       const SizedBox(width: 8),
                       toolButton(
@@ -682,6 +695,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         accentColor: kErrorColor,
                         otherText:
                             query == TransactionStatuses.error ? 'Error' : '',
+                            
+                        borderColor: kErrorColor,
                       ),
                     ],
                   ),
@@ -770,6 +785,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                           final isSelected =
                               _selectedTransactionIds.contains(id);
 
+                          // Client? client = Client.fromTransaction(transaction);
+
                           return GestureDetector(
                             onLongPress: () {
                               setState(() {
@@ -828,6 +845,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                       transaction['simSubId'],
                                       transaction['canRetry'] ?? 0,
                                       selectionMode: _selectionMode,
+                                      transaction["ussdReply"],
                                     ),
                                   ),
                                 ],
@@ -844,7 +862,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                 ),
               ),
             ),
-            const SizedBox(height: kPagePadding * 7),
+            // const SizedBox(height: kPagePadding * 7),
           ],
         ),
       ),
@@ -1185,6 +1203,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                   child: Text("Redialing"),
                                 ),
                                 () async {
+                                  print(
+                                      "Retrying transactions with options - Errors: $retryErrors, Failed: $retryFailed, Successful: $retrySuccessful, SuccessfulPending: $retrySuccPending, Paused: $retryPaused, Okoa: $retryOkoa, Advanced: $retryAdvanced");
                                   await TransactionController().retrySpecific(
                                     retryErrors,
                                     retrySuccessful,
@@ -1381,7 +1401,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                           if (!value) deleteAll = false;
                         });
                       },
-                      title: Text('Advanced ($advancedCount)'),
+                      title: Text('Advancekd ($advancedCount)'),
                     ),
 
                     const SizedBox(height: kPagePadding),
@@ -1428,49 +1448,64 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                             onPressed: () async {
                               int numberOfItems = 0;
 
-                              String query =
-                                  "timeStamp >= ${startDate.millisecondsSinceEpoch} AND timeStamp <= ${endDate.millisecondsSinceEpoch}";
+// 1. Use a Set instead of a List to prevent duplicate statuses
+// (e.g. if both Successful and SuccessfulPending map to 'done')
+                              final Set<String> selectedStatuses = {};
 
                               if (deleteErrors) {
-                                query +=
-                                    " AND status = '${TransactionStatuses.error}'";
-
+                                selectedStatuses.add(TransactionStatuses.error);
                                 numberOfItems += failedCount;
                               }
                               if (deleteSuccessful) {
-                                query +=
-                                    " AND status = '${TransactionStatuses.done}'";
+                                selectedStatuses.add(TransactionStatuses.done);
                                 numberOfItems += successfulCount;
                               }
                               if (deleteFailed) {
-                                query +=
-                                    " AND status = '${TransactionStatuses.secondAttempt}'";
+                                selectedStatuses
+                                    .add(TransactionStatuses.secondAttempt);
                                 numberOfItems += secondAttemptCount;
                               }
+                              if (deleteSuccessfulPending) {
+                                selectedStatuses.add(TransactionStatuses
+                                    .done); // Matches deleteSuccessful
+                                numberOfItems += successfulPendingCount;
+                              }
                               if (deleteUnavailable) {
-                                query +=
-                                    " AND status = '${TransactionStatuses.unavailableOffer}'";
+                                selectedStatuses
+                                    .add(TransactionStatuses.unavailableOffer);
                                 numberOfItems += unavailableOfferCount;
                               }
                               if (deleteBlacklist) {
-                                query +=
-                                    " AND status = '${TransactionStatuses.blacklisted}'";
+                                selectedStatuses
+                                    .add(TransactionStatuses.blacklisted);
                                 numberOfItems += blacklistedCount;
                               }
                               if (deletePaused) {
-                                query +=
-                                    " AND status = '${TransactionStatuses.paused}'";
+                                selectedStatuses
+                                    .add(TransactionStatuses.paused);
                                 numberOfItems += pausedCount;
                               }
                               if (deleteOkoa) {
-                                query +=
-                                    " AND status = '${TransactionStatuses.hasOkoa}'";
+                                selectedStatuses
+                                    .add(TransactionStatuses.hasOkoa);
                                 numberOfItems += okoaCount;
                               }
                               if (deleteAdvanced) {
-                                query +=
-                                    " AND status = '${TransactionStatuses.advancedUssd}' OR status = '${TransactionStatuses.advancedQueue}'";
+                                selectedStatuses
+                                    .add(TransactionStatuses.advancedUssd);
+                                selectedStatuses
+                                    .add(TransactionStatuses.advancedQueue);
                                 numberOfItems += advancedCount;
+                              }
+
+// 2. CRITICAL FIX: Prevent accidental deletion of ALL items if nothing is selected
+                              if (selectedStatuses.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          'Please select at least one status to delete.')),
+                                );
+                                return;
                               }
 
                               bool delete = await confirmationDialog(
@@ -1480,13 +1515,44 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
                               if (!delete) return;
 
+// Build parameterized WHERE clause pieces and args
+                              final List<String> whereParts = [];
+                              final List<dynamic> whereArgs = [];
+
+                              whereParts.add('timeStamp >= ?');
+                              whereArgs.add(startDate.millisecondsSinceEpoch);
+                              whereParts.add('timeStamp <= ?');
+                              whereArgs.add(endDate.millisecondsSinceEpoch);
+
+// 3. SQL OPTIMIZATION: Use the IN clause instead of multiple ORs
+                              final String placeholders =
+                                  List.filled(selectedStatuses.length, '?')
+                                      .join(', ');
+                              whereParts.add('status IN ($placeholders)');
+                              whereArgs.addAll(selectedStatuses);
+
+                              final String whereClause =
+                                  whereParts.join(' AND ');
+
+                              print(
+                                  "Delete query: $whereClause, args: $whereArgs");
+
                               showLoadingDialog(context,
                                   text: 'Deleting $numberOfItems items');
 
-                              await databaseHelper
-                                  .deleteWhere('transactions', query, []);
-
-                              Navigator.of(context).pop();
+// 4. ERROR HANDLING: Ensure the loading dialog closes even if DB fails
+                              try {
+                                await databaseHelper.deleteWhere(
+                                    'transactions', whereClause, whereArgs);
+                              } catch (e) {
+                                print("Error deleting transactions: $e");
+                                // Optionally show an error SnackBar here
+                              } finally {
+                                // This guarantees the loading dialog is dismissed
+                                if (context.mounted) {
+                                  Navigator.of(context).pop();
+                                }
+                              }
                             },
                           ),
                         ),

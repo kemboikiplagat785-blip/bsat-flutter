@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/dialogs/show_error_dialog.dart';
@@ -25,311 +24,71 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
   final TextEditingController _linkController = TextEditingController();
   final _prefs = SharedPreferencesService();
   String oldlinkExtension = '';
-
-  // {success: true, data: {offers: [{id: 1, user_id: 2, link_extension: markizoe, offer_data: {"bundleQuantity":23,"bundleQuantityUnit":"MB","duration":24,"durationUnit":"hours","amount":25}, created_at_millis: 1761469708260}, {id: 2, user_id: 2, link_extension: markizoe, offer_data: {"bundleQuantity":23,"bundleQuantityUnit":"MB","duration":22,"durationUnit":"hours","amount":21}, created_at_millis: 1761470252567}]}}
-  String linkExtension = '';
   List<Map<String, dynamic>> offerData = [];
-
-  List<String> paymentMethods = [
-    'Till Number',
-    'Mobile Number',
-  ];
 
   @override
   void initState() {
     super.initState();
-
     getData();
   }
 
+  // ... [Logic: getData, _loadLinkExtension remain identical to your source] ...
   Future<void> getData() async {
     await _loadLinkExtension();
-
-    // get offers
-    final offersResult =
-        await AuthService().getOffers(linkExtension: oldlinkExtension);
-    //print(offersResult);
+    final offersResult = await AuthService().getOffers(linkExtension: oldlinkExtension);
     if (offersResult['success']) {
-      // Handle successful offers retrieval
-
-      offerData =
-          List<Map<String, dynamic>>.from(offersResult['data']['offers']);
-      // offerData = jsonDecode(offersResult['data']['offers']) as Map<String, dynamic>;
-    } else {
-      // Handle errors
+      offerData = List<Map<String, dynamic>>.from(offersResult['data']['offers']);
     }
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadLinkExtension() async {
-    String? linkExtension = await _prefs.getLinkExtension();
-
-    if (linkExtension != null) {
-      _linkController.text = linkExtension;
-      oldlinkExtension = linkExtension;
-      setState(() {});
+    String? link = await _prefs.getLinkExtension();
+    if (link != null) {
+      _linkController.text = link;
+      oldlinkExtension = link;
+      if (mounted) setState(() {});
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             header(context, 'Online Presence'),
-            Container(
-              padding: kPagePaddingInsets,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'My Link',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: kPagePadding / 2),
-                  Container(
-                    padding: const EdgeInsets.only(
-                      left: kPagePadding,
-                      // right: 2,
-                      // top: kPagePadding,
-                      // bottom: kPagePadding,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).cardColor,
-                      borderRadius: BorderRadius.only(
-                        topLeft: Radius.circular(kBorderRadius),
-                        bottomLeft: Radius.circular(kBorderRadius),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          'https://bingwa.bsat.co.ke/',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                        Expanded(
-                          child: TextField(
-                            controller: _linkController,
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              hintText: 'your-link',
-                            ),
-                            onChanged: (value) => setState(() {}),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: kPagePadding / 2),
-                  // row with copy and update buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(kBorderRadius),
-                          ),
-                          backgroundColor: Theme.of(context).cardColor,
-                          foregroundColor:
-                              Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                        onPressed: () {
-                          // copy to clipboard
-                          Clipboard.setData(
-                            ClipboardData(
-                              text:
-                                  'https://bingwa.bsat.co.ke/${_linkController.text}',
-                            ),
-                          );
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Link copied to clipboard'),
-                            ),
-                          );
-                        },
-                        child: Text('Copy Link'),
-                      ),
-                      const SizedBox(width: kPagePadding),
-                      ElevatedButton(
-                        // not enabled if link is unchanged
-
-                        style: ElevatedButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(kBorderRadius),
-                          ),
-                          backgroundColor:
-                              _linkController.text == oldlinkExtension
-                                  ? Theme.of(context).cardColor
-                                  : kPrimaryColor,
-                          foregroundColor: kIndigoColor,
-                        ),
-                        onPressed: _linkController.text == oldlinkExtension
-                            ? null
-                            : () async {
-                                showLoadingDialog(context,
-                                    text: "Updating Link...");
-
-                                String linkExtension = _linkController.text;
-                                final result = await AuthService()
-                                    .updateLinkExtension(
-                                        newLinkExtension: linkExtension);
-                                if (result['success']) {
-                                  await _prefs.setLinkExtension(linkExtension);
-
-                                  oldlinkExtension = linkExtension;
-
-                                  if (context.mounted) {
-                                    Navigator.of(context)
-                                        .pop(); // close loading dialog
-                                    showSuccessDialog(context,
-                                        text:
-                                            "Link updated successfully to https://bingwa.bsat.co.ke/$linkExtension");
-                                  }
-                                  setState(() {});
-                                } else {
-                                  if (context.mounted) {
-                                    Navigator.of(context)
-                                        .pop(); // close loading dialog
-                                    showErrorDialog(
-                                      context,
-                                      "Failed to update link",
-                                      result['message'],
-                                    );
-                                  }
-                                }
-                              },
-                        child: Text('Update Link'),
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: kPagePadding),
-                  Divider(),
-                  const SizedBox(height: kPagePadding * 2),
-                  Text(
-                    'Payment method',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: kPagePadding / 2),
-                  Text('Get paid via:'),
-                  const SizedBox(height: kPagePadding / 3),
-                  // row with 2 check boxes
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          color: Theme.of(context).cardColor,
-                          child: CheckboxListTile(
-                            side: BorderSide.none,
-                            value: true,
-                            onChanged: (value) {},
-                            title: Text('Lipa na Mpesa'),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: CheckboxListTile(
-                          side: BorderSide.none,
-                          value: false,
-                          onChanged: (value) {},
-                          title: Text('Send money'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: kPagePadding / 2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Number',
-                            border: OutlineInputBorder(
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
-                              borderSide: BorderSide(
-                                color: Theme.of(context).dividerColor,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: kPagePadding / 2),
-                      TextButton(
-                        onPressed: () {},
-                        child: Text('Update'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: kPagePadding),
-                  Divider(),
-                  const SizedBox(height: kPagePadding * 2),
-                  Text(
-                    'Offers on sale',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: kPagePadding / 2),
-                  offerData.isEmpty
-                      ? Text('No offers available. Add a new offer.')
-                      : Column(
-                          children: offerData
-                              .map(
-                                (offer) => Padding(
-                                  padding: const EdgeInsets.only(
-                                    bottom: kPagePadding / 2,
-                                  ),
-                                  child: _buildOfferCard(
-                                    context: context,
-                                    offer: offer,
-                                  ),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                  const SizedBox(height: kPagePadding / 2),
-                  Wrap(
-                    spacing: kPagePadding / 2,
-                    runSpacing: kPagePadding / 2,
-                    children: [
-                      InkWell(
-                        onTap: () async {
-                          await Navigator.of(context).push(
-                            PageRouteBuilder(
-                              pageBuilder:
-                                  (context, animation, secondaryAnimation) =>
-                                      EditOnlineOffer(),
-                              transitionsBuilder: (
-                                context,
-                                animation,
-                                secondaryAnimation,
-                                child,
-                              ) {
-                                return CupertinoPageTransition(
-                                  primaryRouteAnimation: animation,
-                                  secondaryRouteAnimation: secondaryAnimation,
-                                  linearTransition: true,
-                                  child: child,
-                                );
-                              },
-                            ),
-                          );
+                  _buildSectionLabel('Public Identity'),
+                  _buildLinkSection(theme),
+                  
+                  const SizedBox(height: 32),
+                  _buildSectionLabel('Payment Configuration'),
+                  _buildPaymentMethodCard(theme),
 
-                          await getData();
-                        },
-                        child: Container(
-                          padding: kPagePaddingInsets,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(kBorderRadius),
-                            color: Theme.of(context).cardColor,
-                          ),
-                          child: Icon(Icons.add),
-                        ),
-                      ),
+                  const SizedBox(height: 32),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildSectionLabel('Active Offers'),
+                      _buildAddButton(context),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  if (offerData.isEmpty)
+                    _buildEmptyState()
+                  else
+                    ...offerData.map((offer) => _buildModernOfferCard(context, offer)),
+                  
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -339,118 +98,272 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
     );
   }
 
-  Widget _buildOfferCard({
-    required BuildContext context,
-    required Map<String, dynamic> offer,
-  }) {
-    final index = offer['id'];
-    final offerData = jsonDecode(offer['offer_data']) as Map<String, dynamic>;
-    //print("Building offer card for offerData: $offer");
-    return Container(
-      padding: kPagePaddingInsets,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(kBorderRadius),
-        color: Theme.of(context).cardColor,
+  // --- Modernist UI Components ---
+
+  Widget _buildSectionLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 10),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+          // color: kGrayColor,
+        ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    );
+  }
+
+  Widget _buildLinkSection(ThemeData theme) {
+    bool isChanged = _linkController.text != oldlinkExtension;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(kBorderRadius),
+        border: Border.all(color: theme.dividerColor.withOpacity(0.05)),
+      ),
+      child: Column(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'KSH ${offerData['amount']}',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: kPagePadding / 2),
-              Row(
-                children: [
-                  Text(
-                      '${offerData['bundleQuantity'].toString()} ${offerData['bundleQuantityUnit']} '),
-                  // const SizedBox(width: kPagePadding),
-                  Text(
-                      '$interpunct ${offerData['durationUnit'] == 0 ? '' : offerData['duration']} ${offerData['durationUnit']}'),
-                ],
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              IconButton(
-                padding: EdgeInsets.zero,
-                style: IconButton.styleFrom(
-                  foregroundColor: kIndigoColor,
-                  // backgroundColor: Theme.of(context).cardColor,
-                  backgroundColor: kIndigoColor.withOpacity(0.1),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(kBorderRadius),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                const Icon(CupertinoIcons.link, size: 18, color: kPrimaryColor),
+                const SizedBox(width: 12),
+                const Text('bingwa.bsat.co.ke/', style: TextStyle(fontSize: 14)),
+                Expanded(
+                  child: TextField(
+                    controller: _linkController,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                      border: InputBorder.none,
+                      hintText: 'username',
+                    ),
+                    onChanged: (v) => setState(() {}),
                   ),
                 ),
-                onPressed: () async {
-                  await Navigator.of(context).push(
-                    PageRouteBuilder(
-                      pageBuilder: (context, animation, secondaryAnimation) =>
-                          EditOnlineOffer(
-                        index: index,
-                        existingData: offerData,
-                      ),
-                      transitionsBuilder: (
-                        context,
-                        animation,
-                        secondaryAnimation,
-                        child,
-                      ) {
-                        return CupertinoPageTransition(
-                          primaryRouteAnimation: animation,
-                          secondaryRouteAnimation: secondaryAnimation,
-                          linearTransition: true,
-                          child: child,
-                        );
-                      },
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.dividerColor.withOpacity(0.03),
+              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: 'https://bingwa.bsat.co.ke/${_linkController.text}'));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
+                    },
+                    icon: const Icon(CupertinoIcons.doc_on_doc, size: 16),
+                    label: const Text('Copy'),
+                    style: TextButton.styleFrom(foregroundColor: kGrayColor),
+                  ),
+                ),
+                const VerticalDivider(),
+                Expanded(
+                  child: TextButton.icon(
+                    onPressed: !isChanged ? null : () async => _handleUpdateLink(),
+                    icon: const Icon(CupertinoIcons.cloud_upload, size: 16),
+                    label: const Text('Update'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: isChanged ? kPrimaryColor : kGrayColor.withOpacity(0.4),
                     ),
-                  );
-
-                  await getData();
-                },
-                icon: Icon(
-                  CupertinoIcons.pen,
+                  ),
                 ),
-              ),
-              const SizedBox(width: kPagePadding),
-              GestureDetector(
-                onTap: () async {
-                  // delete offer
-                  final confirmed =
-                      await showConfirmDeleteDialog(context) ?? false;
-                  if (confirmed) {
-                    // Proceed with deletion
-                    showLoadingDialog(context, text: "Deleting Offer...");
-                    final response =
-                        await AuthService().deleteOnlineOffer(offer['id']);
-                    Navigator.of(context).pop(); // close loading dialog
-                    //print("Delete Response: $response");
-                    if (response['success']) {
-                      if (context.mounted) {
-                        showSuccessDialog(context,
-                            text: "Offer deleted successfully.");
-                        await getData();
-                      }
-                    }
-                  } else {
-                    // Deletion cancelled
-                  }
-                },
-                child: Icon(
-                  CupertinoIcons.trash,
-                  color: Colors.red,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildPaymentMethodCard(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(kBorderRadius),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row(
+          //   children: [
+          //     Expanded(
+          //       child: _buildChoiceChip('Lipa na Mpesa', true),
+          //     ),
+          //     const SizedBox(width: 8),
+          //     Expanded(
+          //       child: _buildChoiceChip('Send Money', true),
+          //     ),
+          //   ],
+          // ),
+          const Text('Mobile number to receive payments'),
+          const SizedBox(height: 16),
+          TextField(
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: theme.scaffoldBackgroundColor,
+              hintText: 'M-Pesa Number',
+              prefixIcon: const Icon(CupertinoIcons.phone_fill, size: 18),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(kBorderRadius),
+                borderSide: BorderSide.none,
+              ),
+              suffixIcon: TextButton(onPressed: () {}, child: const Text('Save')),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChoiceChip(String label, bool selected) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: selected ? kPrimaryColor.withOpacity(0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(kBorderRadius),
+        border: Border.all(color: selected ? kPrimaryColor : kGrayColor.withOpacity(0.2)),
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? kPrimaryColor : kGrayColor,
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernOfferCard(BuildContext context, Map<String, dynamic> offer) {
+    final offerData = jsonDecode(offer['offer_data']);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(kBorderRadius),
+        border: Border.all(color: kPrimaryColor.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: kPrimaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(kBorderRadius),
+            ),
+            child: const Icon(CupertinoIcons.cart_fill, color: kPrimaryColor),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KSH ${offerData['amount']}',
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                ),
+                Text(
+                  '${offerData['bundleQuantity']} ${offerData['bundleQuantityUnit']} • ${offerData['duration']} ${offerData['durationUnit']}',
+                  style: const TextStyle(color: kPrimaryColor, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () => _editOffer(offer),
+            icon: const Icon(CupertinoIcons.pencil_circle, color: kPrimaryColor),
+          ),
+          IconButton(
+            onPressed: () => _deleteOffer(offer['id']),
+            icon: const Icon(CupertinoIcons.trash_circle, color: kErrorColor),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddButton(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _editOffer(null),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: kPrimaryColor,
+          borderRadius: BorderRadius.circular(kBorderRadius),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.add, color: Colors.white, size: 16),
+            SizedBox(width: 4),
+            Text('ADD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Text('No active offers found.', style: TextStyle(color: kGrayColor.withOpacity(0.5))),
+      ),
+    );
+  }
+
+  // --- Action Handlers ---
+
+  Future<void> _handleUpdateLink() async {
+    HapticFeedback.mediumImpact();
+    showLoadingDialog(context, text: "Updating Link...");
+    final result = await AuthService().updateLinkExtension(newLinkExtension: _linkController.text);
+    Navigator.pop(context); // close loading
+    if (result['success']) {
+      await _prefs.setLinkExtension(_linkController.text);
+      oldlinkExtension = _linkController.text;
+      showSuccessDialog(context, text: "Identity updated.");
+      setState(() {});
+    } else {
+      showErrorDialog(context, "Error", result['message']);
+    }
+  }
+
+  void _editOffer(Map<String, dynamic>? offer) async {
+    await Navigator.of(context).push(CupertinoPageRoute(
+      builder: (_) => EditOnlineOffer(
+        index: offer?['id'],
+        existingData: offer != null ? jsonDecode(offer['offer_data']) : null,
+      ),
+    ));
+    getData();
+  }
+
+  void _deleteOffer(int id) async {
+    final confirmed = await showConfirmDeleteDialog(context) ?? false;
+    if (confirmed) {
+      showLoadingDialog(context, text: "Removing...");
+      final response = await AuthService().deleteOnlineOffer(id);
+      Navigator.pop(context);
+      if (response['success']) {
+        showSuccessDialog(context, text: "Offer removed.");
+        getData();
+      }
+    }
   }
 }

@@ -1,3 +1,5 @@
+import 'package:bsat/components/device_card.dart';
+import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/components/profile_card.dart';
 import 'package:bsat/screens/online_management/paired_devices.dart';
@@ -5,12 +7,19 @@ import 'package:bsat/screens/online_management/login.dart';
 import 'package:bsat/screens/online_management/my_online_presence.dart';
 import 'package:bsat/screens/online_management/pair_device_page.dart';
 import 'package:bsat/screens/settings/coming_soon.dart';
+import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:battery_plus/battery_plus.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import '../../components/button_descriptive.dart';
 import '../../components/dialogs/confirm_delete_dialog.dart';
 import '../../services/auth_service.dart';
+import 'portal.dart';
+import 'register_device.dart';
 
 class OnlineManagementScreen extends StatefulWidget {
   const OnlineManagementScreen({super.key});
@@ -29,6 +38,13 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
 
   bool isSignedIn = true;
   String myDeviceId = '';
+  String myDeviceName = 'Unknown Device';
+  String? deviceDetails; // Made nullable as it might not be used now
+  String? androidVersion;
+  String? model;
+  int? batteryLevel;
+
+  int pendingPairs = 0;
 
   bool isOnline = true;
 
@@ -37,23 +53,68 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
     super.initState();
 
     checkIfLoggedIn();
+    init();
 
     // setState(() => isSignedIn = myFirebaseAuth.isSignedIn());
   }
 
   void init() async {
     // SocketService().init();
+
+    myDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? "Unknown Device";
+
+    DeviceInfoPlugin deviceInfo = DeviceInfoPlugin();
+    if (Platform.isAndroid) {
+      AndroidDeviceInfo androidInfo = await deviceInfo.androidInfo;
+      androidVersion = androidInfo.version.release;
+      model = androidInfo.model;
+    }
+
+    Battery battery = Battery();
+    try {
+      batteryLevel = await battery.batteryLevel;
+    } catch (e) {
+      debugPrint("Failed to get battery level: $e");
+    }
+
+    pendingPairs = await BackendService()
+        .get('/api/device/pending-pairings?myDeviceName=$myDeviceName')
+        .then((response) {
+      if (response['success']) {
+        print("Pending pairing requests: ${response['data']}");
+        final data = response['data'];
+        if (data != null && data['requests'] != null) {
+          return (data['requests'] as List).length;
+        }
+      } else {
+        print(
+            "Failed to fetch pending pairing requests: ${response['message']}");
+      }
+      return 0;
+    });
+
+    setState(() {});
   }
 
   void checkIfLoggedIn() async {
     // isSignedIn = await myFirebaseAuth.isSignedIn();
     isSignedIn = await AuthService().isLoggedIn();
+    myDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? "Unknown Device";
 
     if (!isSignedIn && mounted) {
       // Navigate to login if not signed in
       Navigator.of(context).pushReplacement(
         CupertinoPageRoute(
           builder: (context) => LoginPage(),
+        ),
+      );
+    } else if (myDeviceName == "Unknown Device") {
+      // If signed in but no device registered, navigate to device registration
+      Navigator.of(context).pushReplacement(
+        CupertinoPageRoute(
+          builder: (context) => RegisterDevicePage(),
         ),
       );
     } else {
@@ -88,6 +149,18 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                 email: email,
               ),
             ),
+            Padding(
+              padding: kPagePaddingInsets,
+              child: deviceCard(
+                context: context,
+                deviceName: myDeviceName,
+                deviceDetails: deviceDetails,
+                androidVersion: androidVersion,
+                model: model,
+                batteryLevel: batteryLevel,
+                iconData: CupertinoIcons.phone_solid,
+              ),
+            ),
             Container(
               margin: kPagePaddingInsets,
               width: double.infinity,
@@ -117,10 +190,88 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                 ],
               ),
             ),
-            _actionButton(
+            Padding(
+              padding: kPagePaddingInsets,
+              child: pendingPairs > 0
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).push(
+                              CupertinoPageRoute(
+                                builder: (context) => PairedDevices(),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              // color: Colors.white,
+                              color: Theme.of(context).cardColor,
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
+                              border: Border(
+                                bottom: BorderSide(
+                                  // color: Theme.of(context).hintColor,
+                                  color: kIndigoColor,
+                                  width: 4,
+                                ),
+                                right: BorderSide(
+                                  // color: Theme.of(context).hintColor,
+                                  color: kIndigoColor,
+                                  width: 4,
+                                ),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Pending Pairing Requests",
+                                  style: TextStyle(
+                                      // fontSize: 14,
+                                      // color: Colors.grey,
+                                      ),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                            CupertinoIcons
+                                                .exclamationmark_triangle,
+                                            color: Colors.orangeAccent),
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          "$pendingPairs",
+                                          style: const TextStyle(
+                                            // fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Icon(CupertinoIcons.chevron_right,
+                                        color: kIndigoColor),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: kPagePadding),
+                      ],
+                    )
+                  : SizedBox.shrink(),
+            ),
+            buttonDescriptive(
               context,
-              title: 'Sell data online + buy for another number',
-              subtitle: 'Online Presence',
+              title: 'Buy for another number + Sell data online (${webLink})',
+              subtitle: 'My Link (Online Presence)',
               icon: Icon(CupertinoIcons.link, color: kIndigoColor),
               onTap: () {
                 Navigator.of(context).push(
@@ -130,7 +281,7 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                 );
               },
             ),
-            _actionButton(
+            buttonDescriptive(
               context,
               title: 'share messages between trusted devices online',
               subtitle: 'Paired Devices',
@@ -139,12 +290,12 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
               onTap: () async {
                 Navigator.of(context).push(
                   CupertinoPageRoute(
-                    builder: (context) => ForwardReceiveOnlinePage(),
+                    builder: (context) => PairedDevices(),
                   ),
                 );
               },
             ),
-            _actionButton(
+            buttonDescriptive(
               context,
               title: 'view/manage your phones through a common dashboard',
               subtitle: 'Remote Device Control',
@@ -152,12 +303,12 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
               onTap: () {
                 Navigator.of(context).push(
                   CupertinoPageRoute(
-                    builder: (context) => ComingSoonPage(),
+                    builder: (context) => PortalPage(),
                   ),
                 );
               },
             ),
-            _actionButton(
+            buttonDescriptive(
               context,
               title: 'End Session',
               subtitle: 'Sign out',
@@ -165,13 +316,16 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
               onTap: () async {
                 bool confirmed = await showConfirmDeleteDialog(
                       context,
-                      title: "Confirm Sign Out",
-                      message:
-                          "Are you sure you want to sign out from all devices ?",
+                      title: "",
+                      message: "Sign out of this device?",
                     ) ??
                     false;
 
                 if (!confirmed) return;
+                showLoadingDialog(
+                  context,
+                  text: "Signing out...",
+                );
 
                 await AuthService().logout();
 
@@ -179,69 +333,6 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
               },
             ),
             const SizedBox(height: kPagePadding * 5),
-          ],
-        ),
-      ),
-    );
-  }
-
-  InkWell _actionButton(
-    BuildContext context, {
-    required String title,
-    required String subtitle,
-    required Function() onTap,
-    required Icon icon,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: kPagePaddingInsets,
-        margin: const EdgeInsets.only(
-          top: kPagePadding,
-          left: kPagePadding,
-          right: kPagePadding,
-        ),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(kBorderRadius),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      icon,
-                      const SizedBox(width: kPagePadding / 2),
-                      Expanded(
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: kPagePadding / 2),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      // fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              CupertinoIcons.chevron_right,
-              size: 30,
-            ),
           ],
         ),
       ),

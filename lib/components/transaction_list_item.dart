@@ -18,8 +18,10 @@ Widget transactionListItem(
     String source,
     int simSubId,
     int canRetry,
+    String ussdReply,
     {int? lineLimit,
-    bool? selectionMode}) {
+    bool? selectionMode,
+    bool? isNewClient}) {
   String displayNum =
       number > 10000000 ? number.toString().substring(0, 4) : '0000';
 
@@ -54,6 +56,12 @@ Widget transactionListItem(
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(kBorderRadius),
+          border: Border.all(
+            color: (selectionMode ?? false)
+                ? kIndigoColor
+                : Colors.transparent,
+            width: 1,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -70,7 +78,26 @@ Widget transactionListItem(
                       style: kTitleText,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(' 0$displayNum...')
+                    Text(' 0$displayNum...'),
+                    if (isNewClient == true) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: kIndigoColor,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          "New",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 Text(
@@ -131,7 +158,12 @@ Widget transactionListItem(
                                     // //print("Codes: $code $amount $id $status");
                                     await TransactionController()
                                         .redoTransaction(
-                                            id, code, simSubId, canRetry);
+                                      id,
+                                      code,
+                                      simSubId,
+                                      canRetry,
+                                      ussdReply,
+                                    );
 
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
@@ -154,7 +186,8 @@ Widget transactionListItem(
                                   status == TransactionStatuses.doneConfirmed
                                       ? CupertinoIcons.checkmark_seal_fill
                                       : CupertinoIcons.checkmark,
-                                  color: status == TransactionStatuses.secondAttempt
+                                  color: status ==
+                                          TransactionStatuses.secondAttempt
                                       ? kWarningColor
                                       : kPrimaryColor,
                                 ),

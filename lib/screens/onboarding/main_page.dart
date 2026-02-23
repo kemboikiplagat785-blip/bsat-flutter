@@ -49,7 +49,7 @@ class OnboardingPageState extends State<OnboardingPage> {
       body: Column(
         children: [
           const Spacer(),
-          myHeroWidget(context),
+          const MyHeroWidget(),
           const Spacer(),
           Hero(
             tag: 'next-btn',

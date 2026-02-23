@@ -91,7 +91,9 @@ class _DashBoardPageState extends State<DashBoardPage>
 
     if (_chipsScrollController.hasClients) {
       _chipsScrollController.animateTo(
-        goRight ? _chipsScrollController.offset + 200 : _chipsScrollController.offset - 200,
+        goRight
+            ? _chipsScrollController.offset + 200
+            : _chipsScrollController.offset - 200,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
@@ -104,8 +106,6 @@ class _DashBoardPageState extends State<DashBoardPage>
       value: _viewModel,
       child: Consumer<DashboardViewModel>(
         builder: (context, vm, child) {
-          var textTheme = Theme.of(context).textTheme;
-
           return Scaffold(
             body: SingleChildScrollView(
               child: Column(
@@ -143,555 +143,515 @@ class _DashBoardPageState extends State<DashBoardPage>
                     ),
                   ),
                   // const SizedBox(height: kPagePadding),
-                  GestureDetector(
-                    onTap: () {
-                      // to stats page
-                      Navigator.of(context).push(
-                        PageRouteBuilder(
-                          pageBuilder: (context, animation, secondaryAnimation) =>
-                              const StatisticsPage(),
-                          transitionsBuilder:
-                              (context, animation, secondaryAnimation, child) {
-                            return CupertinoPageTransition(
-                              primaryRouteAnimation: animation,
-                              secondaryRouteAnimation: secondaryAnimation,
-                              linearTransition: true,
-                              child: child,
-                            );
-                          },
-                        ),
-                      );
-                    },
-                    child: Container(
-                      margin: kPagePaddingInsets,
-                      padding: kPagePaddingInsets,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).primaryColor.withOpacity(.05),
-                        borderRadius: BorderRadius.circular(kBorderRadius),
-                      ),
-                      child: Column(
-                        children: [
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(kPagePadding),
-                            decoration: BoxDecoration(
-                              image: DecorationImage(
-                                  image: AssetImage(
-                                    'assets/images/mesh_distorted.png',
-                                  ),
-                                  fit: BoxFit.cover,
-                                  opacity: 0.3),
-                              borderRadius: BorderRadius.circular(kBorderRadius),
-                              color: Theme.of(context).scaffoldBackgroundColor,
-                              boxShadow: [
-                                BoxShadow(
-                                  // color: Colors.black.withOpacity(0.9),
-                                  color: kIndigoColor,
-                                  // Theme.of(context)
-                                  //     .hintColor
-                                  //     .withOpacity(0.9),
-                                  blurRadius: 0,
-                                  offset: const Offset(5, 5),
-                                ),
-                                // BoxShadow(
-                                //   color: Theme.of(context)
-                                //       .hintColor
-                                //       .withOpacity(0.3),
-                                //   blurRadius: 0,
-                                //   offset: const Offset(-2, -2),
-                                // ),
-                              ],
+                  Container(
+                    padding: kPagePaddingInsets,
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).push(
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    const StatisticsPage(),
+                            transitionsBuilder: (context, animation,
+                                secondaryAnimation, child) {
+                              return CupertinoPageTransition(
+                                primaryRouteAnimation: animation,
+                                secondaryRouteAnimation: secondaryAnimation,
+                                linearTransition: true,
+                                child: child,
+                              );
+                            },
+                          ),
+                        );
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(kPagePadding),
+                        decoration: BoxDecoration(
+                          image: DecorationImage(
+                            image: AssetImage(
+                              'assets/images/mesh_distorted.png',
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            fit: BoxFit.cover,
+                            opacity: vm.isLightMode ? 0.4 : 0.9,
+                          ),
+                          borderRadius: BorderRadius.circular(kBorderRadius),
+                          // color: Theme.of(context).cardColor,
+                          border: Border(
+                            bottom: BorderSide(
+                              color: kIndigoColor,
+                              // Theme.of(context)
+                              //     .hintColor
+                              //     .withOpacity(0.9),
+                              // blurRadius: 0,
+                              // offset: const Offset(5, 5),
+                              width: 3,
+                            ),
+                            right: BorderSide(
+                              color: kIndigoColor,
+                              // Theme.of(context)
+                              //     .hintColor
+                              //     .withOpacity(0.9),
+                              // blurRadius: 0,
+                              // offset: const Offset(5, 5),
+                              width: 3,
+                            ),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
+                                const Text(
+                                  "Airtime Balance",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: kPagePadding),
                                 Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
                                   children: [
-                                    // Container(
-                                    //   padding: const EdgeInsets.all(kPagePadding),
-                                    //   decoration: BoxDecoration(
-                                    //     color: Theme.of(context)
-                                    //         .cardColor
-                                    //         .withOpacity(0.2),
-                                    //     borderRadius:
-                                    //         BorderRadius.circular(kBorderRadius),
-                                    //   ),
-                                    //   child: Icon(
-                                    //     Icons.sim_card,
-                                    //     // color: Colors.white,
-                                    //     size: 16,
-                                    //   ),
-                                    // ),
-                                    // const SizedBox(width: kPagePadding),
-                                    const Text(
-                                      "Airtime Balance",
-                                      style: TextStyle(
-                                        // color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    const SizedBox(width: kPagePadding),
                                     Text(
                                       vm.hideBalance
                                           ? 'KES ****'
                                           : 'KES ${Numbers.formatNumber(int.tryParse(vm.airtimeBalance) ?? 0)}',
                                       style: const TextStyle(
-                                        // color: Colors.white,
-                                        // fontSize: 32,
-                                        fontWeight: FontWeight.w700,
+                                        fontWeight: FontWeight.w900,
                                         letterSpacing: -1,
                                       ),
                                     ),
-                                  ],
-                                ),
-                                const SizedBox(height: kPagePadding),
-                    
-                                // const SizedBox(height: 24),
-                                // Container(
-                                //   height: 1,
-                                //   color: Theme.of(context).cardColor.withOpacity(0.2),
-                                // ),
-                                // const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      "Est. Commission",
-                                      style: TextStyle(
-                                        // color: Colors.white70,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w500,
+                                    const SizedBox(width: 8),
+                                    GestureDetector(
+                                      onTap: () => vm.toggleHideBalance(),
+                                      child: Container(
+                                        padding: kPagePaddingInsets / 3,
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .scaffoldBackgroundColor
+                                              .withOpacity(0.8),
+                                          borderRadius:
+                                              BorderRadius.circular(500),
+                                          border: Border.all(
+                                            color: Theme.of(context).cardColor,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          vm.hideBalance
+                                              ? CupertinoIcons.eye
+                                              : CupertinoIcons.eye_slash,
+                                          color: Theme.of(context)
+                                                  .textTheme
+                                                  .bodyMedium
+                                                  ?.color ??
+                                              Colors.white,
+                                          size: 14,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: kPagePadding),
-                                    Text(
-                                      vm.hideCommission
-                                          ? 'KES ***'
-                                          : 'KES ${Numbers.formatNumber(int.parse(vm.estimatedCommission.toStringAsFixed(0)))}',
-                                      style: const TextStyle(
-                                        // color: Colors.white,
-                                        // fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    // Icon(
-                                    //   vm.hideCommission
-                                    //       ? CupertinoIcons.eye
-                                    //       : CupertinoIcons.eye_slash,
-                                    //   color: Colors.white54,
-                                    //   size: 12,
-                                    // ),
-                                  ],
-                                ),
-                                const SizedBox(height: kPagePadding),
-                    
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    IconButton(
-                                      onPressed: () {
-                                        vm.toggleHideBalance();
-                                        vm.toggleHideCommission();
-                                      },
-                                      icon: Icon(
-                                        vm.hideBalance
-                                            ? CupertinoIcons.eye
-                                            : CupertinoIcons.eye_slash,
-                                        color: Theme.of(context)
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.color ??
-                                            Colors.white,
-                                        size: 13,
-                                      ),
-                                    ),
-                                    IconButton(
-                                      onPressed: () {
-                                        vm.reload();
-                                        vm.refreshBalances();
-                                      },
-                                      icon: const Icon(
-                                        CupertinoIcons.refresh,
-                                        color: kDarkerGreen,
-                                        size: 13,
-                                      ),
-                                      padding: EdgeInsets.zero,
-                                      // constraints: const BoxConstraints(
-                                      //   minWidth: 40,
-                                      //   minHeight: 40,
-                                      // ),
                                     ),
                                   ],
                                 ),
                               ],
                             ),
-                          ),
-                          const SizedBox(height: kPagePadding * 2),
-                          vm.hasActiveSubscription
-                              ? const SizedBox()
-                              : noBalanceButton(context),
-                          vm.isRunning
-                              ? const SizedBox()
-                              : appPausedButton(context),
-                          vm.autoRetry
-                              ? const SizedBox()
-                              : appPausedButton(
-                                  context,
-                                  text: 'Auto retry is disabled. Click to enable',
-                                ),
-                          vm.offersMightHaveChanged
-                              ? appPausedButton(
-                                  context,
-                                  text:
-                                      'Offers might have changed. Click to resume',
-                                  onTap: () async {
-                                    if ((await showConfirmDeleteDialog(
-                                          context,
-                                          title: 'Warning',
-                                          message:
-                                              'Make sure you have checked the offers and they are correct before resuming.',
-                                        )) ??
-                                        false) {
-                                      await vm.acknowledgeOffersChecked();
-                                      showSuccessDialog(context, text: 'Resumed');
-                                    }
-                                    vm.reload();
-                                  },
-                                )
-                              : const SizedBox(),
-                          Column(
-                            children: [
-                              const SizedBox(height: kPagePadding),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                children: [
-                                  toolButton(
-                                    () {
-                                      Navigator.of(context)
-                                          .push(
-                                            PageRouteBuilder(
-                                              pageBuilder: (context, animation,
-                                                      secondaryAnimation) =>
-                                                  const TransactionHistoryPage(),
-                                              transitionsBuilder: (context,
-                                                  animation,
-                                                  secondaryAnimation,
-                                                  child) {
-                                                return CupertinoPageTransition(
-                                                  primaryRouteAnimation:
-                                                      animation,
-                                                  secondaryRouteAnimation:
-                                                      secondaryAnimation,
-                                                  linearTransition: true,
-                                                  child: child,
-                                                );
-                                              },
-                                            ),
-                                          )
-                                          .then((value) => vm.reload());
-                                    },
-                                    Icon(
-                                      vm.verboseMode
-                                          ? CupertinoIcons.eye_slash
-                                          : CupertinoIcons.eye,
-                                      size: 0,
-                                    ),
-                                    "All (${vm.transactionToday}) >",
-                                    context,
-                                    withBorder: true,
+                            const SizedBox(height: kPagePadding),
+
+                            // const SizedBox(height: 24),
+                            // Container(
+                            //   height: 1,
+                            //   color: Theme.of(context).cardColor.withOpacity(0.2),
+                            // ),
+                            // const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  "Est. Commission",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: kPagePadding / 2),
-                              Container(
-                                width: double.infinity,
-                                height: 60, // Fixed height for the scrollable row
-                                child: Stack(
+                                ),
+                                const SizedBox(width: kPagePadding),
+                                Row(
                                   children: [
-                                    SingleChildScrollView(
-                                      controller: _chipsScrollController,
-                                      scrollDirection: Axis.horizontal,
-                                      physics: const BouncingScrollPhysics(),
-                                      padding: const EdgeInsets.only(right: 60),
-                                      child: Row(
-                                        children: ([
-                                          {
-                                            'count': vm.successfulConfirmedCount,
-                                            'icon': const Icon(
-                                                CupertinoIcons
-                                                    .checkmark_seal_fill,
-                                                color: kPrimaryColor,
-                                                size: 14),
-                                            'query':
-                                                TransactionStatuses.doneConfirmed,
-                                            'label': 'successful(confirmed)',
-                                            'accentColor': kDarkerGreen,
-                                          },
-                                          {
-                                            'count': vm.errorCount,
-                                            'icon': const Icon(
-                                                CupertinoIcons.xmark_circle_fill,
-                                                color: kErrorColor,
-                                                size: 14),
-                                            'query': TransactionStatuses.error,
-                                            'label': 'errors',
-                                            'accentColor': kErrorColor,
-                                          },
-                                          {
-                                            'count': vm.successfulCount,
-                                            'icon': const Icon(
-                                                CupertinoIcons.checkmark_alt,
-                                                color: kWarningColor,
-                                                size: 14),
-                                            'query': TransactionStatuses.done,
-                                            'label': 'successful(pending)',
-                                            'accentColor': kDarkerGreen,
-                                          },
-                                          {
-                                            'count': vm.advancedCount,
-                                            'icon': const Icon(
-                                                CupertinoIcons.phone_circle_fill,
-                                                color: kPrimaryColor,
-                                                size: 14),
-                                            'query':
-                                                TransactionStatuses.advancedUssd,
-                                            'label': 'advanced',
-                                            'accentColor': kDarkerGreen,
-                                          },
-                                          {
-                                            'count': vm.forwardedCount,
-                                            'icon': const Icon(
-                                                CupertinoIcons
-                                                    .arrow_turn_right_up,
-                                                color: kPrimaryColor,
-                                                size: 14),
-                                            'query':
-                                                TransactionStatuses.forwarded,
-                                            'label': 'forwarded',
-                                            'accentColor': kDarkerGreen,
-                                          },
-                                          {
-                                            'count': vm.failedCount,
-                                            'icon': const Icon(
-                                                CupertinoIcons.arrow_2_circlepath,
-                                                color: kWarningColor,
-                                                size: 14),
-                                            'query':
-                                                TransactionStatuses.secondAttempt,
-                                            'label': 'second attempt',
-                                            'accentColor': kWarningColor,
-                                          },
-                                          {
-                                            'count': vm.pausedCount,
-                                            'icon': Icon(
-                                                CupertinoIcons.pause_circle_fill,
-                                                color:
-                                                    Theme.of(context).hintColor,
-                                                size: 14),
-                                            'query': TransactionStatuses.paused,
-                                            'label': 'paused',
-                                            'accentColor': kWarningColor,
-                                          },
-                                          {
-                                            'count': vm.okoaCount,
-                                            'icon': const Icon(
-                                                Icons.sailing_rounded,
-                                                color: kDullColor,
-                                                size: 14),
-                                            'query': TransactionStatuses.hasOkoa,
-                                            'label': 'okoa',
-                                            'accentColor': kBgColor,
-                                          },
-                                          {
-                                            'count': vm.unavailableCount,
-                                            'icon': Icon(
-                                                CupertinoIcons
-                                                    .exclamationmark_triangle,
-                                                color: Theme.of(context)
-                                                    .indicatorColor,
-                                                size: 14),
-                                            'query': TransactionStatuses
-                                                .unavailableOffer,
-                                            'label': 'unavailable offers',
-                                            'accentColor':
-                                                Theme.of(context).indicatorColor,
-                                          },
-                                          {
-                                            'count': vm.blacklistedCount,
-                                            'icon': const Icon(
-                                                Icons.person_off_outlined,
-                                                color: kWarningColor,
-                                                size: 14),
-                                            'query': 'blacklist',
-                                            'label': 'blacklisted',
-                                            'accentColor': kErrorColor,
-                                          },
-                                        ]..sort(
-                                                (a, b) => (b['count'] as int)
-                                                    .compareTo(a['count'] as int),
-                                              ))
-                                            .map((filter) {
-                                          return Row(
-                                            children: [
-                                              toolButton(
-                                                () {
-                                                  Navigator.of(context)
-                                                      .push(
-                                                        PageRouteBuilder(
-                                                          pageBuilder: (context,
-                                                                  animation,
-                                                                  secondaryAnimation) =>
-                                                              TransactionHistoryPage(
-                                                            query: filter['query']
-                                                                as String,
-                                                          ),
-                                                          transitionsBuilder:
-                                                              (context,
-                                                                  animation,
-                                                                  secondaryAnimation,
-                                                                  child) {
-                                                            return CupertinoPageTransition(
-                                                              primaryRouteAnimation:
-                                                                  animation,
-                                                              secondaryRouteAnimation:
-                                                                  secondaryAnimation,
-                                                              linearTransition:
-                                                                  true,
-                                                              child: child,
-                                                            );
-                                                          },
-                                                        ),
-                                                      )
-                                                      .then(
-                                                          (value) => vm.reload());
-                                                },
-                                                filter['icon'] as Icon,
-                                                filter['count'].toString(),
-                                                otherText: vm.verboseMode
-                                                    ? filter['label'] as String
-                                                    : null,
-                                                context,
-                                                withBorder: true,
-                                                accentColor: filter['accentColor']
-                                                    as Color?,
-                                              ),
-                                              const SizedBox(
-                                                  width: kPagePadding / 4),
-                                            ],
-                                          );
-                                        }).toList(),
+                                    Text(
+                                      vm.hideCommission
+                                          ? 'KES ***'
+                                          : 'KES ${Numbers.formatNumber(int.parse(vm.estimatedCommission.toStringAsFixed(0)))}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
                                       ),
                                     ),
-                                    if (_canScrollLeft)
-                                      Positioned(
-                                        left: 0,
-                                        top: 0,
-                                        bottom: 0,
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .scaffoldBackgroundColor
+                                              .withOpacity(0.8),
+                                          borderRadius:
+                                              BorderRadius.circular(500)),
+                                      child: GestureDetector(
+                                        onTap: () => vm.toggleHideCommission(),
                                         child: Container(
-                                          padding:
-                                              const EdgeInsets.only(right: 20),
+                                          padding: kPagePaddingInsets / 3,
                                           decoration: BoxDecoration(
-                                            gradient: LinearGradient(
-                                              begin: Alignment.centerLeft,
-                                              end: Alignment.centerRight,
-                                              colors: [
-                                                Theme.of(context).scaffoldBackgroundColor,
-                                                Theme.of(context)
-                                                    .scaffoldBackgroundColor
-                                                    .withOpacity(0.0),
-                                              ],
-                                              stops: const [0.6, 1.0],
-                                            ),
-                                          ),
-                                          child: IconButton(
-                                            onPressed: () =>
-                                                _scrollChips(goRight: false),
-                                            icon: const Icon(
-                                                CupertinoIcons.chevron_left,
-                                                size: 20),
-                                            color: Colors.grey,
+                                              border: Border.all(
+                                                color:
+                                                    Theme.of(context).cardColor,
+                                                width: 1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(500)),
+                                          child: Icon(
+                                            vm.hideCommission
+                                                ? CupertinoIcons.eye
+                                                : CupertinoIcons.eye_slash,
+                                            color: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.color ??
+                                                Colors.white,
+                                            size: 14,
                                           ),
                                         ),
                                       ),
-                                    if (_canScrollRight)
-                                      Positioned(
-                                        right: 0,
-                                        top: 0,
-                                        bottom: 0,
-                                        child: Container(
-                                          padding:
-                                              const EdgeInsets.only(left: 20),
-                                          decoration: BoxDecoration(
-                                            gradient: LinearGradient(
-                                              begin: Alignment.centerLeft,
-                                              end: Alignment.centerRight,
-                                              colors: [
-                                                Theme.of(context)
-                                                    .scaffoldBackgroundColor
-                                                    .withOpacity(0.0),
-                                                Theme.of(context).scaffoldBackgroundColor,
-                                              ],
-                                              stops: const [0.0, 0.4],
-                                            ),
-                                          ),
-                                          child: IconButton(
-                                            onPressed: () =>
-                                                _scrollChips(goRight: true),
-                                            icon: const Icon(
-                                                CupertinoIcons.chevron_right,
-                                                size: 20),
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ),
+                                    ),
                                   ],
                                 ),
-                              ),
-                              const SizedBox(height: kPagePadding),
-                              vm.recentTransactions.isNotEmpty
-                                  ? transactionListItem(
-                                      context,
-                                      vm.recentTransactions[0]['number'],
-                                      vm.recentTransactions[0]['amount'],
-                                      vm.recentTransactions[0]['status'],
-                                      vm.recentTransactions[0]['ussdReply'],
-                                      vm.recentTransactions[0]['date'],
-                                      vm.recentTransactions[0]['time'],
-                                      vm.recentTransactions[0]['id'],
-                                      vm.recentTransactions[0]['ussdDialed'],
-                                      vm.recentTransactions[0]['source'],
-                                      vm.recentTransactions[0]['simSubId'],
-                                      vm.recentTransactions[0]['canRetry'] ?? 0,
-                                      lineLimit: 1,
-                                    )
-                                  : const Text("No transactions today :("),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                            const SizedBox(height: kPagePadding * 2),
+
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  CupertinoIcons.graph_square,
+                                  color: kPrimaryColor,
+                                  size: 30,
+                                ),
+                                const SizedBox(width: kPagePadding),
+                                GestureDetector(
+                                  onTap: () {
+                                    vm.reload();
+                                    vm.refreshBalances();
+                                  },
+                                  child: Container(
+                                    padding: kPagePaddingInsets / 2,
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .scaffoldBackgroundColor
+                                          .withOpacity(0.8),
+                                      borderRadius: BorderRadius.circular(500),
+                                      border: Border.all(
+                                        color: Theme.of(context).cardColor,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: const Icon(
+                                      CupertinoIcons.refresh,
+                                      color: kDarkerGreen,
+                                      size: 13,
+                                      fill: 1,
+                                      weight: 700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: kPagePadding),
-                  InkWell(
-                    onTap: vm.toggleToolsSection,
-                    child: Padding(
-                      padding: EdgeInsets.all(kPagePadding),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            "My tools",
-                            style: TextStyle(fontWeight: FontWeight.bold),
+
+                  Container(
+                    // margin: kPagePaddingInsets,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: kPagePadding),
+                    decoration: BoxDecoration(
+                      // color: Theme.of(context).primaryColor.withOpacity(.05),
+                      borderRadius: BorderRadius.circular(kBorderRadius),
+                    ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: kPagePadding * 2),
+                        vm.hasActiveSubscription
+                            ? const SizedBox()
+                            : noBalanceButton(context),
+                        vm.isRunning
+                            ? const SizedBox()
+                            : appPausedButton(context),
+                        vm.autoRetry
+                            ? const SizedBox()
+                            : appPausedButton(
+                                context,
+                                text: 'Auto retry is disabled. Click to enable',
+                              ),
+                        vm.offersMightHaveChanged
+                            ? appPausedButton(
+                                context,
+                                text:
+                                    'Offers might have changed. Click to resume',
+                                onTap: () async {
+                                  if ((await showConfirmDeleteDialog(
+                                        context,
+                                        title: 'Warning',
+                                        message:
+                                            'Make sure you have checked the offers and they are correct before resuming.',
+                                      )) ??
+                                      false) {
+                                    await vm.acknowledgeOffersChecked();
+                                    showSuccessDialog(context, text: 'Resumed');
+                                  }
+                                  vm.reload();
+                                },
+                              )
+                            : const SizedBox(),
+                      ],
+                    ),
+                  ),
+                  // const SizedBox(height: kPagePadding),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: kPagePadding),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          "History",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        toolButton(
+                          () {
+                            Navigator.of(context)
+                                .push(
+                                  PageRouteBuilder(
+                                    pageBuilder: (context, animation,
+                                            secondaryAnimation) =>
+                                        const TransactionHistoryPage(),
+                                    transitionsBuilder: (context, animation,
+                                        secondaryAnimation, child) {
+                                      return CupertinoPageTransition(
+                                        primaryRouteAnimation: animation,
+                                        secondaryRouteAnimation:
+                                            secondaryAnimation,
+                                        linearTransition: true,
+                                        child: child,
+                                      );
+                                    },
+                                  ),
+                                )
+                                .then((value) => vm.reload());
+                          },
+                          Icon(
+                            vm.verboseMode
+                                ? CupertinoIcons.eye_slash
+                                : CupertinoIcons.eye,
+                            size: 0,
                           ),
-                          Icon(vm.showToolsSection
-                              ? CupertinoIcons.chevron_up
-                              : CupertinoIcons.chevron_down)
-                        ],
+                          "All (${vm.transactionToday}) >",
+                          context,
+                          withBorder: true,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    margin: kPagePaddingInsets,
+                    padding: kPagePaddingInsets / 3,
+                    decoration: BoxDecoration(
+                      // color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(kBorderRadius),
+                      border: Border.all(
+                        color: Theme.of(context).primaryColor.withOpacity(.2),
+                        width: 1,
                       ),
+                    ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: kPagePadding),
+                        Wrap(
+                          runSpacing: kPagePadding / 2,
+                          spacing: kPagePadding / 2,
+                          alignment: WrapAlignment.center,
+                          children: [
+                            ...([
+                              {
+                                'count': vm.successfulConfirmedCount,
+                                'icon': const Icon(
+                                    CupertinoIcons.checkmark_seal_fill,
+                                    color: kPrimaryColor,
+                                    size: 14),
+                                'query': TransactionStatuses.doneConfirmed,
+                                'label': 'successful(confirmed)',
+                                'accentColor': kDarkerGreen,
+                              },
+                              {
+                                'count': vm.errorCount,
+                                'icon': const Icon(
+                                    CupertinoIcons.xmark_circle_fill,
+                                    color: kErrorColor,
+                                    size: 14),
+                                'query': TransactionStatuses.error,
+                                'label': 'errors',
+                                'accentColor': kErrorColor,
+                              },
+                              {
+                                'count': vm.successfulCount,
+                                'icon': const Icon(CupertinoIcons.checkmark_alt,
+                                    color: kWarningColor, size: 14),
+                                'query': TransactionStatuses.done,
+                                'label': 'successful(pending)',
+                                'accentColor': kDarkerGreen,
+                              },
+                              {
+                                'count': vm.advancedCount,
+                                'icon': const Icon(
+                                    CupertinoIcons.phone_circle_fill,
+                                    color: kPrimaryColor,
+                                    size: 14),
+                                'query': TransactionStatuses.advancedUssd,
+                                'label': 'advanced',
+                                'accentColor': kDarkerGreen,
+                              },
+                              {
+                                'count': vm.forwardedCount,
+                                'icon': const Icon(
+                                    CupertinoIcons.arrow_turn_right_up,
+                                    color: kPrimaryColor,
+                                    size: 14),
+                                'query': TransactionStatuses.forwarded,
+                                'label': 'forwarded',
+                                'accentColor': kDarkerGreen,
+                              },
+                              {
+                                'count': vm.failedCount,
+                                'icon': const Icon(
+                                    CupertinoIcons.arrow_2_circlepath,
+                                    color: kWarningColor,
+                                    size: 14),
+                                'query': TransactionStatuses.secondAttempt,
+                                'label': 'second attempt',
+                                'accentColor': kWarningColor,
+                              },
+                              {
+                                'count': vm.pausedCount,
+                                'icon': Icon(CupertinoIcons.pause_circle_fill,
+                                    color: Theme.of(context).hintColor,
+                                    size: 14),
+                                'query': TransactionStatuses.paused,
+                                'label': 'paused',
+                                'accentColor': kWarningColor,
+                              },
+                              {
+                                'count': vm.okoaCount,
+                                'icon': const Icon(Icons.sailing_rounded,
+                                    color: kDullColor, size: 14),
+                                'query': TransactionStatuses.hasOkoa,
+                                'label': 'okoa',
+                                'accentColor': kBgColor,
+                              },
+                              {
+                                'count': vm.unavailableCount,
+                                'icon': Icon(
+                                    CupertinoIcons.exclamationmark_triangle,
+                                    color: Theme.of(context).indicatorColor,
+                                    size: 14),
+                                'query': TransactionStatuses.unavailableOffer,
+                                'label': 'unavailable offers',
+                                'accentColor': Theme.of(context).indicatorColor,
+                              },
+                              {
+                                'count': vm.blacklistedCount,
+                                'icon': const Icon(Icons.person_off_outlined,
+                                    color: kWarningColor, size: 14),
+                                'query': 'blacklist',
+                                'label': 'blacklisted',
+                                'accentColor': kErrorColor,
+                              },
+                            ]
+                            // ..sort(
+                            //         (a, b) => (b['count'] as int)
+                            //             .compareTo(a['count'] as int),
+                            //       )
+                                  )
+                                .where((filter) => (filter['count'] as int) > 0)
+                                .map((filter) {
+                              return toolButton(
+                                () {
+                                  Navigator.of(context)
+                                      .push(
+                                        PageRouteBuilder(
+                                          pageBuilder: (context, animation,
+                                                  secondaryAnimation) =>
+                                              TransactionHistoryPage(
+                                            query: filter['query'] as String,
+                                          ),
+                                          transitionsBuilder: (context,
+                                              animation,
+                                              secondaryAnimation,
+                                              child) {
+                                            return CupertinoPageTransition(
+                                              primaryRouteAnimation: animation,
+                                              secondaryRouteAnimation:
+                                                  secondaryAnimation,
+                                              linearTransition: true,
+                                              child: child,
+                                            );
+                                          },
+                                        ),
+                                      )
+                                      .then((value) => vm.reload());
+                                },
+                                filter['icon'] as Icon,
+                                filter['count'].toString(),
+                                otherText: vm.verboseMode
+                                    ? filter['label'] as String
+                                    : null,
+                                context,
+                                withBorder: true,
+                                accentColor: filter['accentColor'] as Color?,
+                                borderColor: filter['accentColor'] as Color?,
+                              );
+                            }).toList()
+                          ],
+                        ),
+                        const SizedBox(height: kPagePadding),
+                        vm.recentTransactions.isNotEmpty
+                            ? transactionListItem(
+                                context,
+                                vm.recentTransactions[0]['number'],
+                                vm.recentTransactions[0]['amount'],
+                                vm.recentTransactions[0]['status'],
+                                vm.recentTransactions[0]['ussdReply'],
+                                vm.recentTransactions[0]['date'],
+                                vm.recentTransactions[0]['time'],
+                                vm.recentTransactions[0]['id'],
+                                vm.recentTransactions[0]['ussdDialed'],
+                                vm.recentTransactions[0]['source'],
+                                vm.recentTransactions[0]['simSubId'],
+                                vm.recentTransactions[0]['canRetry'] ?? 0,
+                                lineLimit: 1,
+                                vm.recentTransactions[0]["ussdReply"],
+                              )
+                            : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text("No transactions today"),
+                              ],
+                            ),
+                      ],
+                    ),
+                  ),
+
+                  Padding(
+                    padding: EdgeInsets.all(kPagePadding),
+                    child: const Text(
+                      "My tools",
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
                   if (vm.showToolsSection)

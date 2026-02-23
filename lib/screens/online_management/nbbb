@@ -1,0 +1,637 @@
+
+import 'dart:convert';
+
+import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
+import 'package:bsat/components/dialogs/loading_dialog.dart';
+import 'package:bsat/components/dialogs/show_error_dialog.dart';
+import 'package:bsat/components/dialogs/success_dialog.dart';
+import 'package:bsat/components/header.dart';
+import 'package:bsat/screens/online_management/edit_forwarder.dart';
+import 'package:bsat/screens/online_management/pair_device_page.dart';
+import 'package:bsat/services/auth_service.dart';
+import 'package:bsat/services/backend_service.dart';
+import 'package:bsat/utils/constants.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+
+import '../../components/device_card.dart';
+import '../../services/shared_preferences_service.dart';
+import '../../services/sqlite_service.dart';
+import 'search_device.dart';
+
+class PairedDevices extends StatefulWidget {
+  const PairedDevices({super.key});
+
+  @override
+  State<PairedDevices> createState() => _PairedDevicesState();
+}
+
+class _PairedDevicesState extends State<PairedDevices> {
+  List<Map<String, dynamic>> pairedDevices = [];
+  List<Map<String, dynamic>> forwardingDevices = [];
+
+  List<dynamic> _pendingPairings = [];
+
+  BackendService backendService = BackendService();
+
+  String myDeviceName = '';
+
+  Future<void> _unlinkDevice(String targetDeviceName) async {
+    bool confirmed = await showConfirmDeleteDialog(context,
+            message: "Are you sure you want to unlink this device?") ??
+        false;
+    if (!confirmed) return;
+
+    if (!mounted) return;
+    showLoadingDialog(context, text: "Unlinking Device...");
+
+    final response = await backendService.post('/api/device/unlink', body: {
+      'myDeviceName': myDeviceName,
+      'otherDeviceName': targetDeviceName,
+    });
+
+    if (mounted) Navigator.of(context).pop();
+
+    if (response['success']) {
+      await getData();
+      if (mounted) showSuccessDialog(context, text: "Device unlinked");
+    } else {
+      if (mounted) {
+        showErrorDialog(context, "Error",
+            response['message'] ?? "Failed to unlink device.");
+      }
+    }
+  }
+
+  Future<void> getData() async {
+    // get data from endpoint /whitelisted
+    // then update whitelistedDevices with the new data
+    await _loadPendingPairings();
+    showLoadingDialog(context, text: "Fetching paired devices...");
+    pairedDevices = await backendService
+        .get('/api/device/whitelisted')
+        .then((response) async {
+      if (response['success']) {
+        print("Whitelisted devices from server: ${response['data']}");
+        final data = response['data'];
+        if (data != null && data['devices'] != null) {
+          List<Map<String, dynamic>> devices =
+              List<Map<String, dynamic>>.from(data['devices']);
+          await SQLiteService().clearTable('whitelistedDevices');
+          print(
+              "Cleared local whitelistedDevices table, ${SQLiteService().getCount('whitelistedDevices')} records now.");
+          for (var device in devices) {
+            await SQLiteService().insertStuff(device, 'whitelistedDevices');
+          }
+          return devices;
+        }
+        return <Map<String, dynamic>>[];
+      } else {
+        print("Failed to fetch whitelisted devices: ${response['message']}");
+        return <Map<String, dynamic>>[];
+      }
+    });
+
+    if (pairedDevices.isEmpty) {
+      // If we couldn't fetch from server, fallback to local database
+      pairedDevices = await SQLiteService().queryAll('whitelistedDevices');
+    }
+
+    forwardingDevices = await SQLiteService().queryAll('forwardingDevices');
+
+    print("Forwarding evices: $forwardingDevices");
+
+    Navigator.of(context).pop(); // Hide loading
+
+    setState(() {});
+  }
+
+  Future<void> _respondToPairing(String requestId, bool accept) async {
+    showLoadingDialog(context, text: accept ? "Accepting..." : "Rejecting...");
+
+    try {
+      final backendService = BackendService();
+      final response = await backendService.post(
+        '/api/device/respond-pairing',
+        body: {
+          'id': requestId,
+          'accept': accept,
+        },
+      );
+
+      // Hide loading dialog
+      if (mounted) Navigator.pop(context);
+
+      if (response['success']) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(accept ? "Pairing Accepted" : "Pairing Rejected"),
+            ),
+          );
+          // Refresh the list
+          _loadPendingPairings();
+        }
+      } else {
+        if (mounted) {
+          showErrorDialog(context, "Error",
+              response['message'] ?? "Failed to update pairing status.");
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Hide loading
+        showErrorDialog(context, "Error", "An error occurred: $e");
+      }
+    }
+  }
+
+
+  Future<void> _loadPendingPairings() async {
+    myDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? "Unknown";
+    if (myDeviceName == "Loading..." || myDeviceName == "Unknown") return;
+
+    showLoadingDialog(context, text: "Loading pending pairings...");
+
+    try {
+      final backendService = BackendService();
+      final response = await backendService
+          .get('/api/device/pending-pairings?myDeviceName=$myDeviceName');
+      if (response['success'] && mounted) {
+        setState(() {
+          _pendingPairings = response['data']['requests'] ?? [];
+        });
+        print("Pending Pairings: ${response['data']['requests']}");
+      }
+    } catch (e) {
+      debugPrint("Error loading pending pairings: $e");
+    }
+
+    Navigator.of(context).pop(); // Hide loading
+    setState(() {}); // Refresh UI with new pending pairings
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      getData();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            header(context, "Paired Devices"),
+            const SizedBox(height: kPagePadding * 2),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                // spacing: kPagePadding / 2,
+                children: [
+                  Text(
+                      "Send and receive MPESA messages online between paired devices"),
+                  if (_pendingPairings.isEmpty)
+                    const SizedBox.shrink()
+                  else
+                    ..._pendingPairings
+                        .map((pairing) => _buildPendingPairingItem(pairing)),
+                  const SizedBox(height: kPagePadding),
+                  Divider(),
+                  const SizedBox(height: kPagePadding * 2),
+                  Text(
+                    "Paired Devices",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text("Process messages from the following devices"),
+                  const SizedBox(height: kPagePadding),
+                  if (pairedDevices.isEmpty)
+                    Padding(
+                      padding:
+                          const EdgeInsets.symmetric(vertical: kPagePadding),
+                      child: Text(
+                        "No receiving devices added yet.",
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  else
+                    ...pairedDevices.map((device) {
+                      return InkWell(
+                        onTap: () async {
+                          await _unlinkDevice(device['device_name']);
+                        },
+                        child: deviceCard(
+                          context: context,
+                          deviceName: device['device_name'],
+                          deviceDetails: "${device['owner_email']}",
+                          iconData: Icons.devices,
+                          trailing: IconButton(
+                            onPressed: () async {
+                              await _unlinkDevice(device['device_name']);
+                            },
+                            icon: Icon(
+                              CupertinoIcons.xmark_circle,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  const SizedBox(height: kPagePadding),
+                  Center(
+                    child: InkWell(
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    PairDevicePage(),
+                            transitionsBuilder: (context, animation,
+                                secondaryAnimation, child) {
+                              return CupertinoPageTransition(
+                                primaryRouteAnimation: animation,
+                                secondaryRouteAnimation: secondaryAnimation,
+                                linearTransition: true,
+                                child: child,
+                              );
+                            },
+                          ),
+                        );
+                        await getData();
+                      },
+                      child: Container(
+                        padding: kPagePaddingInsets,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(kBorderRadius),
+                          color: Theme.of(context).cardColor,
+                        ),
+                        child: Icon(Icons.add),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: kPagePadding),
+            Divider(),
+            const SizedBox(height: kPagePadding * 2),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Forwarding",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  // const SizedBox(height: kPagePadding / 2),
+                  Text("Messages will be forwarded to the following devices:"),
+                  const SizedBox(height: kPagePadding),
+                  if (forwardingDevices.isEmpty)
+                    Padding(
+                      padding:
+                          const EdgeInsets.symmetric(vertical: kPagePadding),
+                      child: Center(
+                        child: Text(
+                          "No forwarding devices added yet.",
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                    )
+                  else
+                    ...forwardingDevices.map((device) {
+                      List amounts = device["amounts_to_forward"] != null
+                          ? (jsonDecode(device["amounts_to_forward"]) as List)
+                              .map((e) => e.toString())
+                              .toList()
+                          : [];
+                      bool isPaused = (device['paused'] ?? 0) == 1;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: kPagePadding),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.circular(kBorderRadius),
+                            border: isPaused
+                                ? Border.all(color: Colors.orange, width: 2)
+                                : Border.all(
+                                    color: Colors.grey.withOpacity(0.2)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(Icons.devices,
+                                      size: 40, color: kPrimaryColor),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          device['device_name'] ?? 'Unknown',
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16),
+                                        ),
+                                        Text(
+                                          device['owner_email'] ?? '',
+                                          style: const TextStyle(
+                                              fontSize: 12, color: Colors.grey),
+                                        ),
+                                        if (isPaused)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                                top: 4.0),
+                                            child: Text(
+                                              "PAUSED",
+                                              style: TextStyle(
+                                                  color: Colors.orange,
+                                                  fontWeight:
+                                                      FontWeight.bold,
+                                                  fontSize: 12),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Text("Amounts to forward:",
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12)),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 4,
+                                runSpacing: 4,
+                                children: amounts.isEmpty
+                                    ? [
+                                        const Text("No amounts set",
+                                            style: TextStyle(
+                                                fontStyle: FontStyle.italic,
+                                                color: Colors.grey))
+                                      ]
+                                    : amounts
+                                        .map((amt) => Chip(
+                                              label: Text(amt),
+                                              padding: EdgeInsets.zero,
+                                              labelPadding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              backgroundColor: Theme.of(
+                                                      context)
+                                                  .colorScheme
+                                                  .surfaceVariant,
+                                            ))
+                                        .toList(),
+                              ),
+                              const SizedBox(height: 8),
+                              Divider(),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit,
+                                        color: kPrimaryColor),
+                                    tooltip: 'Edit',
+                                    onPressed: () async {
+                                      await Navigator.of(context).push(
+                                        PageRouteBuilder(
+                                          pageBuilder: (context, animation,
+                                                  secondaryAnimation) =>
+                                              EditForwarder(
+                                            dbId: device['id'],
+                                          ),
+                                          transitionsBuilder: (context,
+                                              animation,
+                                              secondaryAnimation,
+                                              child) {
+                                            return CupertinoPageTransition(
+                                              primaryRouteAnimation: animation,
+                                              secondaryRouteAnimation:
+                                                  secondaryAnimation,
+                                              linearTransition: true,
+                                              child: child,
+                                            );
+                                          },
+                                        ),
+                                      );
+                                      await getData();
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      isPaused
+                                          ? Icons.play_arrow
+                                          : Icons.pause,
+                                      color: isPaused
+                                          ? Colors.green
+                                          : Colors.orange,
+                                    ),
+                                    tooltip:
+                                        isPaused ? 'Resume' : 'Pause',
+                                    onPressed: () async {
+                                      await SQLiteService().updateStuff(
+                                        {'paused': isPaused ? 0 : 1},
+                                        'id = ?',
+                                        [device['id']],
+                                        'forwardingDevices',
+                                      );
+                                      getData();
+                                      if (mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                              content: Text(isPaused
+                                                  ? "Resumed"
+                                                  : "Paused")),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete,
+                                        color: kErrorColor),
+                                    tooltip: 'Delete',
+                                    onPressed: () async {
+                                      bool confirmed =
+                                          await showConfirmDeleteDialog(
+                                                  context,
+                                                  message:
+                                                      "Are you sure you want to remove this forwarding rule?") ??
+                                              false;
+
+                                      if (!confirmed) return;
+                                      if (!mounted) return;
+
+                                      showLoadingDialog(context);
+                                      await SQLiteService().deleteWhere(
+                                        'forwardingDevices',
+                                        'id = ?',
+                                        [device['id']],
+                                      );
+                                      if (mounted)
+                                        Navigator.pop(context); // loading
+                                      getData();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  const SizedBox(height: kPagePadding),
+                  Center(
+                    child: InkWell(
+                      onTap: () async {
+                        await Navigator.of(context).push(
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    EditForwarder(),
+                            transitionsBuilder: (context, animation,
+                                secondaryAnimation, child) {
+                              return CupertinoPageTransition(
+                                primaryRouteAnimation: animation,
+                                secondaryRouteAnimation: secondaryAnimation,
+                                linearTransition: true,
+                                child: child,
+                              );
+                            },
+                          ),
+                        );
+                        await getData();
+                      },
+                      child: Container(
+                        padding: kPagePaddingInsets,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(kBorderRadius),
+                          color: Theme.of(context).cardColor,
+                        ),
+                        child: Icon(Icons.add),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: kPagePadding * 2),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPendingPairingItem(Map<String, dynamic> pairing) {
+    final requesterName = pairing['requester_name'] ?? 'Unknown';
+    final requesterId = pairing['requester_device_id'] ?? '';
+    final targetName = pairing['target_device_name'] ??
+        pairing['target_name'] ??
+        pairing['recipient_name'] ??
+        'Unknown';
+    final targetId =
+        pairing['target_device_id'] ?? pairing['recipient_id'] ?? '';
+    final status = pairing['status'] ?? 'Pending';
+    final isSentByMe =
+        requesterName == myDeviceName || requesterId == myDeviceName;
+    final isToMe = targetName == myDeviceName || targetId == myDeviceName;
+    final canRespond = isToMe && status.toString().toLowerCase() == 'pending';
+
+    final primaryLabel = isSentByMe ? 'Request sent' : 'Request received';
+    final counterpart = isSentByMe ? targetName : requesterName;
+    final counterpartId = isSentByMe ? targetId : requesterId;
+    final counterpartLabel = counterpartId.isNotEmpty
+        ? '$counterpart ($counterpartId)'
+        : counterpart;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(kBorderRadius),
+        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isSentByMe ? Icons.north_east : Icons.phonelink_setup,
+            color: isSentByMe ? Colors.blue : Colors.orange,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(primaryLabel,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(counterpartLabel,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                Text('Status: $status', style: const TextStyle(fontSize: 12)),
+              ],
+            ),
+          ),
+          if (canRespond)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.check, color: Colors.green),
+                  onPressed: () {
+                    _respondToPairing(pairing['id'].toString(), true);
+                    getData();
+                  },
+                  tooltip: "Accept",
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.red),
+                  onPressed: () {
+                    _respondToPairing(pairing['id'].toString(), false);
+                    getData();
+                  },
+                  tooltip: "Delete",
+                ),
+              ],
+            )
+          else if (isSentByMe && status.toString().toLowerCase() == 'pending')
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              onPressed: () {
+                _respondToPairing(pairing['id'].toString(), false);
+                getData();
+              },
+              tooltip: "Delete",
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(kBorderRadius / 2),
+              ),
+              child: Text(
+                status,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

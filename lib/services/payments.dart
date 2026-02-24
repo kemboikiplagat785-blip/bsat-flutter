@@ -261,6 +261,7 @@ class Payment {
   });
 
   factory Payment.fromMap(Map<String, dynamic> m) {
+    // print("Creating Payment from map: $m");
     return Payment(
       id: m['id'],
       sim: m['sim'],
@@ -308,12 +309,15 @@ class Payment {
     // This method can be used to fetch the last payment from the database if needed
     // For now, it just returns the current instance
 
-    Payment res = Payment.fromMap(
+      Map<String, dynamic> lastPlan = 
       (await SQLiteService().queryAll(
         'payments',
         limit: 1,
         orderBy: 'id DESC',
-      ))[0],
+      ))[0];
+
+      print("Last plan fetched: $lastPlan");
+    Payment res = Payment.fromMap(lastPlan
     );
 
     return res;
@@ -346,7 +350,7 @@ class Payment {
     if (payments.isEmpty) {
       // default to free tier if no active payments found
       return Payment.fromMap({
-
+        'id': -1,
         'sim': -1,
         'till': 365 * 24 * 60 * 60 * 1000,
         'plan_id': 0,
@@ -370,6 +374,7 @@ class Payment {
     if (payments.isEmpty) {
       // return a default payment if no active payments found for the tier
       return Payment.fromMap({
+        'id': -1,
         'sim': -1,
         'till': DateTime.now().millisecondsSinceEpoch,
         'plan_id': 0,

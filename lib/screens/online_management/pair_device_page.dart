@@ -90,6 +90,8 @@ class _PairDevicePageState extends State<PairDevicePage> {
         'targetDeviceName': _targetDeviceController.text,
       });
 
+      print('myDeviceName: $myDeviceName, targetDeviceName: ${_targetDeviceController.text}');
+
       // Hide loading dialog
       if (mounted) Navigator.pop(context);
 

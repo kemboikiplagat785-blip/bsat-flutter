@@ -1,3 +1,4 @@
+import 'package:bsat/screens/black_screen.dart';
 import 'package:bsat/screens/settings/about.dart';
 import 'package:bsat/screens/settings/settings.dart';
 import 'package:bsat/screens/settings/subscription.dart';
@@ -73,6 +74,25 @@ class _HomeSettingsPageState extends State<HomeSettingsPage> {
                   color: kPrimaryColor,
                 ),
               ),
+              
+              // account settings
+              buttonDescriptive(
+                context,
+                title: 'Reduce power consumption when running advanced requests',
+                subtitle: 'Black Screen',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const BlackoutScreen(),
+                    ),
+                  );
+                },
+                icon: Icon(
+                  CupertinoIcons.lightbulb,
+                  color: kWarningColor,
+                ),
+              ),
+
               // support
               buttonDescriptive(
                 context,

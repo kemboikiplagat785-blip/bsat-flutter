@@ -76,9 +76,8 @@ class DashboardViewModel extends ChangeNotifier {
   }
 
   Future<void> reload() async {
-
     killswitchConfig = await KillswitchService.evaluateKillswitch();
-    
+
     userName = await _sharedPreferencesService.getUserName() ?? 'Bingwa';
 
     isLightMode = await _sharedPreferencesService.getThemeMode() == 'light';
@@ -98,6 +97,9 @@ class DashboardViewModel extends ChangeNotifier {
 
     if (DateTime.now().millisecondsSinceEpoch < 1772097346000 &&
         !hasActiveSubscription) {
+      print(
+          "Subscription expiry: ${DateTime.fromMillisecondsSinceEpoch(expiry)}, hasActiveSubscription: $hasActiveSubscription");
+
       PaymentOps.start1DayOnlinePlusFreeTrial();
     }
 

@@ -94,9 +94,8 @@ class PhoneService {
           return [res, TransactionStatuses.error];
         }
 
-        if (res!.contains(RegExp(
-            r'Offer might have changed',
-            caseSensitive: false))) {
+        if (res!.contains(
+            RegExp(r'Offer might have changed', caseSensitive: false))) {
           return [res, TransactionStatuses.paused];
         }
 
@@ -135,9 +134,10 @@ class PhoneService {
   Future<int> getAirtimeBalance({int subscriptionId = -9}) async {
     try {
       if (subscriptionId == -9) {
-        final subs = await getAllSimSubids();
-        if (subs.isEmpty) return 0;
-        subscriptionId = subs.first;
+        subscriptionId =
+            (await SQLiteService().queryAll('transactions', orderBy: 'id DESC'))
+                    .first['simSubId'] ??
+                -1;
       }
 
       final res = await makeMyRequest("*144#", subscriptionId);
@@ -184,10 +184,11 @@ class PhoneService {
     bool generalUseCodeSignature = false;
     bool generalAutoSwitch = false; // You can make this configurable if needed
     //print("UssdSession(fl): sendUssdSequence: $fullCode, $subscriptionId");
-    if(codeSignature != null) {
-      generalUseCodeSignature = await SharedPreferencesService().getUseSignature() ?? false;
-      generalAutoSwitch = await SharedPreferencesService().getCanAutoSwitch() ?? false;
-
+    if (codeSignature != null) {
+      generalUseCodeSignature =
+          await SharedPreferencesService().getUseSignature() ?? false;
+      generalAutoSwitch =
+          await SharedPreferencesService().getCanAutoSwitch() ?? false;
     }
 // You can make this configurable if needed
     try {
@@ -199,9 +200,12 @@ class PhoneService {
         {
           "sequence": fullCode,
           "subscriptionId": subscriptionId,
-          "acceptedProcedure": generalUseCodeSignature ? CodeSignature.simpleProcedure(
-              codeSignature?.acceptedProcedure ?? []) : [],
-          "autoSwitch": (codeSignature?.autoSwitch ?? false) && generalAutoSwitch,
+          "acceptedProcedure": generalUseCodeSignature
+              ? CodeSignature.simpleProcedure(
+                  codeSignature?.acceptedProcedure ?? [])
+              : [],
+          "autoSwitch":
+              (codeSignature?.autoSwitch ?? false) && generalAutoSwitch,
           "isGettingSignature": isGettingSignature,
         },
       );

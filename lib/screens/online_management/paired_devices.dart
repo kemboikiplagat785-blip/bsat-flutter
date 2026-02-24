@@ -532,8 +532,10 @@ class _PairedDevicesState extends State<PairedDevices> {
   Widget _buildModernPendingItem(Map<String, dynamic> pairing) {
     final status = pairing['status'] ?? 'Pending';
     final requesterName = pairing['requester_name'] ?? 'Unknown';
-    final targetName = pairing['target_name'] ?? 'Unknown';
+    final targetName = pairing['recipient_name'] ?? 'Unknown';
     final isSentByMe = requesterName == myDeviceName;
+
+    print('Pairing details: $pairing');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

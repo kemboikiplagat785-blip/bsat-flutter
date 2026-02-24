@@ -416,9 +416,6 @@ class _DashBoardPageState extends State<DashBoardPage>
                             vm.hasActiveSubscription
                                 ? const SizedBox()
                                 : noBalanceButton(context),
-                            vm.isRunning
-                                ? const SizedBox()
-                                : appPausedButton(context),
                             vm.autoRetry
                                 ? const SizedBox()
                                 : appPausedButton(

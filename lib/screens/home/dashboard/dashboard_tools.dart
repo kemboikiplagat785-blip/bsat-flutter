@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../controllers/transaction_controller.dart';
+import '../../settings/accessibility_setup.dart';
 
 /// Collection of “My tools” shortcuts used on the dashboard.
 class DashboardToolsSection extends StatelessWidget {
@@ -372,17 +373,19 @@ class DashboardToolsSection extends StatelessWidget {
                       if (kDebugMode) {
                         // SharedPreferencesService().printAll();
 
-                        int startTime = DateTime.now().millisecondsSinceEpoch;
-                        for (int i = 0; i < 5; i++) {
-                          print("Making transaction $i");
-                          await TransactionController().makeTransactionGivenSmsBody(
-                              "UBF896PLG2 Confirmed.You have received Ksh1.00 from ANTONY  NJAU 0742342297 on 15/2/26 at 4:13 PM  New M-PESA balance is Ksh1.00. Earn interest daily on Ziidi MMF,Dial *334#");
-                        }
-                        double timeTakenInSeconds =
-                            (DateTime.now().millisecondsSinceEpoch -
-                                    startTime) /
-                                1000;
-                        print("took $timeTakenInSeconds seconds");
+                        // int startTime = DateTime.now().millisecondsSinceEpoch;
+                        // for (int i = 0; i < 5; i++) {
+                        //   print("Making transaction $i");
+                        //   await TransactionController().makeTransactionGivenSmsBody(
+                        //       "UBF896PLG2 Confirmed.You have received Ksh1.00 from ANTONY  NJAU 0742342297 on 15/2/26 at 4:13 PM  New M-PESA balance is Ksh1.00. Earn interest daily on Ziidi MMF,Dial *334#");
+                        // }
+                        // double timeTakenInSeconds =
+                        //     (DateTime.now().millisecondsSinceEpoch -
+                        //             startTime) /
+                        //         1000;
+                        // print("took $timeTakenInSeconds seconds");
+                        await AccessibilitySetupProcedure.turnOnAccessibility(
+                            context);
                       }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),
@@ -392,29 +395,29 @@ class DashboardToolsSection extends StatelessWidget {
                 toolButton(
                   () async {
                     // if (kDebugMode) {
-                      // SharedPreferencesService().printAll();
+                    // SharedPreferencesService().printAll();
 
-                      Navigator.of(context)
-                          .push(
-                            PageRouteBuilder(
-                              pageBuilder:
-                                  (context, animation, secondaryAnimation) =>
-                                      const BlackoutScreen(),
-                              transitionsBuilder: (context, animation,
-                                  secondaryAnimation, child) {
-                                return CupertinoPageTransition(
-                                  primaryRouteAnimation: animation,
-                                  secondaryRouteAnimation: secondaryAnimation,
-                                  linearTransition: true,
-                                  child: child,
-                                );
-                              },
-                            ),
-                          )
-                          .then(
-                            (value) => onReload(),
-                          );
-// print("took ")
+                    Navigator.of(context)
+                        .push(
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    const BlackoutScreen(),
+                            transitionsBuilder: (context, animation,
+                                secondaryAnimation, child) {
+                              return CupertinoPageTransition(
+                                primaryRouteAnimation: animation,
+                                secondaryRouteAnimation: secondaryAnimation,
+                                linearTransition: true,
+                                child: child,
+                              );
+                            },
+                          ),
+                        )
+                        .then(
+                          (value) => onReload(),
+                        );
+                    // print("took ")
                     // }  AA
                   },
                   const Icon(CupertinoIcons.star, color: kIndigoColor),
@@ -440,7 +443,9 @@ class DashboardToolsSection extends StatelessWidget {
                             },
                           ),
                         )
-                        .then((value) => onReload());
+                        .then(
+                          (value) => onReload(),
+                        );
                   },
                   Icon(CupertinoIcons.money_dollar,
                       color: Theme.of(context).indicatorColor),

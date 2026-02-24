@@ -32,14 +32,14 @@ class PhoneService {
     }
 
     try {
-      //print("Making request: $code on sim $subscriptionId");
+      // print("Making request: $code on sim $subscriptionId");
       String ussdResponseMessage = await UssdService.makeRequest(
         subscriptionId,
         code,
         const Duration(seconds: 10),
       );
 
-      //print("Responser: $ussdResponseMessage");
+      // print("Responser: $ussdResponseMessage");
 
       return [ussdResponseMessage, TransactionStatuses.done];
     } on PlatformException catch (e) {

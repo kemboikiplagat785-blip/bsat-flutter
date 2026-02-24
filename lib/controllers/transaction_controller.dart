@@ -1279,7 +1279,7 @@ class TransactionController {
 
     retryTimes *= 2;
 
-    print("Retrying. all: ${await _sqliteService.queryAll('transactions')}");
+    // print("Retrying. all: ${await _sqliteService.queryAll('transactions')}");
 
     String query = '''
       (status = ? AND (canRetry >= 1 OR canRetry = ? OR canRetry IS NULL)) 
@@ -1305,7 +1305,7 @@ class TransactionController {
 
     //print('Retrying all: ${rawStuff.length}');
 
-    debugPrint('Retrying all transactions: ${rawStuff}');
+    // debugPrint('Retrying all transactions: ${rawStuff}');
 
     for (var stuff in rawStuff) {
       debugPrint(' retrytimes $retryTimes, canRetry ${stuff['canRetry']}');

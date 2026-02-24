@@ -16,6 +16,8 @@ import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'providers/theme_provider.dart';
+import 'screens/kill_switch.dart';
+import 'services/kill_switch_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -53,32 +55,91 @@ Future<void> main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer<ThemeProvider>(builder: (context, themeProvider, child) {
-      return MaterialApp(
-        navigatorKey: navigatorKey,
-        title: 'BSAT',
-        theme: themeProvider.currentTheme,
-        home: FutureBuilder<bool?>(
-          future: SharedPreferencesService().getRunningStatus(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            } else if (snapshot.hasError) {
-              return const Center(child: Text('Error loading app'));
-            } else {
-              bool? isRunning = snapshot.data;
-              return isRunning ?? false
-                  ? const HomePage()
-                  : const OnboardingPage();
-            }
-          },
-        ),
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  KillswitchConfig? _config;
+  bool _skippedKillswitch = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkKillswitch();
+  }
+
+  Future<void> _checkKillswitch() async {
+    setState(() => _config = null); // Shows loading spinner
+    final config = await KillswitchService.evaluateKillswitch();
+    setState(() => _config = config);
+  }
+
+  Widget _getAppRoot() {
+    // 1. Loading State
+    if (_config == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
-    });
+    }
+
+    // 2. Killswitch Enforcements (If not skipped)
+    if (!_skippedKillswitch) {
+      switch (_config!.enforcement) {
+        case KillswitchEnforcement.hardKill:
+          return KillswitchScreen(config: _config!, isDismissible: false);
+          
+        case KillswitchEnforcement.softKill:
+          return KillswitchScreen(
+            config: _config!,
+            isDismissible: true,
+            onSkip: () => setState(() => _skippedKillswitch = true),
+          );
+          
+        case KillswitchEnforcement.offlineLockout:
+          return KillswitchScreen(
+            config: _config!,
+            isDismissible: false,
+            onRetry: _checkKillswitch,
+          );
+          
+        case KillswitchEnforcement.safe:
+          break; // App is safe, proceed to main flow
+      }
+    }
+
+    // 3. Normal App Flow (Original FutureBuilder logic)
+    return FutureBuilder<bool?>(
+      future: SharedPreferencesService().getRunningStatus(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        } else if (snapshot.hasError) {
+          return const Scaffold(body: Center(child: Text('Error loading app')));
+        } else {
+          bool? isRunning = snapshot.data;
+          return isRunning ?? false
+              ? const HomePage()
+              : const OnboardingPage();
+        }
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ThemeProvider>(
+      builder: (context, themeProvider, child) {
+        return MaterialApp(
+          navigatorKey: navigatorKey,
+          title: 'BSAT',
+          theme: themeProvider.currentTheme,
+          home: _getAppRoot(), // Routes intelligently based on killswitch & auth
+        );
+      },
+    );
   }
 }

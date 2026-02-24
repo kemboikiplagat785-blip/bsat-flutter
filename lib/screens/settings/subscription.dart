@@ -57,8 +57,6 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
       });
     });
 
-    getLastPayment();
-
     _recheckPlanExpiry();
 
     SimDataPlugin.getSimData().then((value) {
@@ -69,18 +67,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
     });
   }
 
-  void getLastPayment() async {
-    // Payment res = Payment.fromMap(
-    //   (await SQLiteService()
-    //       .queryAll('payments', limit: 1, orderBy: 'id DESC'))[0],
-    // );
+  Future<void> _recheckPlanExpiry() async {
     _lastPayment = await Payment.getHighestTierPayment();
 
-    setState(() {});
-  }
-
-  Future<void> _recheckPlanExpiry() async {
-    Payment lastPayment = await Payment.getHighestTierPayment();
+    print("All Paymets: ${await SQLiteService().queryAll('payments', orderBy: 'id DESC')}");
 
     tokenBalance = await _sharedPreferencesService.getDeliveryTokens() ?? 0;
 

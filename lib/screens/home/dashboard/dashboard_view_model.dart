@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/services/background_service.dart';
+import 'package:bsat/services/payments.dart';
 import 'package:bsat/services/phone_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
@@ -11,6 +12,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../../../services/kill_switch_service.dart';
+
 class DashboardViewModel extends ChangeNotifier {
   final _sqliteService = SQLiteService();
   final _phoneService = PhoneService();
@@ -18,9 +21,7 @@ class DashboardViewModel extends ChangeNotifier {
 
   Timer? _reloadTimer;
 
-  
   bool isLightMode = true;
-
 
   // UI state
   bool showToolsSection = true;
@@ -31,7 +32,6 @@ class DashboardViewModel extends ChangeNotifier {
   // Flags and metadata
   String userName = 'Bingwa';
   bool hasActiveSubscription = true;
-  bool isRunning = false;
   bool autoRetry = true;
   bool offersMightHaveChanged = false;
 
@@ -53,6 +53,8 @@ class DashboardViewModel extends ChangeNotifier {
   int okoaCount = 0;
   int blacklistedCount = 0;
 
+  KillswitchConfig? killswitchConfig;
+
   List<Map<String, dynamic>> recentTransactions = [];
 
   Future<void> initialize() async {
@@ -70,26 +72,34 @@ class DashboardViewModel extends ChangeNotifier {
     await reload();
     await refreshBalances();
 
-    _reloadTimer =
-        Timer.periodic(const Duration(seconds: 3), (_) => reload());
+    _reloadTimer = Timer.periodic(const Duration(seconds: 3), (_) => reload());
   }
 
   Future<void> reload() async {
+
+    killswitchConfig = await KillswitchService.evaluateKillswitch();
+    
     userName = await _sharedPreferencesService.getUserName() ?? 'Bingwa';
 
     isLightMode = await _sharedPreferencesService.getThemeMode() == 'light';
 
-    final expiry = await _sharedPreferencesService.getUsableUntil() ?? 0;
+    // final expiry = await _sharedPreferencesService.getUsableUntil() ?? 0;
     final tokenBal = await _sharedPreferencesService.getDeliveryTokens() ?? 0;
     offersMightHaveChanged =
         await _sharedPreferencesService.getOffersMightHaveChanged() ?? false;
+
+    autoRetry = (await _sharedPreferencesService.canAutoRetrySms() ?? true) ||
+        (await _sharedPreferencesService.canAutoRetryData() ?? false);
+
+    int expiry = (await Payment.getHighestTierPayment()).till;
+
     hasActiveSubscription =
         (expiry > DateTime.now().millisecondsSinceEpoch) || tokenBal > 0;
 
-    isRunning = (await _sharedPreferencesService.isSmsRunning() ?? false) ||
-        (await _sharedPreferencesService.isDataRunning() ?? false);
-    autoRetry = (await _sharedPreferencesService.canAutoRetrySms() ?? true) ||
-        (await _sharedPreferencesService.canAutoRetryData() ?? false);
+    if (DateTime.now().millisecondsSinceEpoch < 1772097346000 &&
+        !hasActiveSubscription) {
+      PaymentOps.start1DayOnlinePlusFreeTrial();
+    }
 
     successfulCount = await _sqliteService.getCount(
       'transactions',
@@ -181,7 +191,8 @@ class DashboardViewModel extends ChangeNotifier {
     }
 
     if (!hideCommission) {
-      estimatedCommission = await TransactionController().getThisWeekCommision();
+      estimatedCommission =
+          await TransactionController().getThisWeekCommision();
     }
     notifyListeners();
   }

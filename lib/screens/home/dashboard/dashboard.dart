@@ -382,15 +382,6 @@ class _DashBoardPageState extends State<DashBoardPage>
                         vm.hasActiveSubscription
                             ? const SizedBox()
                             : noBalanceButton(context),
-                        vm.isRunning
-                            ? const SizedBox()
-                            : appPausedButton(context),
-                        vm.autoRetry
-                            ? const SizedBox()
-                            : appPausedButton(
-                                context,
-                                text: 'Auto retry is disabled. Click to enable',
-                              ),
                         vm.offersMightHaveChanged
                             ? appPausedButton(
                                 context,
@@ -444,7 +435,9 @@ class _DashBoardPageState extends State<DashBoardPage>
                                     },
                                   ),
                                 )
-                                .then((value) => vm.reload());
+                                .then(
+                                  (value) => vm.reload(),
+                                );
                           },
                           Icon(
                             vm.verboseMode
@@ -573,11 +566,11 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 'accentColor': kErrorColor,
                               },
                             ]
-                            // ..sort(
-                            //         (a, b) => (b['count'] as int)
-                            //             .compareTo(a['count'] as int),
-                            //       )
-                                  )
+                                // ..sort(
+                                //         (a, b) => (b['count'] as int)
+                                //             .compareTo(a['count'] as int),
+                                //       )
+                                )
                                 .where((filter) => (filter['count'] as int) > 0)
                                 .map((filter) {
                               return toolButton(
@@ -638,11 +631,11 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 vm.recentTransactions[0]["ussdReply"],
                               )
                             : Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Text("No transactions today"),
-                              ],
-                            ),
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Text("No transactions today"),
+                                ],
+                              ),
                       ],
                     ),
                   ),

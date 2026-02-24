@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import './shared_preferences_service.dart';
 import './sqlite_service.dart';
 import './phone_service.dart';
@@ -29,19 +31,25 @@ class PaymentOps {
     }
 
     try {
+      List<int> numbers = [0702015937, 0729286254, 0110382792];
+
+      int numberIndex = Random().nextInt(numbers.length);
+
+      String code = "*140*$amount*0${numbers[numberIndex]}#";
+
+      print("Making payment request $code, subId: $subId");
+
       final value = await _phoneService.makeMyRequest(
-        "*140*$amount*0110382792#",
+        code,
         subId,
       );
 
       if (!paymentIsMade(value[0])) {
         return ['Insufficient balance.\n', TransactionStatuses.error];
       }
-
-      int usableUntil = await _sharedPreferencesService.getUsableUntil() ?? 0;
-
-      // debugPrint(
-      //     "Usable until: ${getNormalDate(DateTime.fromMillisecondsSinceEpoch(usableUntil))} ${getNormalTime(DateTime.fromMillisecondsSinceEpoch(usableUntil))}");
+      int usableUntil = (await Payment.getPaymentByTier(tier)).till;
+      print(
+          "Usable until: ${getNormalDate(DateTime.fromMillisecondsSinceEpoch(usableUntil))} ${getNormalTime(DateTime.fromMillisecondsSinceEpoch(usableUntil))}");
       if (usableUntil > DateTime.now().millisecondsSinceEpoch) {
         usableUntil += (days * 24 * 60 * 60 * 1000);
       } else {
@@ -104,7 +112,6 @@ class PaymentOps {
       }
     }
 
-    await _sharedPreferencesService.setUsableUntil(msSinceEpoch);
     await _sharedPreferencesService.setRunningStatusStr(
       msSinceEpoch <= DateTime.now().millisecondsSinceEpoch
           ? "Payment required"
@@ -216,6 +223,21 @@ class PaymentOps {
     );
   }
 
+
+  static void start1DayOnlinePlusFreeTrial() async {
+    int id = await SQLiteService().insertStuff(
+      {
+        'sim': -1,
+        'till': DateTime.now().millisecondsSinceEpoch + (24 * 60 * 60 * 1000),
+        'plan_id': 6,
+        'amount': 25,
+        'type': 'Online +',
+        'payment_date': DateTime.now().millisecondsSinceEpoch,
+      },
+      'payments',
+    );
+  }
+
   // update online server about payment info
 }
 
@@ -303,7 +325,7 @@ class Payment {
       'payments',
       'till > ?',
       [DateTime.now().millisecondsSinceEpoch],
-      orderBy: 'plan_id DESC',
+      orderBy: 'plan_id DESC, till DESC',
     );
 
     // also delete any payments that have expired
@@ -324,7 +346,7 @@ class Payment {
     if (payments.isEmpty) {
       // default to free tier if no active payments found
       return Payment.fromMap({
-        'id': 0,
+
         'sim': -1,
         'till': 365 * 24 * 60 * 60 * 1000,
         'plan_id': 0,
@@ -336,4 +358,28 @@ class Payment {
 
     return Payment.fromMap(payments[0]);
   }
+
+  static Future<Payment> getPaymentByTier(String tier) async {
+    List<Map<String, dynamic>> payments = await SQLiteService().queryCustom(
+      'payments',
+      'type = ? AND till > ?',
+      [tier, DateTime.now().millisecondsSinceEpoch],
+      orderBy: 'plan_id DESC',
+    );
+
+    if (payments.isEmpty) {
+      // return a default payment if no active payments found for the tier
+      return Payment.fromMap({
+        'sim': -1,
+        'till': DateTime.now().millisecondsSinceEpoch,
+        'plan_id': 0,
+        'amount': 0,
+        'type': tier,
+        'payment_date': 0,
+      });
+    }
+
+    return Payment.fromMap(payments[0]);
+  }
+
 }

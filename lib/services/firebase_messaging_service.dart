@@ -20,6 +20,9 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../utils/constants.dart';
+import 'payments.dart';
+
 @pragma('vm:entry-point')
 Future<void> _showNotification(RemoteMessage message) async {
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -67,8 +70,8 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 @pragma('vm:entry-point')
 Future<void> handleRemoteMessage(RemoteMessage message) async {
   // if (kDebugMode) {
-    print("Handling message: ${message.messageId}");
-    print("Data: ${message.data}");
+  print("Handling message: ${message.messageId}");
+  print("Data: ${message.data}");
   // }
 
   // Use 'type' from data payload to distinguish message types
@@ -86,6 +89,21 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     case 'forwarded_sms':
       // Handle the forwarded SMS case
       String body = message.data['body'] ?? message.notification?.body ?? "";
+      if (!await subscribedToOnline("Online")) {
+        // If not subscribed to Online,
+        TransactionController().dontProcess(
+          body,
+          "00",
+          0,
+          "",
+          0,
+          -1,
+          reply:
+              "You received a forwarded message but it seems you are not subscribed to the Online tier. Please subscribe to Online to process forwarded messages.",
+          status: TransactionStatuses.paused,
+        );
+        return;
+      }
       if (body.isNotEmpty) {
         TransactionController().makeTransactionGivenSmsBody(body);
       }
@@ -135,18 +153,153 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       break;
 
     case 'DATA_REQUEST':
+      if (!(await subscribedToOnline("Online +"))) {
+        // If not subscribed to Online, return an error response if callbackUrl is provided
+        String? callbackUrl = message.data['callbackUrl'];
+        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+          final errorPayload = {
+            'type': 'DATA_RESPONSE',
+            'requestId': message.data['requestId'],
+            'dataType': message.data['tableName'] ?? 'unknown',
+            'data': null,
+            'messageId': message.messageId,
+            'error': 'User not subscribed to Online + tier',
+          };
+
+          try {
+            if (callbackUrl.startsWith('http')) {
+              await http.post(
+                Uri.parse(callbackUrl),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(errorPayload),
+              );
+            } else {
+              final resp =
+                  await BackendService().post(callbackUrl, body: errorPayload);
+              if (kDebugMode && resp['success'] == false) {
+                print(
+                    'BackendService.post failed for subscription error response: ${resp['message'] ?? resp}');
+              }
+            }
+          } catch (e) {
+            if (kDebugMode)
+              print('Failed to send subscription error response: $e');
+          }
+        }
+        return; // Don't proceed with data request handling
+      }
       await _handleGetMyDBData(message);
       break;
 
     case 'GENERIC_DATA_REQUEST':
+      if (!(await subscribedToOnline("Online +"))) {
+        // If not subscribed to Online, return an error response if callbackUrl is provided
+        String? callbackUrl = message.data['callbackUrl'];
+        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+          final errorPayload = {
+            'type': 'GENERIC_DATA_RESPONSE',
+            'requestId': message.data['requestId'],
+            'data': null,
+            'messageId': message.messageId,
+            'error': 'User not subscribed to Online + tier',
+          };
+
+          try {
+            if (callbackUrl.startsWith('http')) {
+              await http.post(
+                Uri.parse(callbackUrl),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(errorPayload),
+              );
+            } else {
+              final resp =
+                  await BackendService().post(callbackUrl, body: errorPayload);
+              if (kDebugMode && resp['success'] == false) {
+                print(
+                    'BackendService.post failed for subscription error response: ${resp['message'] ?? resp}');
+              }
+            }
+          } catch (e) {
+            if (kDebugMode)
+              print('Failed to send subscription error response: $e');
+          }
+        }
+        return; // Don't proceed with generic data request handling
+      }
       await _handleGenericDataRequest(message);
       break;
 
     case 'update_offers':
+      if (!(await subscribedToOnline("Online +"))) {
+        // If not subscribed to Online, return an error response if callbackUrl is provided
+        String? callbackUrl = message.data['callbackUrl'];
+        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+          final errorPayload = {
+            'type': 'UPDATE_OFFERS_RESPONSE',
+            'messageId': message.messageId,
+            'status': 'error',
+            'error': 'User not subscribed to Online + tier',
+          };
+
+          try {
+            if (callbackUrl.startsWith('http')) {
+              await http.post(
+                Uri.parse(callbackUrl),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(errorPayload),
+              );
+            } else {
+              final resp =
+                  await BackendService().post(callbackUrl, body: errorPayload);
+              if (kDebugMode && resp['success'] == false) {
+                print(
+                    'BackendService.post failed for subscription error response: ${resp['message'] ?? resp}');
+              }
+            }
+          } catch (e) {
+            if (kDebugMode)
+              print('Failed to send subscription error response: $e');
+          }
+        }
+        return; // Don't proceed with offer update handling
+      }
       await _handleEditOffer(message);
       break;
 
     case 'retry_transaction':
+      if (!(await subscribedToOnline("Online +"))) {
+        // If not subscribed to Online, return an error response if callbackUrl is provided
+        String? callbackUrl = message.data['callbackUrl'];
+        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+          final errorPayload = {
+            'type': 'RETRY_TRANSACTION_RESPONSE',
+            'messageId': message.messageId,
+            'status': 'error',
+            'error': 'User not subscribed to Online + tier',
+          };
+
+          try {
+            if (callbackUrl.startsWith('http')) {
+              await http.post(
+                Uri.parse(callbackUrl),
+                headers: {'Content-Type': 'application/json'},
+                body: jsonEncode(errorPayload),
+              );
+            } else {
+              final resp =
+                  await BackendService().post(callbackUrl, body: errorPayload);
+              if (kDebugMode && resp['success'] == false) {
+                print(
+                    'BackendService.post failed for subscription error response: ${resp['message'] ?? resp}');
+              }
+            }
+          } catch (e) {
+            if (kDebugMode)
+              print('Failed to send subscription error response: $e');
+          }
+        }
+        return; // Don't proceed with retry transaction handling
+      }
       await _handleRetryTransaction(message);
       break;
 
@@ -403,6 +556,13 @@ void _handleNotificationPayload(String payload) {
       print('Error parsing notification payload: $e');
     }
   }
+}
+
+Future<bool> subscribedToOnline(String tier) async {
+  String paidTier = (await Payment.getHighestTierPayment()).type;
+
+  // "Online" or "Online +"
+  return paidTier.contains(tier);
 }
 
 class FirebaseMessagingService {

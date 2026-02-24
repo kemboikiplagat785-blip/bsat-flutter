@@ -25,6 +25,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.3"
+  app_settings:
+    dependency: "direct main"
+    description:
+      name: app_settings
+      sha256: "64d50e666fd96ae90301bf71205f05019286f940ad6f5fed3d1be19c6af7546a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.0.0"
   archive:
     dependency: transitive
     description:
@@ -856,6 +864,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.1.5+1"
+  pub_semver:
+    dependency: "direct main"
+    description:
+      name: pub_semver
+      sha256: "5bfcf68ca79ef689f8990d1160781b4bad40a3bd5e5218ad4076ddb7f4081585"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.2.0"
   screen_brightness:
     dependency: "direct main"
     description:

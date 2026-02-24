@@ -122,27 +122,6 @@ class SharedPreferencesService {
     return false;
   }
 
-  Future<int?> getUsableUntil() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    int? usableUntil = prefs.getInt("usable_until");
-    return usableUntil;
-  }
-
-  Future<bool> setUsableUntil(int msSinceEpoch) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    try {
-      await prefs.setInt("usable_until", msSinceEpoch);
-      return true;
-    } catch (e) {
-      if (kDebugMode) {
-        // //print(e.toString());
-      }
-    }
-    return false;
-  }
-
   Future<bool?> getAutoRenew() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();

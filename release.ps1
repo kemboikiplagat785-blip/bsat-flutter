@@ -129,7 +129,7 @@ if (-not [string]::IsNullOrWhiteSpace($Version)) {
     $newVersion = "$major.$minor.$patch+$currentBuild"
 }
 
-$newVersion = "4.0.0+$currentBuild"
+# $newVersion = "4.0.0+$currentBuild"
 
 # Step 4: Write new version to pubspec.yaml
 Write-Host "Bumping version from $currentVersion to $newVersion in pubspec.yaml..."

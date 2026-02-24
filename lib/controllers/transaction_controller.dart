@@ -1827,7 +1827,7 @@ class TransactionController {
   String alterMpesaMessage(String smsMessage, int amount) {
     return smsMessage.replaceFirst(
       RegExp(
-          r'(?:(((K?)sh(s?)[\s:]?)|kes[\s:]?)(\d{1,6}(?:,\d{3})*(?:\.\d+)?))|(\d{1,6}(?:,\d{3})*(?:\.\d+)?)[\s:]?((K?)sh(s?)|kes)'),
+          r'(?:(((K?)sh(s?)[\s:]?)|kes[\s:]?)(\d{1,6}(?:,\d{3})*(?:\.\d+)?))|(\d{1,6}(?:,\d{3})*(?:\.\d+)?)[\s:]?((K?)sh(s?)|kes)', caseSensitive: false,),
       'Ksh$amount',
     );
   }

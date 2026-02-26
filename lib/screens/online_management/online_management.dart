@@ -20,6 +20,7 @@ import '../../components/dialogs/confirm_delete_dialog.dart';
 import '../../services/auth_service.dart';
 import 'portal.dart';
 import 'register_device.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class OnlineManagementScreen extends StatefulWidget {
   const OnlineManagementScreen({super.key});
@@ -297,15 +298,22 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
             ),
             buttonDescriptive(
               context,
-              title: 'view/manage your phones through a common dashboard',
+              title: 'view/manage your phones (https://portal.bsat.co.ke)',
               subtitle: 'Remote Device Control',
               icon: Icon(CupertinoIcons.device_laptop, color: kErrorColor),
-              onTap: () {
-                Navigator.of(context).push(
-                  CupertinoPageRoute(
-                    builder: (context) => PortalPage(),
-                  ),
-                );
+              onTap: () async {
+                // Navigator.of(context).push(
+                //   CupertinoPageRoute(
+                //     builder: (context) => PortalPage(),
+                //   ),
+                // );
+                // open url in browser
+                var url = 'https://portal.bsat.co.ke';
+                if (await canLaunch(url)) {
+                  await launch(url);
+                } else {
+                  throw 'Could not launch $url';
+                }
               },
             ),
             buttonDescriptive(

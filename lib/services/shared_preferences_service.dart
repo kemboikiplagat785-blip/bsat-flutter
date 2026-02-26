@@ -702,6 +702,27 @@ class SharedPreferencesService {
     return false;
   }
 
+  Future<bool?> setForwardUnavailableLimit(int limit) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setInt("forward_unavailable_limit", limit);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
+  Future<int?> getForwardUnavailableLimit() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    int? limit = prefs.getInt("forward_unavailable_limit");
+    return limit;
+  }
+
   void printAll() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();

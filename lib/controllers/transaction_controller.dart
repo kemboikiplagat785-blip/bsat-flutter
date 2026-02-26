@@ -299,29 +299,31 @@ class TransactionController {
       if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0]
           .toString()
           .isEmpty) {
+        int forwardingLimit =
+            await _sharedPreferencesService.getForwardUnavailableLimit() ?? 0;
+
+        if (forwardingLimit > 0 && amount < forwardingLimit) {
+          bool forwarded = await forwardToAllAvenues(smsMessage.body ?? "");
+          print(
+              "Attempted forwarding to all paired devices for unavailable amount. Forwarding result: $forwarded");
+          if (forwarded) return;
+        }
+
         dontProcess(
           smsMessage.body ?? "",
           transactionId,
           number,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+          '',
           amount,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+          -1,
           status: TransactionStatuses.unavailableOffer,
-          reply: 'No USSD code found for this amount',
+          reply:
+              'No offer found for this amount. Attempted forwarding to all paired devices, but no devices available to forward to.',
           canRetry: false,
           source: name,
         );
 
-        if (autoSaveContacts) {
-          await contactService.addNewContact(
-            name,
-            '0$number',
-          );
-        }
-
-        debugPrint("name: $name");
-
-        await processReply(
+        processReply(
           number,
           TransactionStatuses.unavailableOffer,
           name.split(' ')[0],
@@ -330,6 +332,13 @@ class TransactionController {
               : '',
           amount,
         );
+        if (autoSaveContacts) {
+          await contactService.addNewContact(
+            name,
+            '0$number',
+          );
+        }
+
         return;
       }
 
@@ -410,19 +419,25 @@ class TransactionController {
       //   return;
       // }
 
-      CodeSignature signature = CodeSignature.fromMap(
-        (await _sqliteService.queryCustom(
-          'codeSignature',
-          'ussdCodeId = ?',
-          [ussdCodeItem.id ?? -1],
-        ))
-            .first,
-      );
+      Map<String, dynamic> signatureMap = (await _sqliteService.queryCustom(
+            'codeSignature',
+            'ussdCodeId = ?',
+            [ussdCodeItem.id ?? -1],
+          ))
+              .firstOrNull ??
+          {};
+      CodeSignature? signature;
+
+      if (signatureMap.isNotEmpty) {
+        signature = CodeSignature.fromMap(
+          signatureMap,
+        );
+      }
 
       requestResponse = await _phoneService.makeAdvancedRequest(
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
-        codeSignature: signature,
+        codeSignature: signatureMap.isEmpty ? null : signature,
       );
 
       requestResponse[1] = await transactionStatus(requestResponse);
@@ -467,9 +482,7 @@ class TransactionController {
       await _paymentOps.deductSingleToken();
     }
 
-    // if (phoneNumber.isNotEmpty) {
     await recordClientPurchase(number.toString(), name);
-    // }
 
     int insertedId = await _sqliteService.insertStuff(
       {
@@ -678,6 +691,81 @@ class TransactionController {
       debugPrint("Error checking forwarding devices: $e");
     }
 
+    return false;
+  }
+
+  Future<bool> forwardToAllAvenues(String message) async {
+    Map<String, dynamic> similarTransaction = await _sqliteService.queryCustom(
+      'transactions',
+      'initialMessage = ? AND status = ?',
+      [message, TransactionStatuses.forwarded],
+    ).then((value) => value.isNotEmpty ? value.first : {});
+
+    if (similarTransaction.isNotEmpty) {
+      debugPrint(
+          "Message has already been forwarded before. Skipping forwarding to all avenues to avoid duplicates.");
+      return false;
+    }
+    List<Map<String, dynamic>> devices =
+        await _sqliteService.queryAll('forwardingDevices');
+
+    String name = getName(message);
+    int amount = getAmount(message);
+    int number = extract9DigitNumber(message);
+
+    for (var device in devices) {
+      if ((device['paused'] ?? 0) != 1) {
+        String recipientDeviceName = device['device_name'] ?? "Unknown Device";
+        String senderDeviceName =
+            await SharedPreferencesService().getDeviceName() ??
+                "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
+
+        if (await AuthService().pingDevice(recipientDeviceName)) {
+          print("Server is reachable. Proceeding with forwarding.");
+        } else {
+          print("Server is not reachable. Cannot forward.");
+          continue;
+        }
+
+        await BackendService().post(
+          '/api/fcm/send-secure',
+          body: {
+            'title': "BSAT Online Forwarding",
+            'body': message,
+            'senderDeviceName': senderDeviceName,
+            'recipientDeviceName': recipientDeviceName,
+            'data': {
+              'type': 'forwarded_sms',
+              'body': message,
+              'title': "Forwarded Message",
+            }
+          },
+        );
+
+        print(
+            "Forwarding to ${device['device_name']} (ID: ${device['device_id']}). body: $message from $senderDeviceName");
+      }
+    }
+
+    if (devices.isNotEmpty) {
+      // print("No forwarding devices found to forward the message.");
+      dontProcess(
+        message,
+        '',
+        number,
+        '',
+        amount,
+        -1,
+        status: TransactionStatuses.forwarded,
+        reply:
+            'Forwarded unavailable amount(Ksh $amount) to all paired devices',
+        canRetry: false,
+        source: name,
+      );
+      return true;
+    }
+
+    // debugPrint("No forwarding devices found to forward the message.");
     return false;
   }
 
@@ -936,7 +1024,7 @@ class TransactionController {
     ))
         .first;
 
-        print("Transaction from DB for retry: $transaction");
+    print("Transaction from DB for retry: $transaction");
 
     String initialMessage = transaction['initialMessage'] ?? '';
 
@@ -1475,7 +1563,6 @@ class TransactionController {
       ],
       orderBy:
           'CASE WHEN amounts IS NULL OR amounts = "" THEN 1 ELSE 0 END, CAST(amounts AS INTEGER) ASC',
-          
     );
 
     print(
@@ -1827,7 +1914,9 @@ class TransactionController {
   String alterMpesaMessage(String smsMessage, int amount) {
     return smsMessage.replaceFirst(
       RegExp(
-          r'(?:(((K?)sh(s?)[\s:]?)|kes[\s:]?)(\d{1,6}(?:,\d{3})*(?:\.\d+)?))|(\d{1,6}(?:,\d{3})*(?:\.\d+)?)[\s:]?((K?)sh(s?)|kes)', caseSensitive: false,),
+        r'(?:(((K?)sh(s?)[\s:]?)|kes[\s:]?)(\d{1,6}(?:,\d{3})*(?:\.\d+)?))|(\d{1,6}(?:,\d{3})*(?:\.\d+)?)[\s:]?((K?)sh(s?)|kes)',
+        caseSensitive: false,
+      ),
       'Ksh$amount',
     );
   }
@@ -1930,7 +2019,7 @@ class TransactionController {
     );
 
     if (response.isEmpty) {
-      // Return a default UssdCode 
+      // Return a default UssdCode
       return UssdCode(
         id: -1,
         code: '',

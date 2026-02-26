@@ -25,6 +25,11 @@ class _SettingsPageState extends State<SettingsPage> {
   final TextEditingController _deleteDurationController =
       TextEditingController();
 
+  final TextEditingController _forwardUnavailableLimitController =
+      TextEditingController();
+
+  int unavailableLimit = 0;
+
   bool autoSaveContacts = false;
 
   bool useSignature = false;
@@ -48,6 +53,12 @@ class _SettingsPageState extends State<SettingsPage> {
             .toString();
     useSignature = await sharedPreferencesService.getUseSignature() ?? false;
     autoSwitch = await sharedPreferencesService.getCanAutoSwitch() ?? false;
+
+    unavailableLimit =
+        await sharedPreferencesService.getForwardUnavailableLimit() ?? 0;
+
+    _forwardUnavailableLimitController.text = unavailableLimit.toString();
+
     if (mounted) setState(() {});
   }
 
@@ -85,6 +96,40 @@ class _SettingsPageState extends State<SettingsPage> {
               onSave: () => _saveField('Prefix', _postfixController.text,
                   sharedPreferencesService.setPostfixCOntactName),
             ),
+            Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
+            _buildToggleTile(
+                label: 'Forward unavailable amounts',
+                value: unavailableLimit > 0,
+                onChanged: (val) async {
+                  if (!val) {
+                    // If turning off, set limit to 0
+                    await sharedPreferencesService
+                        .setForwardUnavailableLimit(0);
+                    setState(() => unavailableLimit = 0);
+                  } else {
+                    // If turning on, set to a default value if it was previously 0
+                    if (unavailableLimit == 0) {
+                      unavailableLimit = 400; // Default value when enabling
+                      await sharedPreferencesService
+                          .setForwardUnavailableLimit(unavailableLimit);
+                      _forwardUnavailableLimitController.text =
+                          unavailableLimit.toString();
+                    }
+                    setState(() => unavailableLimit = unavailableLimit);
+                  }
+                }),
+            if (unavailableLimit > 0)
+              _buildInputTile(
+                label: 'Forward Unavailable Limit',
+                controller: _forwardUnavailableLimitController,
+                hint: 'Highest "unavailable" amount that can be forwarded',
+                keyboardType: TextInputType.number,
+                onSave: () => _saveField(
+                    'Forward Limit',
+                    _forwardUnavailableLimitController.text,
+                    (val) => sharedPreferencesService
+                        .setForwardUnavailableLimit(int.parse(val))),
+              ),
           ]),
           _buildSectionTitle('Risk detection'),
           _buildGroup([
@@ -96,16 +141,16 @@ class _SettingsPageState extends State<SettingsPage> {
                   setState(() => useSignature = val);
                   await sharedPreferencesService.setUseSignature(val);
                 }),
-                if(useSignature)
-            _buildToggleTile(
-                label: 'Auto-switch when change is detected',
-                hint:
-                    'Automatically switch to the new code when changes are detected. experimental',
-                value: autoSwitch,
-                onChanged: (val) async {
-                  setState(() => autoSwitch = val);
-                  await sharedPreferencesService.setCanAutoSwitch(val);
-                }),
+            if (useSignature)
+              _buildToggleTile(
+                  label: 'Auto-switch when change is detected',
+                  hint:
+                      'Automatically switch to the new code when changes are detected. experimental',
+                  value: autoSwitch,
+                  onChanged: (val) async {
+                    setState(() => autoSwitch = val);
+                    await sharedPreferencesService.setCanAutoSwitch(val);
+                  }),
           ]),
           _buildSectionTitle('Automation'),
           _buildGroup([

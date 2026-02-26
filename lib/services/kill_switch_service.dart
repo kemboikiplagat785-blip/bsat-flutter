@@ -48,7 +48,7 @@ class KillswitchService {
 
         data = data['appConfig'] ?? {}; // Adjust based on actual API response structure
 
-        print("response from killswitch endpoint, min_version: ${data['min_supported_version']}, deadline: ${data['last_supported_date']}");
+        // print("response from killswitch endpoint, min_version: ${data['min_supported_version']}, deadline: ${data['last_supported_date']}");
 
         minVersionStr = data['min_supported_version'] ?? minVersionStr;
         deadlineStr = data['last_supported_date'] ?? deadlineStr;
@@ -97,8 +97,8 @@ class KillswitchService {
     Version currentVersion = Version.parse(packageInfo.version);
     Version minVersion = Version.parse(minVersionStr);
 
-    print("Old Config - minVersion: $minVersionStr, deadline: $deadlineStr");
-    print("Current Version: ${packageInfo.version}"); 
+    // print("Old Config - minVersion: $minVersionStr, deadline: $deadlineStr");
+    // print("Current Version: ${packageInfo.version}"); 
 
     // If app is strictly up to date
     if (currentVersion >= minVersion) {

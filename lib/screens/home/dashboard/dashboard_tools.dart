@@ -261,34 +261,6 @@ class DashboardToolsSection extends StatelessWidget {
                           PageRouteBuilder(
                             pageBuilder:
                                 (context, animation, secondaryAnimation) =>
-                                    const SendMessagePage(),
-                            transitionsBuilder: (context, animation,
-                                secondaryAnimation, child) {
-                              return CupertinoPageTransition(
-                                primaryRouteAnimation: animation,
-                                secondaryRouteAnimation: secondaryAnimation,
-                                linearTransition: true,
-                                child: child,
-                              );
-                            },
-                          ),
-                        )
-                        .then((value) => onReload());
-                  },
-                  const Icon(
-                    CupertinoIcons.paperplane,
-                    color: kIndigoColor,
-                  ),
-                  "Send Message",
-                  context,
-                ),
-                toolButton(
-                  () {
-                    Navigator.of(context)
-                        .push(
-                          PageRouteBuilder(
-                            pageBuilder:
-                                (context, animation, secondaryAnimation) =>
                                     const InboxPage(),
                             transitionsBuilder: (context, animation,
                                 secondaryAnimation, child) {

@@ -75,6 +75,15 @@ class DashboardViewModel extends ChangeNotifier {
     _reloadTimer = Timer.periodic(const Duration(seconds: 3), (_) => reload());
   }
 
+  void setPrefs() async {
+    if(await _sharedPreferencesService.getCanAutoSwitch() == null){
+      await _sharedPreferencesService.setCanAutoSwitch(true);
+    }
+     if(await _sharedPreferencesService.getUseSignature() == null){
+      await _sharedPreferencesService.setUseSignature(true);
+    }
+  }
+
   Future<void> reload() async {
     killswitchConfig = await KillswitchService.evaluateKillswitch();
 

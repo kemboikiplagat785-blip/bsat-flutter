@@ -193,7 +193,6 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
 
     case 'GENERIC_DATA_REQUEST':
       if (!(await subscribedToOnline("Online +"))) {
-        // If not subscribed to Online, return an error response if callbackUrl is provided
         String? callbackUrl = message.data['callbackUrl'];
         if (callbackUrl != null && callbackUrl.isNotEmpty) {
           final errorPayload = {
@@ -325,7 +324,8 @@ Future<void> _handleGetMyDBData(RemoteMessage message) async {
   String tableName = message.data['tableName'] ?? 'ussdCodes';
   String? queryParamsString = message.data['queryParams'];
   String? requestId = message.data['requestId'];
-  String? callbackUrl = message.data['callbackUrl'];
+  String callbackUrl = message.data['callbackUrl'] ??
+      '/api/fcm/receive-data'; // Default callback endpoint
 
   Map<String, dynamic> queryParams = {};
   if (queryParamsString != null && queryParamsString.isNotEmpty) {
@@ -364,33 +364,37 @@ Future<void> _handleGetMyDBData(RemoteMessage message) async {
     if (kDebugMode) print("Error querying database for $tableName: $e");
   }
 
-  if (callbackUrl != null) {
-    final payload = {
-      'type': 'DATA_RESPONSE',
-      'requestId': requestId,
-      'dataType': tableName,
-      'data': results,
-      'messageId': message.messageId,
-      'error': results.isEmpty ? 'No data found or error occurred' : null,
-    };
+  print(
+      "Queried $tableName with params: limit=$limit, offset=$offset, orderBy=$orderBy, where=$whereClause, whereArgs=$whereArgs. Results count: ${results.length}");
 
-    try {
-      if (callbackUrl.startsWith('http')) {
-        await http.post(
-          Uri.parse(callbackUrl),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode(payload),
-        );
-      } else {
-        final resp = await BackendService().post(callbackUrl, body: payload);
-        if (kDebugMode && resp['success'] == false) {
-          print('BackendService.post failed: ${resp['message'] ?? resp}');
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) print("Error sending data back: $e");
+  // if (callbackUrl != null) {
+  final payload = {
+    'type': 'DATA_RESPONSE',
+    'requestId': requestId,
+    'dataType': tableName,
+    'data': results,
+    'messageId': message.messageId,
+    'error': results.isEmpty ? 'No data found or error occurred' : null,
+  };
+
+  try {
+    // if (callbackUrl.startsWith('http')) {
+    //   await http.post(
+    //     Uri.parse(callbackUrl),
+    //     headers: {'Content-Type': 'application/json'},
+    //     body: jsonEncode(payload),
+    //   );
+    // } else {
+    final resp = await BackendService().post(callbackUrl, body: payload);
+    print("Sent data response to $callbackUrl. Backend response: $resp");
+    if (kDebugMode && resp['success'] == false) {
+      print('BackendService.post failed: ${resp['message'] ?? resp}');
     }
+    // }
+  } catch (e) {
+    if (kDebugMode) print("Error sending data back: $e");
   }
+  // }
 }
 
 Future<void> _handleEditOffer(RemoteMessage message) async {
@@ -495,6 +499,7 @@ Future<void> _handleGenericDataRequest(RemoteMessage message) async {
       String displayName = card.displayName ?? card.carrierName ?? '';
       int balance = 0;
       int number = 0;
+
       try {
         print("Getting balance for SIM ${card.displayName} (subId: $subId)");
         balance = await PhoneService().getAirtimeBalance(subscriptionId: subId);

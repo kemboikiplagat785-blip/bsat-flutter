@@ -35,7 +35,7 @@ class SQLiteService {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'bsat_app.db');
     return await openDatabase(path,
-        version: 8,
+        version: 9,
         onCreate: onCreate,
         onUpgrade: onUpgrade,
         singleInstance: true);
@@ -124,7 +124,7 @@ class SQLiteService {
           token_count INTEGER DEFAULT 0
         )''',
     );
-    
+
     await db.execute(
       '''CREATE TABLE blacklist (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -173,8 +173,8 @@ class SQLiteService {
     await db.execute(
       '''CREATE TABLE IF NOT EXISTS forwardingDevices (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          device_name TEXT NOT NULL,
-          device_id TEXT NOT NULL UNIQUE,
+          device_name TEXT NOT NULL UNIQUE,
+          device_id TEXT NOT NULL,
           owner_email TEXT NOT NULL,
           user_id INTEGER,
           amounts_to_forward TEXT,
@@ -251,8 +251,8 @@ class SQLiteService {
       await db.execute(
         '''CREATE TABLE IF NOT EXISTS forwardingDevices (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          device_name TEXT NOT NULL,
-          device_id TEXT NOT NULL UNIQUE,
+          device_name TEXT NOT NULL UNIQUE,
+          device_id TEXT NOT NULL,
           owner_email TEXT NOT NULL,
           user_id INTEGER,
           amounts_to_forward TEXT
@@ -326,104 +326,146 @@ class SQLiteService {
         await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)');
       }
-      // Add new columns to ussdCodes table
-      try {
-        await db.execute(
-            'ALTER TABLE ussdCodes ADD COLUMN usesBongaPoints INTEGER DEFAULT 0');
-      } catch (e) {
-        //print('Column usesBongaPoints already exists or error: $e');
-      }
 
-      try {
-        await db.execute('ALTER TABLE ussdCodes ADD COLUMN fallbackCode TEXT');
-      } catch (e) {
-        //print('Column fallbackCode already exists or error: $e');
-      }
+      if (oldVersion < 9) {
+        // Add new columns to ussdCodes table
+        try {
+          await db.execute(
+              'ALTER TABLE ussdCodes ADD COLUMN usesBongaPoints INTEGER DEFAULT 0');
+        } catch (e) {
+          //print('Column usesBongaPoints already exists or error: $e');
+        }
 
-      try {
-        await db
-            .execute('ALTER TABLE ussdCodes ADD COLUMN balanceCheckCode TEXT');
-      } catch (e) {
-        //print('Column balanceCheckCode already exists or error: $e');
-      }
+        try {
+          await db
+              .execute('ALTER TABLE ussdCodes ADD COLUMN fallbackCode TEXT');
+        } catch (e) {
+          //print('Column fallbackCode already exists or error: $e');
+        }
 
-      try {
-        await db.execute(
-            'ALTER TABLE ussdCodes ADD COLUMN bongaPointsPerTransaction INTEGER DEFAULT 0');
-      } catch (e) {
-        //print('Column bongaPointsPerTransaction already exists or error: $e');
-      }
+        try {
+          await db.execute(
+              'ALTER TABLE ussdCodes ADD COLUMN balanceCheckCode TEXT');
+        } catch (e) {
+          //print('Column balanceCheckCode already exists or error: $e');
+        }
 
-      // Add mightBeCompromised column to codeSignature table
-      try {
-        await db.execute(
-            'ALTER TABLE codeSignature ADD COLUMN mightBeCompromised INTEGER DEFAULT 0');
-      } catch (e) {
-        // column may already exist
-      }
-      // Add autoSwitch column to codeSignature table
-      try {
-        await db.execute(
-            'ALTER TABLE codeSignature ADD COLUMN autoSwitch INTEGER DEFAULT 0');
-      } catch (e) {
-        // column may already exist
-      }
-      // Add isActive column to codeSignature table
-      try {
-        await db.execute(
-            'ALTER TABLE codeSignature ADD COLUMN isActive INTEGER DEFAULT 1');
-      } catch (e) {
-        // column may already exist
-      }
+        try {
+          await db.execute(
+              'ALTER TABLE ussdCodes ADD COLUMN bongaPointsPerTransaction INTEGER DEFAULT 0');
+        } catch (e) {
+          //print('Column bongaPointsPerTransaction already exists or error: $e');
+        }
 
-      try {
-        await db.execute(
-            'ALTER TABLE payments ADD COLUMN plan_id INTEGER DEFAULT ');
-      } catch (e) {
-        //print('Column plan_id already exists or error: $e');
-      }
+        // Add mightBeCompromised column to codeSignature table
+        try {
+          await db.execute(
+              'ALTER TABLE codeSignature ADD COLUMN mightBeCompromised INTEGER DEFAULT 0');
+        } catch (e) {
+          // column may already exist
+        }
+        // Add autoSwitch column to codeSignature table
+        try {
+          await db.execute(
+              'ALTER TABLE codeSignature ADD COLUMN autoSwitch INTEGER DEFAULT 0');
+        } catch (e) {
+          // column may already exist
+        }
+        // Add isActive column to codeSignature table
+        try {
+          await db.execute(
+              'ALTER TABLE codeSignature ADD COLUMN isActive INTEGER DEFAULT 1');
+        } catch (e) {
+          // column may already exist
+        }
 
-      try {
-        await db.execute(
-            'ALTER TABLE payments ADD COLUMN amount INTEGER DEFAULT 0');
-      } catch (e) {
-        //print('Column amount already exists or error: $e');
-      }
+        try {
+          await db.execute(
+              'ALTER TABLE payments ADD COLUMN plan_id INTEGER DEFAULT ');
+        } catch (e) {
+          //print('Column plan_id already exists or error: $e');
+        }
 
-      try {
-        await db.execute(
-            'ALTER TABLE payments ADD COLUMN payment_date INTEGER DEFAULT 0');
-      } catch (e) {
-        //print('Column payment_date already exists or error: $e');
-      }
+        try {
+          await db.execute(
+              'ALTER TABLE payments ADD COLUMN amount INTEGER DEFAULT 0');
+        } catch (e) {
+          //print('Column amount already exists or error: $e');
+        }
 
-      try {
-        await db.execute(
-            'ALTER TABLE payments ADD COLUMN type TEXT DEFAULT "Offline"');
-      } catch (e) {
-        //print('Column type already exists or error: $e');
-      }
+        try {
+          await db.execute(
+              'ALTER TABLE payments ADD COLUMN payment_date INTEGER DEFAULT 0');
+        } catch (e) {
+          //print('Column payment_date already exists or error: $e');
+        }
 
-      try {
-        await db.execute(
-            'ALTER TABLE payments ADD COLUMN token_count INTEGER DEFAULT 0');
-      } catch (e) {
-        //print('Column token_count already exists or error: $e');
-      }
+        try {
+          await db.execute(
+              'ALTER TABLE payments ADD COLUMN type TEXT DEFAULT "Offline"');
+        } catch (e) {
+          //print('Column type already exists or error: $e');
+        }
 
-      // Add paused column to forwarded table
-      try {
-        await db.execute(
-            'ALTER TABLE forwarded ADD COLUMN paused INTEGER DEFAULT 0');
-      } catch (e) {
-        //print('Column paused already exists or error: $e');
-      }
-      // Add paused column to forwardingDevices table
-      try {
-        await db.execute(
-            'ALTER TABLE forwardingDevices ADD COLUMN paused INTEGER DEFAULT 0');
-      } catch (e) {
-        //print('Column paused already exists or error: $e');
+        try {
+          await db.execute(
+              'ALTER TABLE payments ADD COLUMN token_count INTEGER DEFAULT 0');
+        } catch (e) {
+          //print('Column token_count already exists or error: $e');
+        }
+
+        // Add paused column to forwarded table
+        try {
+          await db.execute(
+              'ALTER TABLE forwarded ADD COLUMN paused INTEGER DEFAULT 0');
+        } catch (e) {
+          //print('Column paused already exists or error: $e');
+        }
+        // Add paused column to forwardingDevices table
+        try {
+          await db.execute(
+              'ALTER TABLE forwardingDevices ADD COLUMN paused INTEGER DEFAULT 0');
+        } catch (e) {
+          //print('Column paused already exists or error: $e');
+        }
+
+        // make forwardingDevices device_name unique
+        try {
+          await db.execute(
+              'CREATE UNIQUE INDEX idx_forwarding_devices_name ON forwardingDevices(device_name)');
+        } catch (e) {
+          //print('Unique index on device_name already exists or error: $e');
+        }
+
+        // remove UNIQUE constraint on whitelistedDevices.device_id by recreating the table.
+        try {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS whitelistedDevices_new (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              device_name TEXT NOT NULL UNIQUE,
+              device_id TEXT NOT NULL,
+              owner_email TEXT NOT NULL,
+              user_id INTEGER
+            )''');
+
+          await db.execute('''
+            INSERT INTO whitelistedDevices_new (id, device_name, device_id, owner_email, user_id)
+            SELECT id, device_name, device_id, owner_email, user_id FROM whitelistedDevices
+          ''');
+
+          await db.execute('DROP TABLE IF EXISTS whitelistedDevices');
+          await db.execute(
+              'ALTER TABLE whitelistedDevices_new RENAME TO whitelistedDevices');
+
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)');
+          await db.execute(
+              'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)');
+        } catch (e) {
+          //print('Error removing UNIQUE constraint from whitelistedDevices.device_id: $e');
+        }
       }
     }
   }

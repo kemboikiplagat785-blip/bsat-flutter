@@ -174,5 +174,5 @@ foreach ($abi in $abis) {
         Write-Host "APK not found at $apkSource" -ForegroundColor Red
     }
 }
- 
+
 Write-Host "Version bumped to $newVersion, pushed to git, and all APKs built!" -ForegroundColor Green

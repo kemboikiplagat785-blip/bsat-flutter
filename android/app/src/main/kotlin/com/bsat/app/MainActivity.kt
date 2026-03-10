@@ -31,6 +31,7 @@ import android.view.WindowManager
 
 class MainActivity: FlutterActivity() {
     private val CHANNEL = "com.bsat.app"
+    private val LOGGER_CHANNEL = "bsat_logger"
     private val REQUEST_CALL = 1
     
     // Wakelock to keep screen on
@@ -44,6 +45,10 @@ class MainActivity: FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         flutterEngine.plugins.add(UssdPlugin())
+        
+        NativeLogger.loggerMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOGGER_CHANNEL)
+        sendNativeLog("info", "MainActivity", "Android Engine Configured!")
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
 
@@ -61,19 +66,19 @@ class MainActivity: FlutterActivity() {
 
                     if (UssdSession.ussdSteps.isNotEmpty() || UssdSession.isRunning || UssdSession.currentStepIndex > 0) {
                         // If there is an ongoing USSD session, return an error
-                        // Log.d("UssdSession", "USSD session already in progress. Current steps: ${UssdSession.ussdSteps}, Current index: ${UssdSession.currentStepIndex}")
+                        sendNativeLog("debug", "UssdSession", "USSD session already in progress. Current steps: ${UssdSession.ussdSteps}, Current index: ${UssdSession.currentStepIndex}")
                         result.success("USSD session already in progress. Please wait for it to finish.")
                         return@setMethodCallHandler
                     }
 
-                    Log.d("UssdSession", "Starting newUSSD session")
+                    sendNativeLog("debug", "UssdSession", "Starting newUSSD session")
 
                     UssdSession.acceptedProcedure = call.argument<List<Map<String, Any>>>("acceptedProcedure") ?: listOf()
                     UssdSession.autoSwitch = call.argument<Boolean>("autoSwitch") ?: false
 
                     UssdSession.isGettingSignature = call.argument<Boolean>("isGettingSignature") ?: false
 
-                    // Log.d("UssdSession", "Accepted Procedure: ${UssdSession.acceptedProcedure}, AutoSwitch: ${UssdSession.autoSwitch}")
+                    sendNativeLog("debug", "UssdSession", "Accepted Procedure: ${UssdSession.acceptedProcedure}, AutoSwitch: ${UssdSession.autoSwitch}")
 
                     UssdSession.currentStepIndex = 1
                     var sequence = call.argument<String>("sequence") ?: ""
@@ -82,13 +87,13 @@ class MainActivity: FlutterActivity() {
                     }
                     UssdSession.ussdSteps = sequence.split("*").filter { it.isNotEmpty()}.toMutableList()
                     UssdSession.usedUssdSteps.clear()
-                    // Log.d("UssdSession", "UssdSteps: ${UssdSession.ussdSteps}")
+                    sendNativeLog("debug", "UssdSession", "UssdSteps: ${UssdSession.ussdSteps}")
                     
                     val subscriptionId = call.argument<Int>("subscriptionId") ?: 0
                     val firstCode = "*${UssdSession.ussdSteps[0]}#"
                     UssdSession.ussdDialed = firstCode
                     dialUssd(firstCode, subscriptionId, result)
-                    // Log.d("UssdSession", "Dialing USSD code: $firstCode")
+                    sendNativeLog("debug", "UssdSession", "Dialing USSD code: $firstCode")
 
                     waitForUssdResponse(result)
                 } else {
@@ -103,7 +108,7 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
     val uri = "tel:" + ussdCode.replace("#", encodedHash)
     val intent = Intent(Intent.ACTION_CALL, Uri.parse(uri))
 
-    Log.d("UssdSession", "Dialing USSD code: $ussdCode with subscriptionId: $subscriptionId")
+    sendNativeLog("debug", "UssdSession", "Dialing USSD code: $ussdCode with subscriptionId: $subscriptionId")
 
     if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
         ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CALL_PHONE), REQUEST_CALL)
@@ -124,7 +129,7 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
         return
     }
     val slotIndex = subInfo.simSlotIndex
-    // Log.d("UssdSession", "Found SubscriptionInfo: $subInfo (slot=$slotIndex)")
+    sendNativeLog("debug", "UssdSession", "Found SubscriptionInfo: $subInfo (slot=$slotIndex)")
 
     // Find the best matching PhoneAccountHandle
     val handles = telecomManager.callCapablePhoneAccounts
@@ -149,7 +154,7 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
         phoneAccountHandle = handles[slotIndex]
     }
 
-    // Log.d("UssdSession", "Selected PhoneAccountHandle: $phoneAccountHandle")
+    sendNativeLog("debug", "UssdSession", "Selected PhoneAccountHandle: $phoneAccountHandle")
 
     if (phoneAccountHandle == null) {
         Toast.makeText(this, "Could not resolve SIM for subscriptionId: $subscriptionId", Toast.LENGTH_SHORT).show()
@@ -171,7 +176,7 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
     if (!UssdSession.isRunning) {
         UssdSession.isRunning = true
     } else {
-        // Log.d("UssdSession", "USSD session already in progress. Adding to queue")
+        sendNativeLog("debug", "UssdSession", "USSD session already in progress. Adding to queue")
         result.success("USSD session already in progress. Added to queue")
         return
     }
@@ -180,6 +185,10 @@ private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChanne
 }
 // ...existing code...
 
+
+fun sendNativeLog(level: String, tag: String, message: String) {
+        NativeLogger.sendLog(level, tag, message)
+    }
 
     private fun waitForUssdResponse(result: MethodChannel.Result, maxRetries: Int = 20, delayMillis: Long = 1000, currentRetry: Int = 1) {
         // Helper to convert wholeConversation to List<Map<String, Any?>>

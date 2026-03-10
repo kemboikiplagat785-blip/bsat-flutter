@@ -2,6 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'dart:io';
+import 'package:bsat/utils/logger.dart';
+import 'package:bsat/services/backend_service.dart';
 
 // Assuming these imports remain the same
 import 'package:bsat/services/shared_preferences_service.dart';
@@ -180,6 +183,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   _deleteDurationController.text,
                   (val) => sharedPreferencesService
                       .setAutoDeleteAfterNumberOfDays(int.parse(val))),
+            ),
+            ListTile(
+              title: const Text('Send Logs to Developer',
+                  style: TextStyle(
+                      color: Colors.blueAccent, fontWeight: FontWeight.w600)),
+              trailing: const Icon(CupertinoIcons.paperplane,
+                  color: Colors.blueAccent, size: 20),
+              onTap: _handleSendLogs,
             ),
             ListTile(
               title: const Text('Clear Transaction History',
@@ -375,6 +386,49 @@ class _SettingsPageState extends State<SettingsPage> {
           behavior: SnackBarBehavior.floating,
           width: 200),
     );
+  }
+
+  Future<void> _handleSendLogs() async {
+    try {
+      if (BsatLogger.logFile != null && await BsatLogger.logFile!.exists()) {
+        final content = await BsatLogger.logFile!.readAsString();
+        if (content.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Log file is empty.')),
+          );
+          return;
+        }
+
+        final deviceName = await sharedPreferencesService.getDeviceName();
+        final response = await BackendService().post(
+          '/devices/logs',
+          body: {
+            'deviceName': deviceName ?? 'Unknown Device',
+            'logs': content,
+          },
+        );
+
+        if (response['success'] == true) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Logs sent successfully!')),
+          );
+          // clear logs after sending
+          await BsatLogger.logFile!.writeAsString('');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed: ${response['message'] ?? 'Unknown error'}')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No logs available to send.')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
   }
 
   Future<void> _handleDeleteHistory() async {

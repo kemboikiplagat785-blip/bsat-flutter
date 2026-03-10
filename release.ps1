@@ -165,7 +165,7 @@ $abis = @("arm64-v8a", "armeabi-v7a", "x86_64")
 
 foreach ($abi in $abis) {
     $apkSource = "$basePath\app-$abi-release.apk"
-    $newName = "bsat.Nitro.$newVersion-$abi.apk"
+    $newName = "bsat-$abi.apk"
     
     if (Test-Path $apkSource) {
         Rename-Item -Path $apkSource -NewName $newName -Force

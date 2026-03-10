@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:bsat/utils/logger.dart';
 
 import 'providers/theme_provider.dart';
 import 'screens/kill_switch.dart';
@@ -22,37 +23,45 @@ import 'services/kill_switch_service.dart';
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  BsatLogger.captureLogs();
 
-  var databasesPath = await getDatabasesPath();
-  String path = join(databasesPath, 'bsat_app.db');
+  BsatLogger.runZonedWithLogs(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await BsatLogger.initFileLogging();
 
-  SQLiteService sqLiteService = SQLiteService();
+    var databasesPath = await getDatabasesPath();
+    String path = join(databasesPath, 'bsat_app.db');
 
-  await openDatabase(
-    path,
-    version: 1,
-    onCreate: sqLiteService.onCreate,
-  );
+    SQLiteService sqLiteService = SQLiteService();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  
-  // Initialize Firebase Messaging (Don't await to prevent blocking startup)
-  FirebaseMessagingService().initNotifications();
+    await openDatabase(
+      path,
+      version: 1,
+      onCreate: sqLiteService.onCreate,
+    );
 
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    
+    // Initialize Firebase Messaging (Don't await to prevent blocking startup)
+    FirebaseMessagingService().initNotifications();
 
-  PlatformDispatcher.instance.onError = (error, stack) {
-    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-    return true;
-  };
+    // Firebase crashlytics is already partly integrated via captureLogs, but we can keep these 
+    // or let logger.dart handle it if we want to forward it there instead. 
+    // We'll leave them as is for now.
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-  runApp(
-    ChangeNotifierProvider(
-      create: (_) => ThemeProvider(),
-      child: MyApp(),
-    ),
-  );
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    runApp(
+      ChangeNotifierProvider(
+        create: (_) => ThemeProvider(),
+        child: MyApp(),
+      ),
+    );
+  });
 }
 
 class MyApp extends StatefulWidget {

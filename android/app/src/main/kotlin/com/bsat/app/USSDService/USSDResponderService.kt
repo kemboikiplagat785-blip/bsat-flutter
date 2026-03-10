@@ -15,7 +15,7 @@ import android.widget.Toast
 import android.content.Context
 import android.content.pm.PackageManager
 
-import android.util.Log
+import com.bsat.app.NativeLogger
 
 class USSDResponderService : AccessibilityService() {
 
@@ -45,6 +45,8 @@ class USSDResponderService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val packageName = event?.packageName?.toString()
         val className = event?.className?.toString()
+
+        NativeLogger.sendLog("debug", "USSDResponderService", "Received event: package=$packageName, class=$className, eventType=${event?.eventType}, device=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
 
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED 
             && className in allowedClasses 
@@ -103,7 +105,7 @@ class USSDResponderService : AccessibilityService() {
                                     return
                                 }
                             } else {
-                                Log.d("UssdSession", "Auto-switching to stopped. Expected option: $expectedOption, Extracted option: $optionText, Next input: $nextInput")
+                                NativeLogger.sendLog("debug", "UssdSession", "Auto-switching to stopped. Expected option: $expectedOption, Extracted option: $optionText, Next input: $nextInput")
                             }
                         }
                     }
@@ -130,12 +132,13 @@ class USSDResponderService : AccessibilityService() {
                 // end session if inputnode is null.
                 if (inputNode == null) {
                     UssdSession.finalResponse = responseText
+                    NativeLogger.sendLog("debug", "UssdSession", "Input node is null, returning early.")
                     UssdResponseHandler.sendSuccess(responseText)
                     return
                 }
             } else {
-                Log.d("UssdSession", "Final response: $responseText")
-                Log.d("UssdSession", "Whole conversation: ${UssdSession.wholeConversation}")
+                NativeLogger.sendLog("debug", "UssdSession", "Final response: $responseText")
+                NativeLogger.sendLog("debug", "UssdSession", "Whole conversation: ${UssdSession.wholeConversation}")
                 UssdSession.finalResponse = responseText
                 UssdResponseHandler.sendSuccess(responseText) // Notify the MethodChannel
 
@@ -203,7 +206,7 @@ class USSDResponderService : AccessibilityService() {
     fun logNodeTree(node: AccessibilityNodeInfo?, depth: Int = 0) {
         if (node == null) return
         val indent = " ".repeat(depth * 2)
-        Log.d("NodeTree", "${node.packageName}$indent${node.className}: ${node.text}")
+        NativeLogger.sendLog("debug", "NodeTree", "${node.packageName}$indent${node.className}: ${node.text}")
         for (i in 0 until node.childCount) {
             logNodeTree(node.getChild(i), depth + 1)
         }

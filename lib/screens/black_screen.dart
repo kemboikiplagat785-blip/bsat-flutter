@@ -35,7 +35,6 @@ class _BlackoutScreenState extends State<BlackoutScreen> {
     try {
       await ScreenBrightness().setScreenBrightness(brightness);
     } catch (e) {
-      print("Error setting brightness: $e");
     }
   }
 
@@ -43,7 +42,6 @@ class _BlackoutScreenState extends State<BlackoutScreen> {
     try {
       brightness = await ScreenBrightness().current;
     } catch (e) {
-      print("Error getting brightness: $e");
     }
   }
 
@@ -55,7 +53,6 @@ class _BlackoutScreenState extends State<BlackoutScreen> {
     _setBrightness(brightness);
 
     // Navigate to your main app content
-    print("Screen Unlocked!");
     Navigator.of(context).pop();
   }
 

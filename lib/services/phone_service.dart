@@ -66,7 +66,6 @@ class PhoneService {
     }
 
     try {
-      print("Making advanced request: $code on sim $subscriptionId");
       // String? res = await sendUssdSequence(code, subscriptionId);
 
       List<Map<String, dynamic>> response = await sendUssdSequence(
@@ -78,8 +77,6 @@ class PhoneService {
 
       String res =
           response[0]['lastresponse'] ?? '${response[0]['value'] ?? ''}';
-
-      print("UssdSession(fl): REsponse: $response");
 
       // if (res!.contains(RegExp(r'error', caseSensitive: false))) {
       //   return [res, TransactionStatuses.error];
@@ -141,7 +138,6 @@ class PhoneService {
       }
 
       final res = await makeMyRequest("*144#", subscriptionId);
-      print("getAirtimeBalance: USSD response: ${res[0]}");
       final raw = res.isNotEmpty ? res[0] : '';
       return airtimeBalExtract(raw.toString());
     } catch (e, st) {
@@ -154,6 +150,30 @@ class PhoneService {
     return await _sqLiteService
         .queryAll('ussdCodes')
         .then((value) => value.map((val) => val['dialSim']).toSet());
+  }
+
+  Future<int> mostCommonDialSim() async {
+    Set<dynamic> numbers = await getAllDialSims();
+    if (numbers.isEmpty) return -1;
+
+    // 1. Map to store counts: { number: frequency }
+    Map<int, int> counts = {};
+    for (var n in numbers) {
+      counts[n] = (counts[n] ?? 0) + 1;
+    }
+
+    // 2. Find the entry with the highest frequency
+    int maxCount = 0;
+    int? mode;
+
+    counts.forEach((number, frequency) {
+      if (frequency > maxCount) {
+        maxCount = frequency;
+        mode = number;
+      }
+    });
+
+    return mode ?? -1;
   }
 
   Future<List<int>> getAllSimSubids() async {

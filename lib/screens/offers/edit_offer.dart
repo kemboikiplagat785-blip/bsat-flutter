@@ -263,9 +263,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
           'codeSignature',
         );
 
-        print("Inserted code signature with id: $id");
       } catch (e) {
-        print("Error inserting code signature: $e");
       }
     }
 
@@ -328,12 +326,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
     ))
         .first);
 
-    print(signature.toString());
 
     importantSteps = signature.importantSteps;
 
-    print("Accepted Procedure: $signature.acceptedProcedure");
-    print("Important Steps: $importantSteps");
 
     if (mounted) {
       setState(() {
@@ -583,8 +578,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                                               'stepPosition'] ==
                                                           index.toString());
                                                 }
-                                                print(
-                                                    "Important Steps: $importantSteps");
                                               });
                                             },
                                             value: importantSteps.any(
@@ -631,14 +624,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
                             0722000000,
                           );
                           // PhoneService phoneService = PhoneService();
-                          print(
-                              "Making request with code: $code on sim: $_dialSim");
                           List res = await PhoneService().makeAdvancedRequest(
                             code,
                             _dialSim,
                             isGettingSignature: true,
                           );
-                          print(res);
 
                           signature = signature.copyWith(
                             usdCode: _codeTextController.text,

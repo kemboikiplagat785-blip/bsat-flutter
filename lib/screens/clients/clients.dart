@@ -6,6 +6,9 @@ import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../../components/button_descriptive.dart';
+import 'sync_data.dart';
+
 class ClientsPage extends StatefulWidget {
   const ClientsPage({super.key});
 
@@ -114,6 +117,79 @@ class _ClientsPageState extends State<ClientsPage> {
       body: Column(
         children: [
           header(context, "Clients"),
+          // all clients general data e.g total clients, total purchases, total spent etc
+          Padding(
+            padding: kPagePaddingInsets,
+            child: Container(
+              padding: const EdgeInsets.all(kPagePadding),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(kBorderRadius),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  Column(
+                    children: [
+                      Text(
+                        _clients.length.toString(),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Total Clients',
+                        style: TextStyle(
+                            // color: Theme.of(context).textTheme.bodySmall?.color,
+                            ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    children: [
+                      Text(
+                        _clients
+                            .fold<int>(
+                                0, (sum, client) => sum + client.noOfPurchases)
+                            .toString(),
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Total Purchases',
+                        style: TextStyle(
+                            // color: Theme.of(context).textTheme.bodySmall?.color,
+                            ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          buttonDescriptive(
+            context,
+            title: 'Sync client data',
+            subtitle: 'Import/export all clients and contacts data',
+            onTap: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const SyncDataPage(),
+                ),
+              );
+              _getClients();
+            },
+            icon: Icon(
+              CupertinoIcons.arrow_2_circlepath,
+              color: kPrimaryColor,
+            ),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(
                 kPagePadding, 0, kPagePadding, kPagePadding),

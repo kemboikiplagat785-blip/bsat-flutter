@@ -32,7 +32,6 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
   final _sqliteService = SQLiteService();
   Map<String, dynamic> _details = {};
   bool _canRedial = true;
-  // bool _contactExists = false;
 
   final _contactService = ContactsService();
   bool showFullMpesaMessage = false;
@@ -45,7 +44,6 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
   @override
   void initState() {
     super.initState();
-
     getStuff();
   }
 
@@ -168,88 +166,162 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                     ),
                                   ),
                                   const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Text(
+                                        _client!.formattedPhone,
+                                        style: TextStyle(
+                                          color: kPrimaryColor,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      GestureDetector(
+                                        onTap: () {
+                                          Clipboard.setData(
+                                            ClipboardData(
+                                              text: _client!.formattedPhone,
+                                            ),
+                                          );
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                '${_client!.formattedPhone} copied to clipboard',
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(
+                                              kPagePadding / 3),
+                                          child: Icon(
+                                            Icons.copy_rounded,
+                                            size: 13,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              children: [
+                                if (_client!.noOfPurchases == 1 &&
+                                    (_client!.daysSinceLastPurchase ?? 999) <=
+                                        1)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    margin: const EdgeInsets.only(bottom: kPagePadding / 3),
+                                    decoration: BoxDecoration(
+                                      color: kIndigoColor.withOpacity(0.1),
+                                      borderRadius:
+                                          BorderRadius.circular(kBorderRadius),
+                                    ),
+                                    child: Text(
+                                      "New Client",
+                                      style: TextStyle(
+                                        color: kPrimaryColor,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                Text(
+                                  "${_client!.noOfPurchases} Purchases",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: kPrimaryColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: kPagePadding),
+                        Row(
+                          spacing: kPagePadding / 2,
+                          children: [
+                            InkWell(
+                              onTap: () async {
+                                await tillDoneDialogue(
+                                  context,
+                                  Text("Adding contact"),
+                                  () async {
+                                    await _contactService.addNewContact(
+                                      _details['source'],
+                                      '0${_details["number"]}',
+                                    );
+                                  },
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '0${_details['number']} added to contacts',
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.person_add_outlined,
+                                    color: kIndigoColor,
+                                    size: 14,
+                                  ),
+                                  const SizedBox(width: 4),
                                   Text(
-                                    _client!.formattedPhone,
+                                    "Add to phonebook",
                                     style: TextStyle(
-                                      color: kPrimaryColor,
-                                      fontSize: 13,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            if (_client!.noOfPurchases == 1 &&
-                                (_client!.daysSinceLastPurchase ?? 999) <= 1)
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: kIndigoColor.withOpacity(0.1),
-                                  borderRadius:
-                                      BorderRadius.circular(kBorderRadius),
-                                ),
-                                child: Text(
-                                  "New Client",
-                                  style: TextStyle(
-                                    color: kIndigoColor,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
+                            InkWell(
+                              onTap: () async {
+                                final nowBlacklisted =
+                                    await TransactionController()
+                                        .changeBlackListStatus(
+                                            _details['number']);
+                                setState(() {
+                                  _isBlacklisted = nowBlacklisted;
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '0${_details['number']} removed from blacklist',
+                                    ),
                                   ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: kPagePadding),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              "${_client!.noOfPurchases} Purchases",
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: kPrimaryColor,
+                                );
+                              },
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.person_remove_outlined,
+                                    color: kIndigoColor,
+                                    size: 14,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _isBlacklisted
+                                        ? "Remove from blacklist"
+                                        : "Add to blacklist",
+                                    style: TextStyle(
+                                      color: kErrorColor,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            if (_isBlacklisted)
-                              InkWell(
-                                onTap: () async {
-                                  final nowBlacklisted =
-                                      await TransactionController()
-                                          .changeBlackListStatus(
-                                              _details['number']);
-                                  setState(() {
-                                    _isBlacklisted = nowBlacklisted;
-                                  });
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        '0${_details['number']} removed from blacklist',
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.person_remove_outlined,
-                                      color: kIndigoColor,
-                                      size: 14,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      "Unblacklist",
-                                      style: TextStyle(
-                                        color: kIndigoColor,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
                           ],
                         ),
                         if (_client!.noOfPurchases == 1 &&
@@ -270,7 +342,6 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                   ),
                 ),
               ),
-            // const Spacer(flex: 3),
             Padding(
               padding: kPagePaddingInsets,
               child: Container(
@@ -283,11 +354,39 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // --- USSD Section ---
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          '${_details["ussdDialed"]}',
+                        Row(
+                          children: [
+                            Text(
+                              '${_details["ussdDialed"]}',
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                Clipboard.setData(
+                                  ClipboardData(
+                                    text: '${_details["ussdDialed"]}',
+                                  ),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      '${_details["ussdDialed"]} copied to clipboard',
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(kPagePadding / 3),
+                                child: Icon(
+                                  Icons.copy_rounded,
+                                  size: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         Text(
                           'KSH ${_details["amount"]}',
@@ -300,6 +399,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                       ],
                     ),
                     const SizedBox(height: kPagePadding / 2),
+
+                    // --- Date & Status Section ---
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -400,20 +501,151 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                                                   .secondAttempt
                                                       ? kWarningColor
                                                       : Colors.white,
-                              // fontWeight: FontWeight.bold,
                               fontSize: 11,
                             ),
                           ),
                         ),
                       ],
                     ),
+                    const SizedBox(height: kPagePadding / 2),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        toolButton(
+                          () async {
+                            tillDoneDialogue(
+                              context,
+                              Padding(
+                                padding: kPagePaddingInsets,
+                                child: Text("Redialing"),
+                              ),
+                              () async {
+                                await TransactionController().redoTransaction(
+                                    _details["id"],
+                                    _details["ussdDialed"],
+                                    _details["simSubId"],
+                                    _details["canRetry"],
+                                    _details["ussdReply"]);
+
+                                getStuff();
+                              },
+                            );
+                          },
+                          Icon(
+                            CupertinoIcons.phone_arrow_up_right,
+                            color: kPrimaryColor,
+                            size: 14,
+                          ),
+                          "Retry",
+                          context,
+                          textSize: 13,
+                        ),
+                        toolButton(
+                          () {
+                            Navigator.of(context).push(
+                              PageRouteBuilder(
+                                pageBuilder: (
+                                  context,
+                                  animation,
+                                  secondaryAnimation,
+                                ) =>
+                                    EditTaskPage(
+                                  taskId: -2,
+                                  number: _details['number'],
+                                  dialSim: _details['simSubId'],
+                                  amount: _details['amount'],
+                                  offer: _details['ussdDialed'],
+                                ),
+                                transitionsBuilder: (context, animation,
+                                    secondaryAnimation, child) {
+                                  return CupertinoPageTransition(
+                                    primaryRouteAnimation: animation,
+                                    secondaryRouteAnimation: secondaryAnimation,
+                                    linearTransition: true,
+                                    child: child,
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                          Icon(
+                            Icons.precision_manufacturing_outlined,
+                            color: kErrorColor,
+                            size: 14,
+                          ),
+                          "Retry later (Schedule)",
+                          context,
+                          textSize: 13,
+                        ),
+                        toolButton(
+                          () async {
+                            String? status =
+                                await showChangeCategoryDialog(context);
+
+                            if (status != null && status.isNotEmpty) {
+                              await _sqliteService.updateStuff(
+                                {
+                                  'status': status,
+                                },
+                                'id = ?',
+                                [_details['id']],
+                                'transactions',
+                              );
+
+                              showSuccessDialog(context,
+                                  text: 'Category changed to $status');
+
+                              getStuff();
+                            }
+                          },
+                          Icon(
+                            Icons.satellite_alt_rounded,
+                            color: Theme.of(context).indicatorColor,
+                            size: 14,
+                          ),
+                          "Change Category",
+                          context,
+                          textSize: 13,
+                        ),
+                      ],
+                    ),
+
                     const SizedBox(height: kPagePadding),
+
+                    // --- Reply Section ---
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Reply',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                        Row(
+                          children: [
+                            Text(
+                              'Reply',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                Clipboard.setData(
+                                  ClipboardData(
+                                    text: '${_details["ussdReply"]}',
+                                  ),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content:
+                                        Text('USSD reply copied to clipboard'),
+                                  ),
+                                );
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(kPagePadding / 3),
+                                child: Icon(
+                                  Icons.copy_rounded,
+                                  size: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         IconButton(
                           onPressed: () {
@@ -432,12 +664,40 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                       maxLines: showFullReply ? null : 1,
                     ),
                     const SizedBox(height: kPagePadding),
+
+                    // --- MPESA Text Section ---
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'MPESA Text',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                        Row(
+                          children: [
+                            Text(
+                              'MPESA Text',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                Clipboard.setData(
+                                  ClipboardData(
+                                    text: '${_details["initialMessage"]}',
+                                  ),
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content:
+                                        Text('MPESA text copied to clipboard'),
+                                  ),
+                                );
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(kPagePadding / 3),
+                                child: Icon(
+                                  Icons.copy_rounded,
+                                  size: 13,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                         IconButton(
                           onPressed: () {
@@ -455,392 +715,121 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                       '${_details["initialMessage"]}',
                       maxLines: showFullMpesaMessage ? null : 1,
                     ),
-                    const SizedBox(height: kPagePadding * 2),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    const SizedBox(height: kPagePadding / 2),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
                       children: [
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: [
-                            toolButton(
-                              () async {
-                                tillDoneDialogue(
-                                  context,
-                                  Padding(
-                                    padding: kPagePaddingInsets,
-                                    child: Text("Redialing"),
-                                  ),
-                                  () async {
-                                    await TransactionController()
-                                        .redoTransaction(
-                                            _details["id"],
-                                            _details["ussdDialed"],
-                                            _details["simSubId"],
-                                            _details["canRetry"],
-                                            _details["ussdReply"]);
-
-                                    getStuff();
-                                  },
-                                );
-                              },
-                              Icon(
-                                CupertinoIcons.phone_arrow_up_right,
-                                color: kPrimaryColor,
-                                size: 14,
-                              ),
-                              "Redial",
+                        toolButton(
+                          () async {
+                            int numb = toForward.isNotEmpty
+                                ? toForward[0]['numberToReceive']
+                                : 0;
+                            await showForwardTextDialog(
                               context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () {
-                                Navigator.of(context).push(
-                                  PageRouteBuilder(
-                                    pageBuilder: (
-                                      context,
-                                      animation,
-                                      secondaryAnimation,
-                                    ) =>
-                                        EditTaskPage(
-                                      taskId: -2,
-                                      number: _details['number'],
-                                      dialSim: _details['simSubId'],
-                                      amount: _details['amount'],
-                                      offer: _details['ussdDialed'],
-                                    ),
-                                    transitionsBuilder: (context, animation,
-                                        secondaryAnimation, child) {
-                                      return CupertinoPageTransition(
-                                        primaryRouteAnimation: animation,
-                                        secondaryRouteAnimation:
-                                            secondaryAnimation,
-                                        linearTransition: true,
-                                        child: child,
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                              Icon(
-                                Icons.precision_manufacturing_outlined,
-                                color: kErrorColor,
-                                size: 14,
-                              ),
-                              "Automate Task",
-                              context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () async {
-                                int numb = toForward.isNotEmpty
-                                    ? toForward[0]['numberToReceive']
-                                    : 0;
-                                await showForwardTextDialog(
-                                  context,
-                                  _details['initialMessage'],
-                                  numb,
-                                );
-                              },
-                              Icon(
-                                Icons.send_outlined,
-                                color: Theme.of(context).indicatorColor,
-                                size: 14,
-                              ),
-                              "Forward MPESA message",
-                              context,
-                              textSize: 13,
-                            ),
-                          ],
+                              _details['initialMessage'],
+                              numb,
+                            );
+                          },
+                          Icon(
+                            Icons.send_outlined,
+                            color: Theme.of(context).indicatorColor,
+                            size: 14,
+                          ),
+                          "Forward MPESA message",
+                          context,
+                          textSize: 13,
                         ),
-                        // Text('${_details["ussdReply"]}'),
-                        const SizedBox(height: kPagePadding / 2),
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: [
-                            toolButton(
-                              () async {
-                                await Clipboard.setData(
-                                  ClipboardData(
-                                    text: "0${_details['number']}",
-                                  ),
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(
-                                          '0${_details['number']} copied to clipboard')),
-                                );
-                              },
-                              Icon(
-                                Icons.copy,
-                                color: Theme.of(context).indicatorColor,
-                                size: 14,
-                              ),
-                              "Number",
-                              context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () async {
-                                await Clipboard.setData(
-                                  ClipboardData(
-                                    text: "${_details['ussdDialed']}",
-                                  ),
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                      content: Text(
-                                          '${_details['ussdDialed']} copied to clipboard')),
-                                );
-                              },
-                              Icon(
-                                Icons.copy,
-                                color: Theme.of(context).indicatorColor,
-                                size: 14,
-                              ),
-                              "USSD",
-                              context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () async {
-                                await Clipboard.setData(
-                                  ClipboardData(
-                                    text: "${_details['initialMessage']}",
-                                  ),
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content:
-                                        Text('Message copied to clipboard'),
-                                  ),
-                                );
-                              },
-                              Icon(
-                                Icons.copy,
-                                color: Theme.of(context).indicatorColor,
-                                size: 14,
-                              ),
-                              "MPESA Message",
-                              context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () async {
-                                await Clipboard.setData(
-                                  ClipboardData(
-                                    text: "${_details['ussdReply']}",
-                                  ),
-                                );
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('USSD Reply copied'),
-                                  ),
-                                );
-                              },
-                              Icon(
-                                Icons.copy,
-                                color: Theme.of(context).indicatorColor,
-                                size: 14,
-                              ),
-                              "Reply",
-                              context,
-                              textSize: 13,
-                            ),
-                          ],
-                        ),
-                        // Text('${_details["ussdReply"]}'),
-                        // const SizedBox(height: kPagePadding),
+                        toolButton(
+                          () async {
+                            if ((await showConfirmDeleteDialog(
+                                  context,
+                                  title: 'Warning',
+                                  message:
+                                      'Are you sure you want to reverse this transaction?',
+                                ) ??
+                                false)) {
+                              await tillDoneDialogue(
+                                  context, Text("Reversing message"), () async {
+                                String trimmedMessage =
+                                    _details["initialMessage"]
+                                                .toString()
+                                                .length >
+                                            160
+                                        ? _details["initialMessage"]
+                                            .toString()
+                                            .substring(0, 160)
+                                        : _details["initialMessage"].toString();
 
-                        const SizedBox(height: kPagePadding / 2),
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: [
-                            toolButton(
-                              () async {
-                                String? status =
-                                    await showChangeCategoryDialog(context);
-
-                                if (status != null && status.isNotEmpty) {
-                                  await _sqliteService.updateStuff(
-                                    {
-                                      'status': status,
-                                    },
-                                    'id = ?',
-                                    [_details['id']],
-                                    'transactions',
-                                  );
-
-                                  showSuccessDialog(context,
-                                      text: 'Category changed to $status');
-
-                                  // Future.delayed(const Duration(seconds: 3),
-                                  //     () {
-                                  //   // //print("Action executed after 3 seconds!");
-                                  //   Navigator.pop(context);
-                                  //   // your action here
-                                  // });
-
-                                  getStuff();
-                                }
-                              },
-                              Icon(
-                                Icons.satellite_alt_rounded,
-                                color: Theme.of(context).indicatorColor,
-                                size: 14,
-                              ),
-                              "Change Category",
-                              context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () async {
-                                final nowBlacklisted =
-                                    await TransactionController()
-                                        .changeBlackListStatus(
-                                            _details['number']);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '0${_details['number']} ${nowBlacklisted ? "added to" : "removed from"} blacklist',
-                                    ),
-                                  ),
-                                );
-
-                                setState(() {
-                                  _isBlacklisted = nowBlacklisted;
-                                });
-                              },
-                              Icon(
-                                _isBlacklisted
-                                    ? Icons.person_remove_outlined
-                                    : Icons.person_add_disabled_outlined,
-                                color: Theme.of(context).indicatorColor,
-                                size: 14,
-                              ),
-                              _isBlacklisted
-                                  ? "Remove from blacklist"
-                                  : "Add to blacklist",
-                              context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () async {
-                                await tillDoneDialogue(
-                                    context, Text("Adding to contacts"),
-                                    () async {
-                                  await _contactService.addNewContact(
-                                    _details['source'],
-                                    '0${_details["number"]}',
-                                  );
-                                  // Navigator.pop(context);
-                                });
-                                Navigator.pop(context);
-                              },
-                              Icon(
-                                CupertinoIcons.person_add,
-                                color: Theme.of(context).indicatorColor,
-                                size: 14,
-                              ),
-                              "Save contact",
-                              context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () async {
-                                // await tillDoneDialogue(
-                                //     context, Text("Adding to contacts"),
-                                //     () async {
-                                //   await _contactService.addNewContact(
-                                //     _details['source'],
-                                //     '0${_details["number"]}',
-                                //   );
-                                //   // Navigator.pop(context);
-                                // });
-                                // Navigator.pop(context);
+                                sendEvenInBackground('456', trimmedMessage);
+                              }).then((value) async {
                                 if ((await showConfirmDeleteDialog(
                                       context,
-                                      title: 'Warning',
-                                      message:
-                                          'Are you sure you want to reverse this transaction?',
-                                    ) ??
-                                    false)) {
-                                  await tillDoneDialogue(
-                                      context, Text("Reversing message"),
-                                      () async {
-                                    String trimmedMessage =
-                                        _details["initialMessage"]
-                                                    .toString()
-                                                    .length >
-                                                160
-                                            ? _details["initialMessage"]
-                                                .toString()
-                                                .substring(0, 160)
-                                            : _details["initialMessage"]
-                                                .toString();
-
-                                    sendEvenInBackground('456', trimmedMessage);
-                                  }).then((value) async {
-                                    if ((await showConfirmDeleteDialog(
-                                          context,
-                                          title: 'Done',
-                                          message:
-                                              'Delete this transaction too?',
-                                          btnText: 'Delete',
-                                        )) ??
-                                        false) {
-                                      showLoadingDialog(context);
-                                      await _sqliteService.deleteStuff(
-                                        _details["id"],
-                                        "transactions",
-                                      );
-                                      Navigator.pop(context);
-                                      Navigator.pop(context);
-                                      showSuccessDialog(
-                                        context,
-                                        text: 'Transaction deleted',
-                                      );
-                                    }
-                                    {}
-                                  });
-                                  return;
+                                      title: 'Done',
+                                      message: 'Delete this transaction too?',
+                                      btnText: 'Delete',
+                                    )) ??
+                                    false) {
+                                  showLoadingDialog(context);
+                                  await _sqliteService.deleteStuff(
+                                    _details["id"],
+                                    "transactions",
+                                  );
+                                  Navigator.pop(context);
+                                  Navigator.pop(context);
+                                  showSuccessDialog(
+                                    context,
+                                    text: 'Transaction deleted',
+                                  );
                                 }
-                              },
-                              Icon(
-                                CupertinoIcons.exclamationmark_octagon,
-                                color: kErrorColor,
-                                size: 14,
-                              ),
-                              "Reverse message",
-                              context,
-                              textSize: 13,
-                            ),
-                            toolButton(
-                              () async {
-                                showLoadingDialog(context);
-                                await _sqliteService.deleteStuff(
-                                  _details["id"],
-                                  "transactions",
-                                );
-
-                                Navigator.pop(context);
-                                Navigator.pop(context);
-                              },
-                              Icon(
-                                CupertinoIcons.trash,
-                                color: kErrorColor,
-                                size: 14,
-                              ),
-                              "Delete",
-                              context,
-                              textSize: 13,
-                            ),
-                          ],
+                                {}
+                              });
+                              return;
+                            }
+                          },
+                          Icon(
+                            CupertinoIcons.exclamationmark_octagon,
+                            color: kErrorColor,
+                            size: 14,
+                          ),
+                          "Reverse message",
+                          context,
+                          textSize: 13,
                         ),
                       ],
-                    )
+                    ),
+                    const SizedBox(height: kPagePadding),
+
+                    const Divider(height: 1),
+                    const SizedBox(height: kPagePadding),
+
+                    // --- Global Action Section ---
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        toolButton(
+                          () async {
+                            showLoadingDialog(context);
+                            await _sqliteService.deleteStuff(
+                              _details["id"],
+                              "transactions",
+                            );
+
+                            Navigator.pop(context);
+                            Navigator.pop(context);
+                          },
+                          Icon(
+                            CupertinoIcons.trash,
+                            color: kErrorColor,
+                            size: 14,
+                          ),
+                          "Delete Transaction",
+                          context,
+                          textSize: 13,
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),

@@ -274,7 +274,7 @@ class CodeSignature {
   }
 
   Map<String, dynamic> sqlSavableForm() {
-    print("data: ${toMap()}");
+    // print("data: ${toMap()}");
     return {
       if (id != null) 'id': id,
       'ussdCodeId': ussdCodeId,

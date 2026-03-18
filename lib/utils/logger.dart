@@ -140,7 +140,7 @@ class BsatLogger {
       buffer.write(' | ${event.data}');
     }
     final msg = buffer.toString();
-    debugPrint(msg);
+    Zone.root.print(msg);
 
     // Save to file if initialized
     if (logFile != null) {

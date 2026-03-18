@@ -83,14 +83,11 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
         .get('/api/device/pending-pairings?myDeviceName=$myDeviceName')
         .then((response) {
       if (response['success']) {
-        print("Pending pairing requests: ${response['data']}");
         final data = response['data'];
         if (data != null && data['requests'] != null) {
           return (data['requests'] as List).length;
         }
       } else {
-        print(
-            "Failed to fetch pending pairing requests: ${response['message']}");
       }
       return 0;
     });
@@ -160,35 +157,6 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                 model: model,
                 batteryLevel: batteryLevel,
                 iconData: CupertinoIcons.phone_solid,
-              ),
-            ),
-            Container(
-              margin: kPagePaddingInsets,
-              width: double.infinity,
-              padding: kPagePaddingInsets,
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                borderRadius: BorderRadius.circular(kBorderRadius),
-                image: DecorationImage(
-                  image: AssetImage('assets/images/mesh.png'),
-                  alignment: Alignment.centerLeft,
-                  fit: BoxFit.cover,
-                  opacity: 0.1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Premium Subscription Expiry (online + offline features)",
-                    style: TextStyle(
-                        color: kPrimaryColor, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: kPagePadding),
-                  Text(
-                    "31${interpunct}02${interpunct}2025 12:00hrs",
-                  ),
-                ],
               ),
             ),
             Padding(

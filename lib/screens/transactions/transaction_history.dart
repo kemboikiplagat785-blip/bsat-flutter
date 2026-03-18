@@ -1203,8 +1203,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                   child: Text("Redialing"),
                                 ),
                                 () async {
-                                  print(
-                                      "Retrying transactions with options - Errors: $retryErrors, Failed: $retryFailed, Successful: $retrySuccessful, SuccessfulPending: $retrySuccPending, Paused: $retryPaused, Okoa: $retryOkoa, Advanced: $retryAdvanced");
                                   await TransactionController().retrySpecific(
                                     retryErrors,
                                     retrySuccessful,
@@ -1534,8 +1532,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               final String whereClause =
                                   whereParts.join(' AND ');
 
-                              print(
-                                  "Delete query: $whereClause, args: $whereArgs");
 
                               showLoadingDialog(context,
                                   text: 'Deleting $numberOfItems items');
@@ -1545,7 +1541,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                 await databaseHelper.deleteWhere(
                                     'transactions', whereClause, whereArgs);
                               } catch (e) {
-                                print("Error deleting transactions: $e");
                                 // Optionally show an error SnackBar here
                               } finally {
                                 // This guarantees the loading dialog is dismissed

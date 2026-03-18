@@ -106,8 +106,8 @@ class DashboardViewModel extends ChangeNotifier {
 
     if (DateTime.now().millisecondsSinceEpoch < 1772097346000 &&
         !hasActiveSubscription) {
-      print(
-          "Subscription expiry: ${DateTime.fromMillisecondsSinceEpoch(expiry)}, hasActiveSubscription: $hasActiveSubscription");
+      // print(
+      //     "Subscription expiry: ${DateTime.fromMillisecondsSinceEpoch(expiry)}, hasActiveSubscription: $hasActiveSubscription");
 
       PaymentOps.start1DayOnlinePlusFreeTrial();
     }

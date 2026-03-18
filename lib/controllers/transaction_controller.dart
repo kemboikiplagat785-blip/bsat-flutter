@@ -84,9 +84,21 @@ class TransactionController {
     int amount = getAmount(smsMessage.body);
     String name = getName(smsMessage.body ?? "");
 
+    print(number);
+
     String trimmedBody = smsMessage.body!.length > 160
         ? smsMessage.body!.substring(0, 160)
         : smsMessage.body!;
+
+    if (number == null || number == 0) {
+      getMaskedPhoneNumber(smsMessage).then((client) {
+        print(
+            "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
+        if (client != null) {
+          number = int.parse(client.formattedPhone);
+        } else {}
+      });
+    }
 
     UssdCode ussdCodeItem = await getUssdCodeForAmount(amount);
 
@@ -304,8 +316,6 @@ class TransactionController {
 
         if (forwardingLimit > 0 && amount < forwardingLimit) {
           bool forwarded = await forwardToAllAvenues(smsMessage.body ?? "");
-          print(
-              "Attempted forwarding to all paired devices for unavailable amount. Forwarding result: $forwarded");
           if (forwarded) return;
         }
 
@@ -626,14 +636,9 @@ class TransactionController {
                   ? []
                   : amountsString.split(',').map((e) => e.trim()).toList();
 
-              print(
-                  "Checking forwarding for amount: $amount, against amounts: $amounts");
-
               if (amounts.contains(amount.toString())) {
                 if (await AuthService().pingDevice(recipientDeviceName)) {
-                  print("Server is reachable. Proceeding with forwarding.");
                 } else {
-                  print("Server is not reachable. Cannot forward.");
                   dontProcess(
                     smsMessageBody,
                     transactionId,
@@ -663,9 +668,6 @@ class TransactionController {
                     }
                   },
                 );
-
-                print(
-                    "Forwarding to ${device['device_name']} (ID: ${device['device_name']}). body: $smsMessageBody from $senderDeviceName, amount: $amount");
 
                 dontProcess(
                   smsMessageBody,
@@ -721,9 +723,7 @@ class TransactionController {
                 "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
 
         if (await AuthService().pingDevice(recipientDeviceName)) {
-          print("Server is reachable. Proceeding with forwarding.");
         } else {
-          print("Server is not reachable. Cannot forward.");
           continue;
         }
 
@@ -741,9 +741,6 @@ class TransactionController {
             }
           },
         );
-
-        print(
-            "Forwarding to ${device['device_name']} (ID: ${device['device_id']}). body: $message from $senderDeviceName");
       }
     }
 
@@ -999,9 +996,6 @@ class TransactionController {
 
     // if (hasSuccessStatus) {
     if (RegExp('Forwarding failed', caseSensitive: false).hasMatch(reply)) {
-      print(
-          "Retrying forwarding for transaction $id due to previous failure: $reply");
-
       await _sqliteService.deleteStuff(
         id,
         'transactions',
@@ -1012,10 +1006,7 @@ class TransactionController {
       // remove the transaction from the database so that it doesn't keep showing up in the retry list
 
       return;
-    } else {
-      print(
-          "Not retrying transaction $id due to reply: $reply not matching forwarding failure");
-    }
+    } else {}
 
     Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
       'transactions',
@@ -1023,8 +1014,6 @@ class TransactionController {
       [id],
     ))
         .first;
-
-    print("Transaction from DB for retry: $transaction");
 
     String initialMessage = transaction['initialMessage'] ?? '';
 
@@ -1393,7 +1382,7 @@ class TransactionController {
 
     //print('Retrying all: ${rawStuff.length}');
 
-    // debugPrint('Retrying all transactions: ${rawStuff}');
+    debugPrint('Retrying all transactions: ${rawStuff}');
 
     for (var stuff in rawStuff) {
       debugPrint(' retrytimes $retryTimes, canRetry ${stuff['canRetry']}');
@@ -1418,7 +1407,6 @@ class TransactionController {
     );
 
     for (var stuff in rawStuff) {
-      print("Retrying transaction with id ${stuff['id']}, $stuff");
       await redoTransaction(stuff['id'], stuff['ussdDialed'], stuff['simSubId'],
           stuff['canRetry'] ?? 0, stuff["ussdReply"]);
     }
@@ -1508,14 +1496,6 @@ class TransactionController {
       columns: ['id', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
     );
 
-    print(
-        "Retrying specific transactions with query: ($query) AND timeStamp >= $startTime AND timeStamp <= $endTime, args: ${[
-      ...args,
-      startTime,
-      endTime
-    ]}");
-
-    print('Found ${rawStuff.length} transactions to retry');
     for (var stuff in rawStuff) {
       await redoTransaction(stuff['id'], stuff['ussdDialed'], stuff['simSubId'],
           stuff['canRetry'] ?? 0, stuff["ussdReply"]);
@@ -1543,8 +1523,6 @@ class TransactionController {
       orElse: () => -1,
     );
 
-    print("Al replies: ${await _sqliteService.queryAll('replies')}");
-
     List<Map<String, dynamic>> replies = await _sqliteService.queryCustom(
       'replies',
       '''conditionAmount = 1 AND condition = ? AND (
@@ -1564,9 +1542,6 @@ class TransactionController {
       orderBy:
           'CASE WHEN amounts IS NULL OR amounts = "" THEN 1 ELSE 0 END, CAST(amounts AS INTEGER) ASC',
     );
-
-    print(
-        'Found ${replies.length} replies for condition $condition, \n $replies');
 
     List<Map<String, dynamic>> matchingReplies = replies.where((reply) {
       String? amounts = reply['amounts'];

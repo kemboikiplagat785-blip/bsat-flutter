@@ -92,24 +92,6 @@ class _HomeSettingsPageState extends State<HomeSettingsPage> {
                   color: kWarningColor,
                 ),
               ),
-
-              // support
-              buttonDescriptive(
-                context,
-                title: 'Version $appVersion',
-                subtitle: 'About BSAT',
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (context) => const AboutPage(),
-                    ),
-                  );
-                },
-                icon: Icon(
-                  CupertinoIcons.info,
-                  color: kErrorColor,
-                ),
-              ),
                     const SizedBox(height: kPagePadding * 7),
             ],
           ),

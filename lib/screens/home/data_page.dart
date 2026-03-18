@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 
 import '../blacklist.dart';
 import '../clients/clients.dart';
+import '../clients/sync_data.dart';
 
 class DataPage extends StatefulWidget {
   const DataPage({super.key});
@@ -112,6 +113,23 @@ class _DataPageState extends State<DataPage> {
                 icon: Icon(
                   CupertinoIcons.person_crop_circle_badge_xmark,
                   color: kWarningColor,
+                ),
+              ),
+              // sync data
+              buttonDescriptive(
+                context,
+                title: 'Sync client data',
+                subtitle: 'Get/export all clients and contacts data',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const SyncDataPage(),
+                    ),
+                  );
+                },
+                icon: Icon(
+                  CupertinoIcons.arrow_2_circlepath,
+                  color: kPrimaryColor,
                 ),
               ),
 

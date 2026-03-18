@@ -87,7 +87,6 @@ class AuthService {
         };
       } else {
         final error = jsonDecode(response.body);
-        print('Signup failed, status: ${response.body}');
         // final error = response.body;
         return {
           'success': false,
@@ -111,7 +110,6 @@ class AuthService {
         headers: {'Content-Type': 'application/json'},
       );
 
-      print('Link Availability Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         return {
@@ -172,7 +170,6 @@ class AuthService {
         }),
       );
 
-      print(response.body);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -296,8 +293,6 @@ class AuthService {
       }),
     );
 
-    print(
-        'Register Device Response status: ${response.statusCode}, body: ${jsonDecode(response.body)}');
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       await _prefs.setDeviceId(deviceId);
@@ -332,8 +327,6 @@ class AuthService {
     try {
       var jwtToken = await getToken();
 
-      print(jwtToken);
-      print(query);
 
       if (jwtToken == null || jwtToken.isEmpty) {
         //print('No JWT token available');
@@ -351,7 +344,6 @@ class AuthService {
         },
       );
 
-      print('Search Device Response status: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -436,7 +428,6 @@ class AuthService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
-        print('Login data: $data');
 
         // Save JWT token and user info
         if (data['token'] != null) {
@@ -485,8 +476,6 @@ class AuthService {
         }),
       );
 
-      print(
-          'Response status: ${response.body}, uri: $baseUrl/api/auth/send-otp');
 
       if (response.statusCode == 200) {
         //print('OTP requested successfully');
@@ -794,7 +783,6 @@ class AuthService {
       }),
     );
 
-    print('Logout Response status: ${response.body}');
 
     await _prefs.setJwtToken("");
     await _prefs.setUserEmail("");

@@ -37,7 +37,6 @@ class PaymentOps {
 
       String code = "*140*$amount*0${numbers[numberIndex]}#";
 
-      print("Making payment request $code, subId: $subId");
 
       final value = await _phoneService.makeMyRequest(
         code,
@@ -48,8 +47,6 @@ class PaymentOps {
         return ['Insufficient balance.\n', TransactionStatuses.error];
       }
       int usableUntil = (await Payment.getPaymentByTier(tier)).till;
-      print(
-          "Usable until: ${getNormalDate(DateTime.fromMillisecondsSinceEpoch(usableUntil))} ${getNormalTime(DateTime.fromMillisecondsSinceEpoch(usableUntil))}");
       if (usableUntil > DateTime.now().millisecondsSinceEpoch) {
         usableUntil += (days * 24 * 60 * 60 * 1000);
       } else {
@@ -57,8 +54,6 @@ class PaymentOps {
             (days * 24 * 60 * 60 * 1000);
       }
 
-      print(
-          "New usable until: ${getNormalDate(DateTime.fromMillisecondsSinceEpoch(usableUntil))} ${getNormalTime(DateTime.fromMillisecondsSinceEpoch(usableUntil))}");
 
       int response = await _sqliteHelper.insertStuff(
         {
@@ -212,7 +207,6 @@ class PaymentOps {
           .queryAll('ussdCodes', limit: 1, orderBy: 'id DESC'))[0]['dialSim'];
     }
 
-    print("Auto renewing subscription with amount: $amount, subId: $subId, planId: $planId, lastPlan: $lastPlan");
 
     return await payCore(
       amount,
@@ -316,7 +310,6 @@ class Payment {
         orderBy: 'id DESC',
       ))[0];
 
-      print("Last plan fetched: $lastPlan");
     Payment res = Payment.fromMap(lastPlan
     );
 

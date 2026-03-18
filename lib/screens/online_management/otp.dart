@@ -147,7 +147,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
         ),
         SizedBox(height: kPagePadding),
         OtpTextField(
-          numberOfFields: 6,
+          numberOfFields: 5,
           borderColor: kPrimaryColor,
           focusedBorderColor: kPrimaryColor,
           enabledBorderColor: kGrayColor,
@@ -157,6 +157,9 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
           borderRadius: BorderRadius.circular(kBorderRadius),
           onCodeChanged: (String code) {
             _otpCode = code;
+            setState(() {
+              error = '';
+            });
           },
           onSubmit: (String verificationCode) {
             _otpCode = verificationCode;
@@ -186,6 +189,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
         TextButton(
           onPressed: () {
             otpSent = false;
+            error = '';
             setState(() {});
           },
           child: Text("Change email"),

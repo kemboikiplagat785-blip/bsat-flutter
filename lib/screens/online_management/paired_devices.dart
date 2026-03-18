@@ -140,15 +140,12 @@ class _PairedDevicesState extends State<PairedDevices> {
         .get('/api/device/whitelisted')
         .then((response) async {
       if (response['success']) {
-        print("Whitelisted devices from server: ${response['data']}");
         await SQLiteService().deleteWhere('whitelistedDevices', '1=1', []);
         final data = response['data'];
         if (data != null && data['devices'] != null) {
           List<Map<String, dynamic>> devices =
               List<Map<String, dynamic>>.from(data['devices']);
           await SQLiteService().clearTable('whitelistedDevices');
-          print(
-              "Cleared local whitelistedDevices table, ${SQLiteService().getCount('whitelistedDevices')} records now.");
           for (var device in devices) {
             await SQLiteService().insertStuff(device, 'whitelistedDevices');
           }
@@ -156,7 +153,6 @@ class _PairedDevicesState extends State<PairedDevices> {
         }
         return <Map<String, dynamic>>[];
       } else {
-        print("Failed to fetch whitelisted devices: ${response['message']}");
         pairedDevices = await SQLiteService().queryAll('whitelistedDevices');
         return <Map<String, dynamic>>[];
       }
@@ -164,7 +160,6 @@ class _PairedDevicesState extends State<PairedDevices> {
 
     forwardingDevices = await SQLiteService().queryAll('forwardingDevices');
 
-    print("Forwarding evices: $forwardingDevices");
 
     Navigator.of(context).pop(); // Hide loading
 
@@ -227,7 +222,6 @@ class _PairedDevicesState extends State<PairedDevices> {
         setState(() {
           _pendingPairings = response['data']['requests'] ?? [];
         });
-        print("Pending Pairings: ${response['data']['requests']}");
       }
     } catch (e) {
       debugPrint("Error loading pending pairings: $e");
@@ -535,7 +529,6 @@ class _PairedDevicesState extends State<PairedDevices> {
     final targetName = pairing['recipient_name'] ?? 'Unknown';
     final isSentByMe = requesterName == myDeviceName;
 
-    print('Pairing details: $pairing');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

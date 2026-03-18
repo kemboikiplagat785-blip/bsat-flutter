@@ -22,6 +22,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../utils/constants.dart';
 import 'payments.dart';
+import 'skills.dart';
 
 @pragma('vm:entry-point')
 Future<void> _showNotification(RemoteMessage message) async {
@@ -70,8 +71,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 @pragma('vm:entry-point')
 Future<void> handleRemoteMessage(RemoteMessage message) async {
   // if (kDebugMode) {
-  print("Handling message: ${message.messageId}");
-  print("Data: ${message.data}");
   // }
 
   // Use 'type' from data payload to distinguish message types
@@ -109,17 +108,15 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       }
       break;
 
-    // Add more cases here for different message types
-    // case 'other_type':
-    //   doSomething();
-    //   break;
+    case 'offer_update':
+      Skills().small(message.data['hash'] ?? '');
+      break;
+
     case 'pairing_request':
-      // You might want to show a notification or dialog to the user to accept/reject pairing
       await _showNotification(message);
       break;
 
     case 'ping':
-      // Show a simple ping notification and optionally acknowledge via callbackUrl
       await _showNotification(message);
 
       String? callbackUrl = message.data['callbackUrl'];
@@ -142,8 +139,6 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
             final resp =
                 await BackendService().post(callbackUrl, body: ackPayload);
             if (kDebugMode && resp['success'] == false) {
-              print(
-                  'BackendService.post failed for ping ack: ${resp['message'] ?? resp}');
             }
           }
         } catch (e) {
@@ -177,8 +172,6 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
               final resp =
                   await BackendService().post(callbackUrl, body: errorPayload);
               if (kDebugMode && resp['success'] == false) {
-                print(
-                    'BackendService.post failed for subscription error response: ${resp['message'] ?? resp}');
               }
             }
           } catch (e) {
@@ -214,8 +207,6 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
               final resp =
                   await BackendService().post(callbackUrl, body: errorPayload);
               if (kDebugMode && resp['success'] == false) {
-                print(
-                    'BackendService.post failed for subscription error response: ${resp['message'] ?? resp}');
               }
             }
           } catch (e) {
@@ -251,8 +242,6 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
               final resp =
                   await BackendService().post(callbackUrl, body: errorPayload);
               if (kDebugMode && resp['success'] == false) {
-                print(
-                    'BackendService.post failed for subscription error response: ${resp['message'] ?? resp}');
               }
             }
           } catch (e) {
@@ -288,8 +277,6 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
               final resp =
                   await BackendService().post(callbackUrl, body: errorPayload);
               if (kDebugMode && resp['success'] == false) {
-                print(
-                    'BackendService.post failed for subscription error response: ${resp['message'] ?? resp}');
               }
             }
           } catch (e) {
@@ -364,8 +351,6 @@ Future<void> _handleGetMyDBData(RemoteMessage message) async {
     if (kDebugMode) print("Error querying database for $tableName: $e");
   }
 
-  print(
-      "Queried $tableName with params: limit=$limit, offset=$offset, orderBy=$orderBy, where=$whereClause, whereArgs=$whereArgs. Results count: ${results.length}");
 
   // if (callbackUrl != null) {
   final payload = {
@@ -386,9 +371,7 @@ Future<void> _handleGetMyDBData(RemoteMessage message) async {
     //   );
     // } else {
     final resp = await BackendService().post(callbackUrl, body: payload);
-    print("Sent data response to $callbackUrl. Backend response: $resp");
     if (kDebugMode && resp['success'] == false) {
-      print('BackendService.post failed: ${resp['message'] ?? resp}');
     }
     // }
   } catch (e) {
@@ -440,7 +423,6 @@ Future<void> _handleEditOffer(RemoteMessage message) async {
   }
 
   if (id != null) {
-    print("Updating offer with ID $id: $updateData");
     await db.updateStuff(updateData, 'id = ?', [id], 'ussdCodes');
   } else {
     await db.insertStuff(updateData, 'ussdCodes');
@@ -484,7 +466,6 @@ Future<void> _handleGenericDataRequest(RemoteMessage message) async {
   try {
     Battery battery = Battery();
     batteryLevel = await battery.batteryLevel;
-    print("battery level: $batteryLevel");
   } catch (e) {
     if (kDebugMode) print('Failed to get battery level: $e');
   }
@@ -501,7 +482,6 @@ Future<void> _handleGenericDataRequest(RemoteMessage message) async {
       int number = 0;
 
       try {
-        print("Getting balance for SIM ${card.displayName} (subId: $subId)");
         balance = await PhoneService().getAirtimeBalance(subscriptionId: subId);
         number = extract9DigitNumber(
             (await PhoneService().makeMyRequest("*100*4*1#", subId)).first ??

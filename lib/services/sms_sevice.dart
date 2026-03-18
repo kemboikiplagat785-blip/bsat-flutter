@@ -4,6 +4,7 @@ import 'package:another_telephony/telephony.dart';
 import 'package:background_sms/background_sms.dart' as backgroundSms;
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/models/transaction_message.dart';
+import 'package:bsat/models/client.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/date_ops.dart';
@@ -77,6 +78,7 @@ onMessageReceive(dynamic smsMessage) async {
           date: date,
         ),
       );
+      // 
     }
     int numb = extract9DigitNumber(addr);
     if (await SQLiteService().getCount(
@@ -226,6 +228,7 @@ int extract9DigitNumber(String messageBody) {
   return number;
 }
 
+
 String getReferenceCode(String messageBody) {
   RegExp referenceCodeRegex = RegExp(r'^[\w]*');
 
@@ -299,12 +302,14 @@ int getAmount(String? smsBody) {
 }
 
 String getName(String messageBody) {
-  RegExp nameRegex = RegExp(r'from ([A-Za-z\s]+) \d');
+  // Capture name gracefully, ignoring a possible masked or clear number starting with 01, 07, or 254
+  // that appears right after "from". It skips the number and captures the name until a number follows.
+  RegExp nameRegex = RegExp(r'from\s+(?:(?:254|0[17])[\d\*xX\s]+)?\s*([A-Za-z\s]+)\s+\d', caseSensitive: false);
   Match? nameMatch = nameRegex.firstMatch(messageBody);
   String name = nameMatch?.group(1)?.trim() ?? "";
 
   if (name.isEmpty) {
-    nameRegex = RegExp(r'254\d{9,12} ([A-Za-z\s]+)');
+    nameRegex = RegExp(r'254[\dxX*]{9,12} ([A-Za-z\s]+)');
     nameMatch = nameRegex.firstMatch(messageBody);
     name = nameMatch?.group(1)?.trim() ?? "";
   }
@@ -368,6 +373,87 @@ Future<int> getBongaBalance(String text) async {
   String? bongaPoints = bongaMatch?.group(2);
 
   return bongaPoints != null ? int.parse(bongaPoints) : 0;
+}
+
+Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
+  String body = _extractField(sms, 'body')?.toString() ?? '';
+  if (body.isEmpty) return null;
+
+  String name = getName(body);
+  print("Extracted name: $name, body: $body");
+
+  String phoneOrMask = '';
+  
+  RegExp regex = RegExp(r'(?:254|0)[17][\d\*xX]{8,12}', caseSensitive: false);
+  Match? match = regex.firstMatch(body);
+  if (match != null) {
+     phoneOrMask = match.group(0)!.replaceAll(RegExp(r'\s+'), '');
+  } else {
+      return null;
+  }
+
+  if (name.isEmpty && phoneOrMask.isEmpty) return null;
+
+  List<Map<String, dynamic>> allClients = await SQLiteService().queryAll('clients');
+  
+  String normalizedMask = phoneOrMask.replaceAll('+254', '0');
+  if (normalizedMask.startsWith('254') && normalizedMask.length >= 11) {
+    normalizedMask = '0${normalizedMask.substring(3)}';
+  }
+
+  print("Normalized mask: $normalizedMask");
+
+  String strictPatternStr = '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]'), r'\d') + r'$';
+  print("Strict pattern: $strictPatternStr");
+  RegExp strictPattern = RegExp(strictPatternStr, caseSensitive: false);
+  String loosePatternStr = normalizedMask.replaceAll(RegExp(r'[^0-9]+'), r'.*');
+  print("Loose pattern: $loosePatternStr");
+  RegExp loosePattern = RegExp(loosePatternStr, caseSensitive: false);
+
+  print(name);
+  var smsNameWords = name.toLowerCase().split(RegExp(r'\s+')).where((e) => e.length > 2).toSet();
+
+  for (var clientMap in allClients) {
+    String clientPhone = (clientMap['phoneNumber'] ?? '').toString();
+    String clientFirstName = (clientMap['firstName'] ?? '').toString().toLowerCase();
+    String clientLastName = (clientMap['lastName'] ?? '').toString().toLowerCase();
+
+    String normClientPhone = clientPhone.replaceAll('+254', '0');
+    if (normClientPhone.startsWith('254') && normClientPhone.length >= 11) {
+      normClientPhone = '0${normClientPhone.substring(3)}';
+    }
+
+    bool phoneMatches = false;
+    if (normalizedMask.contains(RegExp(r'[^0-9]'))) {
+      if (strictPattern.hasMatch(normClientPhone) || loosePattern.hasMatch(normClientPhone)) {
+        print("Phone matches for client ${clientFirstName} ${clientLastName} with phone $normClientPhone");
+        phoneMatches = true;
+      }
+    } else {
+      if (normClientPhone == normalizedMask) {
+        phoneMatches = true;
+      }
+    }
+
+    if (phoneMatches) {
+      String fullClientName = '$clientFirstName $clientLastName';
+      var clientNameWords = fullClientName.split(RegExp(r'\s+')).where((e) => e.length > 2).toSet();
+      print("SMS name words: $smsNameWords");
+      print("Client name words: $clientNameWords");
+
+      // If it's a masked number, we MUST have some name overlap to map it confidently
+      if (normalizedMask.contains(RegExp(r'[^0-9]'))) {
+         if (smsNameWords.intersection(clientNameWords).isNotEmpty) {
+           return Client.fromMap(clientMap);
+         }
+      } else {
+         // Direct exact number match, name match is a bonus but optional 
+         return Client.fromMap(clientMap);
+      }
+    }
+  }
+
+  return null;
 }
 
 Future<void> getAdvancedSms() async {}

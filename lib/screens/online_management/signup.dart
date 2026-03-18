@@ -285,7 +285,7 @@ class _SignupPageState extends State<SignupPage> {
             ),
           );
         } else {
-          print('Signup failed: ${result}');
+          // print('Signup failed: ${result}');
           setState(() {
             error = result['message'] ?? 'Signup failed';
           });

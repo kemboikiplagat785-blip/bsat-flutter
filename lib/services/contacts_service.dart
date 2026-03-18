@@ -25,10 +25,17 @@ class ContactsService {
   // see if contact is already in the phonebook
   Future<bool> contactExists(String phoneNumber) async {
     if (await FlutterContacts.requestPermission()) {
-      final contacts = await FlutterContacts.getContacts();
+      final contacts = await FlutterContacts.getContacts(withProperties: true);
       return contacts.any((contact) =>
           contact.phones.any((phone) => phone.number == phoneNumber));
     }
     return false;
+  }
+
+  Future<List<Contact>> getAllContacts() async {
+    if (await FlutterContacts.requestPermission()) {
+      return await FlutterContacts.getContacts(withProperties: true);
+    }
+    return [];
   }
 }

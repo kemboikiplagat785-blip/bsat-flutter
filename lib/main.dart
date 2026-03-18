@@ -17,16 +17,16 @@ import 'package:sqflite/sqflite.dart';
 import 'package:bsat/utils/logger.dart';
 
 import 'providers/theme_provider.dart';
-import 'screens/kill_switch.dart';
+import 'screens/settings/kill_switch.dart';
 import 'services/kill_switch_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   BsatLogger.captureLogs();
 
   BsatLogger.runZonedWithLogs(() async {
-    WidgetsFlutterBinding.ensureInitialized();
     await BsatLogger.initFileLogging();
 
     var databasesPath = await getDatabasesPath();

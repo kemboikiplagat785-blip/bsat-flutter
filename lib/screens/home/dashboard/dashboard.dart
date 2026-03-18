@@ -9,6 +9,7 @@ import 'package:bsat/screens/transactions/transaction_history.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:bsat/utils/numbers.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -134,10 +135,17 @@ class _DashBoardPageState extends State<DashBoardPage>
                             ),
                           ],
                         ),
-                        Image.asset(
-                          'assets/icons/icon.png',
-                          width: 60,
-                          height: 60,
+                        GestureDetector(
+                          onTap: () {
+                            DeviceInfoPlugin()
+                                .deviceInfo
+                                .then((info) => print(info));
+                          },
+                          child: Image.asset(
+                            'assets/icons/icon.png',
+                            width: 60,
+                            height: 60,
+                          ),
                         ),
                       ],
                     ),

@@ -50,10 +50,8 @@ class _RegisterDevicePageState extends State<RegisterDevicePage> {
               response['data']['devices'] ?? []);
         });
       } else {
-        print('Failed to fetch logged out devices: ${response}');
       }
     } catch (e) {
-      print('Error fetching logged out devices: $e');
     }
   }
 
@@ -172,13 +170,6 @@ class _RegisterDevicePageState extends State<RegisterDevicePage> {
                                 String? fcmToken =
                                     await FirebaseMessaging.instance.getToken();
 
-                                print(await BackendService().post(
-                                  '/api/devices/update-fcm-token',
-                                  body: {
-                                    'deviceName': device['device_name'],
-                                    'fcmToken': fcmToken,
-                                  },
-                                ));
 
                                 Navigator.of(context).pushReplacement(
                                   CupertinoPageRoute(

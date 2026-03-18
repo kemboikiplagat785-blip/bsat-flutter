@@ -49,7 +49,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
 
     if (result != null && result is Map) {
       // Assuming the device object has a 'device_name' or 'name' field
-      print("Search result: $result");
       String? targetName = result['device_name'];
       if (targetName != null) {
         setState(() {
@@ -71,7 +70,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
       return;
     }
 
-    print("Pairing Error: My device name is not available, $myDeviceName");
 
     if (myDeviceName == "Loading..." || myDeviceName == "Unknown") {
       showErrorDialog(
@@ -90,7 +88,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
         'targetDeviceName': _targetDeviceController.text,
       });
 
-      print('myDeviceName: $myDeviceName, targetDeviceName: ${_targetDeviceController.text}');
 
       // Hide loading dialog
       if (mounted) Navigator.pop(context);
@@ -111,7 +108,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
                 errorMessage;
           }
 
-          print("Pairing Error: $errorMessage");
           showErrorDialog(context, "Error", errorMessage);
         }
       }
@@ -130,7 +126,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
           .get('/api/devices/paired-devices?myDeviceName=$myDeviceName');
       if (response['success'] && mounted) {
         _pairedDevices = response['data']['pairedDevices'] ?? [];
-        print("Paired Devices: $_pairedDevices");
         // You can set this to state and display in the UI if needed
         setState(() {});
       }

@@ -21,7 +21,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Change the category of your transactions(s) to:'),
+            const Text('Change the category of your transaction(s) to:'),
             const SizedBox(height: kPagePadding / 2),
             Wrap(
               spacing: 10,

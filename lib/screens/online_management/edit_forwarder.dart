@@ -43,7 +43,6 @@ class _EditForwarderState extends State<EditForwarder> {
       );
 
       if (results.isNotEmpty) {
-        print("Fetched Forwarded Device: ${results.first}");
         setState(() {
           deviceToReceive = results.first;
           amountsToForward = List<int>.from(
@@ -56,7 +55,6 @@ class _EditForwarderState extends State<EditForwarder> {
   Future<void> postData() async {
     showLoadingDialog(context, text: "Saving...");
 
-    print("osting data with myDeviceName: $myDeviceName, targetDeviceName: ${deviceToReceive}");
 
      final backendService = BackendService();
 
@@ -71,7 +69,6 @@ class _EditForwarderState extends State<EditForwarder> {
         'targetDeviceName': deviceToReceive['device_name'],
       });
 
-      print("Pairing response: $response");
 
       if (!response['success']) {
         if (mounted) {
@@ -106,7 +103,6 @@ class _EditForwarderState extends State<EditForwarder> {
         'amounts_to_forward': jsonEncode(amountsToForward),
       };
 
-      print("Updating Forwarded Device ID: ${widget.dbId}");
 
       int updatedId = await SQLiteService().updateStuff(
         updatedData,
@@ -115,7 +111,6 @@ class _EditForwarderState extends State<EditForwarder> {
         'forwardingDevices',
       );
 
-      print("Updated Forwarded Device ID: $updatedId");
     } else {
       Map<String, dynamic> newData = {
         'device_id': deviceToReceive['device_id'],

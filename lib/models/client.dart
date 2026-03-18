@@ -1,3 +1,7 @@
+import 'package:intl/intl.dart';
+
+import '../services/sms_sevice.dart';
+
 class Client {
   final int? id;
   final String firstName;
@@ -30,6 +34,35 @@ class Client {
     };
   }
 
+  // get client from MPESA SMS
+  factory Client.fromMpesaMessage(String message) {
+    // This is a very basic implementation and should be improved with proper parsing logic
+    // Example MPESA message: "You have received Ksh 500 from John Doe 0712345678 on 01/01/2024. Your new balance is Ksh 1500."
+    try {
+      String name = getName(message);
+      String phone = '0${extract9DigitNumber(message)}';
+
+      List<String> nameParts = name.split(' ');
+      String firstName = nameParts.first;
+      String lastName =
+          nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+
+      DateTime createdAt = DateTime.now();
+
+      return Client(
+        firstName: firstName,
+        lastName: lastName,
+        phoneNumber: phone,
+        createdAt: createdAt,
+        lastBought: createdAt,
+        noOfPurchases: 1,
+      );
+    } catch (e) {
+      print('Error parsing MPESA message: $e');
+      throw e;
+    }
+  }
+
   // Create Client from Map (for database queries)
   factory Client.fromMap(Map<String, dynamic> map) {
     return Client(
@@ -38,14 +71,14 @@ class Client {
       lastName: map['lastName'] ?? '',
       phoneNumber: map['phoneNumber'] ?? '',
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
-      lastBought: map['lastBought'] != null 
+      lastBought: map['lastBought'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['lastBought'])
           : null,
       noOfPurchases: map['noOfPurchases'] ?? 0,
     );
   }
 
-  // fromTransaction. 
+  // fromTransaction.
   // get client number from transaction's phone number
   // and find
 
@@ -62,7 +95,8 @@ class Client {
     if (cleaned.startsWith('0') && cleaned.length == 10) {
       return cleaned;
     }
-    if (cleaned.length == 9 && (cleaned.startsWith('7') || cleaned.startsWith('1'))) {
+    if (cleaned.length == 9 &&
+        (cleaned.startsWith('7') || cleaned.startsWith('1'))) {
       return '0$cleaned';
     }
     if (cleaned.length == 10 && cleaned.startsWith('7')) {

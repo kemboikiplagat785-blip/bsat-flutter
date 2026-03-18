@@ -1,3 +1,4 @@
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -5,13 +6,17 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:io';
 import 'package:bsat/utils/logger.dart';
 import 'package:bsat/services/backend_service.dart';
+import 'package:bsat/services/auth_service.dart';
+import 'package:bsat/screens/online_management/login.dart';
 
 // Assuming these imports remain the same
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/theme.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/kill_switch_service.dart';
 import '../../utils/constants.dart';
+import 'kill_switch.dart';
 
 class SettingsPage extends StatefulWidget {
   final bool isDashboard;
@@ -199,6 +204,65 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: const Icon(CupertinoIcons.delete,
                   color: Colors.redAccent, size: 20),
               onTap: _handleDeleteHistory,
+            ),
+          ]),
+          _buildSectionTitle('About'),
+          _buildGroup([
+            ListTile(
+              title: const Text('App Version'),
+              subtitle: FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Text('Loading...');
+                  } else if (snapshot.hasError) {
+                    return const Text('Error loading version');
+                  } else {
+                    return Text(snapshot.data?.version ?? 'Unknown');
+                  }
+                },
+              ),
+            ),
+            // check for updates. killswitch page
+            ListTile(
+              title: const Text('Check for updates'),
+              trailing: const Icon(CupertinoIcons.refresh,
+                  color: kPrimaryColor, size: 20),
+              onTap: () {
+                String arch = 'unknown';
+                DeviceInfoPlugin().androidInfo.then((info) {
+                  switch (info.supportedAbis.first) {
+                    case 'arm64-v8a':
+                      arch = 'arm64';
+                      break;
+                    case 'armeabi-v7a':
+                      arch = 'armeabi';
+                      break;
+                    case 'x86_64':
+                      arch = 'x86_64';
+                      break;
+                    case 'x86':
+                      arch = 'x86';
+                      break;
+                    default:
+                      return 'unknown';
+                  }
+                });
+
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => KillswitchScreen(
+                      config: KillswitchConfig(
+                        updateUrl: 'https://api.bsat.co.ke/api/general/download-app?arch_type=$arch',
+                        message: '',
+                        daysRemaining: 1000,
+                        enforcement: KillswitchEnforcement.safe,
+                      ),
+                      isDismissible: true,
+                    ),
+                  ),
+                );
+              },
             ),
           ]),
           const SizedBox(height: 50),
@@ -390,6 +454,35 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _handleSendLogs() async {
     try {
+      final isLoggedIn = await AuthService().isLoggedIn();
+      if (!isLoggedIn) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Login Required'),
+            content: const Text(
+                'You need to be logged in to send logs to the developer.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const LoginPage()),
+                  );
+                },
+                child: const Text('Login'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
       if (BsatLogger.logFile != null && await BsatLogger.logFile!.exists()) {
         final content = await BsatLogger.logFile!.readAsString();
         if (content.isEmpty) {
@@ -401,7 +494,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
         final deviceName = await sharedPreferencesService.getDeviceName();
         final response = await BackendService().post(
-          '/devices/logs',
+          '/api/devices/logs',
           body: {
             'deviceName': deviceName ?? 'Unknown Device',
             'logs': content,
@@ -416,7 +509,9 @@ class _SettingsPageState extends State<SettingsPage> {
           await BsatLogger.logFile!.writeAsString('');
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed: ${response['message'] ?? 'Unknown error'}')),
+            SnackBar(
+                content:
+                    Text('Failed: ${response['message'] ?? 'Unknown error'}')),
           );
         }
       } else {

@@ -131,16 +131,13 @@ class PhoneService {
   Future<int> getAirtimeBalance({int subscriptionId = -9}) async {
     try {
       if (subscriptionId == -9) {
-        subscriptionId =
-            (await SQLiteService().queryAll('transactions', orderBy: 'id DESC'))
-                    .first['simSubId'] ??
-                -1;
+        subscriptionId = await mostCommonDialSim();
       }
 
       final res = await makeMyRequest("*144#", subscriptionId);
       final raw = res.isNotEmpty ? res[0] : '';
       return airtimeBalExtract(raw.toString());
-    } catch (e, st) {
+    } catch (e) {
       debugPrint('getAirtimeBalance error: $e');
       return 0;
     }

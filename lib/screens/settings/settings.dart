@@ -17,6 +17,7 @@ import '../../providers/theme_provider.dart';
 import '../../services/kill_switch_service.dart';
 import '../../utils/constants.dart';
 import 'kill_switch.dart';
+import 'updater.dart';
 
 class SettingsPage extends StatefulWidget {
   final bool isDashboard;
@@ -251,15 +252,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => KillswitchScreen(
-                      config: KillswitchConfig(
-                        updateUrl: 'https://api.bsat.co.ke/api/general/download-app?arch_type=$arch',
-                        message: '',
-                        daysRemaining: 1000,
-                        enforcement: KillswitchEnforcement.safe,
-                      ),
-                      isDismissible: true,
-                    ),
+                    builder: (context) => 
+                    // KillswitchScreen(
+                    //   config: KillswitchConfig(
+                    //     updateUrl: 'https://api.bsat.co.ke/api/general/download-app?arch_type=$arch',
+                    //     message: '',
+                    //     daysRemaining: 1000,
+                    //     enforcement: KillswitchEnforcement.safe,
+                    //   ),
+                    ApkDownloaderPage(),
                   ),
                 );
               },

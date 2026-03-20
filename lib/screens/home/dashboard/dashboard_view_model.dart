@@ -10,6 +10,7 @@ import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../services/kill_switch_service.dart';
@@ -199,6 +200,8 @@ class DashboardViewModel extends ChangeNotifier {
       airtimeBalance = '...';
       final bal = await _phoneService.getAirtimeBalance();
       airtimeBalance = bal.toString();
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('airtimeBalance', bal);
     }
 
     if (!hideCommission) {

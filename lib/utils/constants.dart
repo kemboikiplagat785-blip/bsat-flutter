@@ -5,7 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 const kPagePadding = 20.0;
 const kAdDividerHeight = 16.0;
 const kInputElementHeight = 48.0;
-const kBorderRadius = 6.0;
+const kBorderRadius = 16.0;
 
 const kPagePaddingInsets = EdgeInsets.all(kPagePadding);
 

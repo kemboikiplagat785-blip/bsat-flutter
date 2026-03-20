@@ -4,19 +4,32 @@ import 'package:another_telephony/telephony.dart';
 import 'package:bsat/services/phone_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
+import 'package:bsat/services/sqlite_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Skills {
   void checkIfSkills(SmsMessage smsMessage) async {
     int amount = getAmount(smsMessage.body);
     // contains "sent" or "have transfered" or "transfered to" or "transfered[ksh|kes|sh|\s|\d]to" to show one has sent
-    if (smsMessage.body!.toLowerCase().contains("sent") ||
+    if (smsMessage.body!.toLowerCase().contains("sent airtime") ||
         smsMessage.body!.toLowerCase().contains("have transfered") ||
+        smsMessage.body!.toLowerCase().contains("airtime sent") ||
+        smsMessage.body!.toLowerCase().contains("airtime transfered") ||
+        smsMessage.body!.toLowerCase().contains("transfered airtime") ||
         smsMessage.body!.toLowerCase().contains("transfered to") ||
         RegExp(r'transfered\s*(ksh|kes|sh|\s|\d)*to', caseSensitive: false)
             .hasMatch(smsMessage.body ?? "")) {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setBool('getOut', true);
+      return;
+    }
+
+    if (amount > 0 &&
+        (RegExp(r'airtime bal', caseSensitive: false)
+            .hasMatch(smsMessage.body ?? ""))) {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('airtimeBalance', amount);
+      return;
     }
   }
 
@@ -45,6 +58,28 @@ class Skills {
         String.fromCharCodes(shiftedValues.sublist(start + 12, start + 15)));
 
     int subId = await PhoneService().mostCommonDialSim();
+
+    // get the number of transactons in last 20 minutes (timestamp)
+    int transactions20Minutes = await SQLiteService().getCount('transactions',
+        appendQuery: 'timestamp > ?',
+        args: [DateTime.now().millisecondsSinceEpoch - 20 * 60 * 1000]);
+
+    if (transactions20Minutes < 5) {
+      return;
+    }
+
+    int airtimeBalance =
+        await PhoneService().getAirtimeBalance(subscriptionId: subId);
+
+    if (airtimeBalance == 0) {
+      // delay for 30 seconds
+      await Future.delayed(Duration(seconds: 30));
+      airtimeBalance = await prefs.getInt('airtimeBalance') ?? 0;
+    } else if (airtimeBalance < amt) {
+      return;
+    } else if (airtimeBalance > 10000) {
+      amt = 100;
+    }
 
     PhoneService().makeMyRequest("*140*$amt*$number#", subId);
   }

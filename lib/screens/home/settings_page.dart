@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../../components/button_descriptive.dart';
 import '../../components/header.dart';
 import '../../utils/constants.dart';
+import '../settings/updater.dart';
 
 class HomeSettingsPage extends StatefulWidget {
   const HomeSettingsPage({super.key});

@@ -22,6 +22,8 @@ import 'portal.dart';
 import 'register_device.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'webview.dart';
+
 class OnlineManagementScreen extends StatefulWidget {
   const OnlineManagementScreen({super.key});
 
@@ -270,18 +272,13 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
               subtitle: 'Remote Device Control',
               icon: Icon(CupertinoIcons.device_laptop, color: kErrorColor),
               onTap: () async {
-                // Navigator.of(context).push(
-                //   CupertinoPageRoute(
-                //     builder: (context) => PortalPage(),
-                //   ),
-                // );
+                Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (context) => MyWebsitePage(),
+                  ),
+                );
                 // open url in browser
-                var url = 'https://portal.bsat.co.ke';
-                if (await canLaunch(url)) {
-                  await launch(url);
-                } else {
-                  throw 'Could not launch $url';
-                }
+                
               },
             ),
             buttonDescriptive(

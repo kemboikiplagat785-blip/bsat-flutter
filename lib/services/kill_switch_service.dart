@@ -68,7 +68,7 @@ class KillswitchService {
         fetchSuccess = true;
       }
     } catch (e) {
-      print('Failed to fetch remote config: $e');
+      // print('Failed to fetch remote config: $e');
     }
 
     // 3. Check the 14-Day Offline Limit
@@ -87,7 +87,6 @@ class KillswitchService {
               "Please connect to the internet temporarily to check for updates and continue using the app.",
           updateUrl: '',
         );
-        _maybeExitForEnforcement(cfg.enforcement);
         return cfg;
       }
     }
@@ -131,23 +130,6 @@ class KillswitchService {
       message: killMessage,
       updateUrl: updateUrl,
     );
-    _maybeExitForEnforcement(cfg.enforcement);
     return cfg;
-  }
-
-  /// If enforcement requires immediate app termination, exit the process.
-  /// Uses `exit(0)` which forcefully terminates the Dart VM; this is intended
-  /// for strict killswitch scenarios where the app must not continue.
-  static void _maybeExitForEnforcement(KillswitchEnforcement enforcement) {
-    if (enforcement == KillswitchEnforcement.hardKill ||
-        enforcement == KillswitchEnforcement.offlineLockout) {
-      try {
-        print('Killswitch enforcement triggered: $enforcement. Exiting app.');
-        exit(0);
-      } catch (e) {
-        // If exit fails for any reason, just log and continue.
-        print('Failed to exit app for killswitch: $e');
-      }
-    }
   }
 }

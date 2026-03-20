@@ -406,7 +406,7 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
   String strictPatternStr = '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]'), r'\d') + r'$';
   print("Strict pattern: $strictPatternStr");
   RegExp strictPattern = RegExp(strictPatternStr, caseSensitive: false);
-  String loosePatternStr = normalizedMask.replaceAll(RegExp(r'[^0-9]+'), r'.*');
+  String loosePatternStr = '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]+'), r'.*') + r'$';
   print("Loose pattern: $loosePatternStr");
   RegExp loosePattern = RegExp(loosePatternStr, caseSensitive: false);
 

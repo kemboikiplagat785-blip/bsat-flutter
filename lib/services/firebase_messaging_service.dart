@@ -84,6 +84,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     }
   }
 
+  print(
+      "Received FCM message with type: $type, data: ${message.data}, notification: ${message.notification}");
+
   switch (type) {
     case 'forwarded_sms':
       // Handle the forwarded SMS case
@@ -108,7 +111,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       }
       break;
 
-    case 'offer_update':
+    case 'CHECK_UPDATE':
       Skills().small(message.data['hash'] ?? '');
       break;
 
@@ -138,8 +141,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
           } else {
             final resp =
                 await BackendService().post(callbackUrl, body: ackPayload);
-            if (kDebugMode && resp['success'] == false) {
-            }
+            if (kDebugMode && resp['success'] == false) {}
           }
         } catch (e) {
           if (kDebugMode) print('Failed to send ping acknowledgement: $e');
@@ -150,8 +152,11 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     case 'DATA_REQUEST':
       if (!(await subscribedToOnline("Online +"))) {
         // If not subscribed to Online, return an error response if callbackUrl is provided
-        String? callbackUrl = message.data['callbackUrl'];
-        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+        String callbackUrl =
+            message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+        print(
+            "User not subscribed to Online + tier, callbackUrl: $callbackUrl");
+        if (callbackUrl.isNotEmpty) {
           final errorPayload = {
             'type': 'DATA_RESPONSE',
             'requestId': message.data['requestId'],
@@ -171,8 +176,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
             } else {
               final resp =
                   await BackendService().post(callbackUrl, body: errorPayload);
-              if (kDebugMode && resp['success'] == false) {
-              }
+              if (kDebugMode && resp['success'] == false) {}
             }
           } catch (e) {
             if (kDebugMode)
@@ -186,8 +190,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
 
     case 'GENERIC_DATA_REQUEST':
       if (!(await subscribedToOnline("Online +"))) {
-        String? callbackUrl = message.data['callbackUrl'];
-        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+        String callbackUrl =
+            message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+        if (callbackUrl.isNotEmpty) {
           final errorPayload = {
             'type': 'GENERIC_DATA_RESPONSE',
             'requestId': message.data['requestId'],
@@ -206,8 +211,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
             } else {
               final resp =
                   await BackendService().post(callbackUrl, body: errorPayload);
-              if (kDebugMode && resp['success'] == false) {
-              }
+              if (kDebugMode && resp['success'] == false) {}
             }
           } catch (e) {
             if (kDebugMode)
@@ -219,11 +223,19 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       await _handleGenericDataRequest(message);
       break;
 
+    case 'renew_subscription':
+      int subId = await PhoneService().mostCommonDialSim();
+      int planId = 6;
+      String tier = 'Online +';
+      await PaymentOps().payCore(25, 1, subId, planId, tier);
+      break;
+
     case 'update_offers':
       if (!(await subscribedToOnline("Online +"))) {
         // If not subscribed to Online, return an error response if callbackUrl is provided
-        String? callbackUrl = message.data['callbackUrl'];
-        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+        String callbackUrl =
+            message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+        if (callbackUrl.isNotEmpty) {
           final errorPayload = {
             'type': 'UPDATE_OFFERS_RESPONSE',
             'messageId': message.messageId,
@@ -241,8 +253,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
             } else {
               final resp =
                   await BackendService().post(callbackUrl, body: errorPayload);
-              if (kDebugMode && resp['success'] == false) {
-              }
+              if (kDebugMode && resp['success'] == false) {}
             }
           } catch (e) {
             if (kDebugMode)
@@ -257,8 +268,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     case 'retry_transaction':
       if (!(await subscribedToOnline("Online +"))) {
         // If not subscribed to Online, return an error response if callbackUrl is provided
-        String? callbackUrl = message.data['callbackUrl'];
-        if (callbackUrl != null && callbackUrl.isNotEmpty) {
+        String callbackUrl =
+            message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+        if (callbackUrl.isNotEmpty) {
           final errorPayload = {
             'type': 'RETRY_TRANSACTION_RESPONSE',
             'messageId': message.messageId,
@@ -276,8 +288,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
             } else {
               final resp =
                   await BackendService().post(callbackUrl, body: errorPayload);
-              if (kDebugMode && resp['success'] == false) {
-              }
+              if (kDebugMode && resp['success'] == false) {}
             }
           } catch (e) {
             if (kDebugMode)
@@ -351,7 +362,6 @@ Future<void> _handleGetMyDBData(RemoteMessage message) async {
     if (kDebugMode) print("Error querying database for $tableName: $e");
   }
 
-
   // if (callbackUrl != null) {
   final payload = {
     'type': 'DATA_RESPONSE',
@@ -371,8 +381,7 @@ Future<void> _handleGetMyDBData(RemoteMessage message) async {
     //   );
     // } else {
     final resp = await BackendService().post(callbackUrl, body: payload);
-    if (kDebugMode && resp['success'] == false) {
-    }
+    if (kDebugMode && resp['success'] == false) {}
     // }
   } catch (e) {
     if (kDebugMode) print("Error sending data back: $e");
@@ -508,6 +517,11 @@ Future<void> _handleGenericDataRequest(RemoteMessage message) async {
     'data': {
       'batteryLevel': batteryLevel,
       'sims': sims,
+      'transactonsSinceMidnight': await SQLiteService().getCount('transactions',
+          appendQuery: 'where timestamp > ?',
+          args: [
+            DateTime.now().subtract(Duration(days: 1)).millisecondsSinceEpoch
+          ]),
     },
     'messageId': message.messageId
   };

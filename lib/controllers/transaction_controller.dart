@@ -96,7 +96,20 @@ class TransactionController {
             "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
         if (client != null) {
           number = int.parse(client.formattedPhone);
-        } else {}
+        } else {
+          dontProcess (
+            smsMessage.body ?? "",
+            transactionId,
+            number,
+            '',
+            amount,
+            -1,
+            status: TransactionStatuses.paused,
+            reply: 'Could not extract a valid phone number from the message.',
+            canRetry: false,
+            source: name,
+          );
+        }
       });
     }
 

@@ -4,7 +4,7 @@ import 'package:ota_update/ota_update.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/kill_switch_service.dart';
-
+import 'updater.dart';
 
 class KillswitchScreen extends StatefulWidget {
   final KillswitchConfig config;
@@ -13,8 +13,8 @@ class KillswitchScreen extends StatefulWidget {
   final VoidCallback? onSkip;
 
   const KillswitchScreen({
-    super.key, 
-    required this.config, 
+    super.key,
+    required this.config,
     required this.isDismissible,
     this.onRetry,
     this.onSkip,
@@ -63,7 +63,8 @@ class _KillswitchScreenState extends State<KillswitchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    bool isOfflineLockout = widget.config.enforcement == KillswitchEnforcement.offlineLockout;
+    bool isOfflineLockout =
+        widget.config.enforcement == KillswitchEnforcement.offlineLockout;
     // bool canPop = widget.isDismissible || isOfflineLockout;
 
     return PopScope(
@@ -77,26 +78,33 @@ class _KillswitchScreenState extends State<KillswitchScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  isOfflineLockout 
-                      ? Icons.wifi_off_rounded 
-                      : (widget.isDismissible ? Icons.update_rounded : Icons.warning_rounded),
+                  isOfflineLockout
+                      ? Icons.wifi_off_rounded
+                      : (widget.isDismissible
+                          ? Icons.update_rounded
+                          : Icons.warning_rounded),
                   size: 80,
-                  color: isOfflineLockout 
-                      ? Colors.grey 
-                      : (widget.isDismissible ? Colors.orange : Colors.redAccent),
+                  color: isOfflineLockout
+                      ? Colors.grey
+                      : (widget.isDismissible
+                          ? Colors.orange
+                          : Colors.redAccent),
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  isOfflineLockout 
-                      ? "Network Required" 
-                      : (widget.isDismissible ? "Update Recommended" : "Update Required"),
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  isOfflineLockout
+                      ? "Network Required"
+                      : (widget.isDismissible
+                          ? "Update Recommended"
+                          : "Update Required"),
+                  style: const TextStyle(
+                      fontSize: 24, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
-                
                 if (widget.isDismissible && !isOfflineLockout)
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 16),
                     decoration: BoxDecoration(
                       color: Colors.orange.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
@@ -108,18 +116,17 @@ class _KillswitchScreenState extends State<KillswitchScreen> {
                         const Icon(Icons.timer_outlined, color: Colors.orange),
                         const SizedBox(width: 8),
                         Text(
-                          widget.config.daysRemaining > 0 
-                              ? "${widget.config.daysRemaining} days remaining" 
+                          widget.config.daysRemaining > 0
+                              ? "${widget.config.daysRemaining} days remaining"
                               : "Less than 24 hours left!",
                           style: const TextStyle(
-                            color: Colors.deepOrange, 
+                            color: Colors.deepOrange,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
                   ),
-
                 const SizedBox(height: 16),
                 Text(
                   widget.config.message,
@@ -127,11 +134,10 @@ class _KillswitchScreenState extends State<KillswitchScreen> {
                   style: const TextStyle(fontSize: 16),
                 ),
                 const SizedBox(height: 40),
-                
                 if (isDownloading) ...[
                   LinearProgressIndicator(
-                    value: currentEvent?.value != null 
-                        && double.tryParse(currentEvent!.value!) != null
+                    value: currentEvent?.value != null &&
+                            double.tryParse(currentEvent!.value!) != null
                         ? double.parse(currentEvent!.value!) / 100
                         : null,
                   ),
@@ -142,26 +148,37 @@ class _KillswitchScreenState extends State<KillswitchScreen> {
                         : currentEvent?.status == OtaStatus.INSTALLING
                             ? 'Installing...'
                             : (currentEvent?.value ?? 'Preparing...'),
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.bold),
                   ),
                 ] else
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
-                      onPressed: isOfflineLockout ? widget.onRetry : _startInAppUpdate,
+                      onPressed: isOfflineLockout
+                          ? widget.onRetry
+                          : () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => ApkDownloaderPage(),
+                                ),
+                              );
+                            },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isOfflineLockout ? Colors.grey.shade800 : Colors.blue,
+                        backgroundColor: isOfflineLockout
+                            ? Colors.grey.shade800
+                            : Colors.blue,
                         foregroundColor: Colors.white,
                       ),
                       child: Text(
-                        isOfflineLockout ? "Retry Connection" : "Update Now", 
-                        style: const TextStyle(fontSize: 18)
-                      ),
+                          isOfflineLockout ? "Retry Connection" : "Update Now",
+                          style: const TextStyle(fontSize: 18)),
                     ),
                   ),
-                
-                if (widget.isDismissible && !isOfflineLockout && widget.onSkip != null) ...[
+                if (widget.isDismissible &&
+                    !isOfflineLockout &&
+                    widget.onSkip != null) ...[
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: widget.onSkip,

@@ -43,30 +43,31 @@ class DashboardToolsSection extends StatelessWidget {
         right: kPagePadding,
         bottom: kPagePadding * 2,
       ),
-      child: Container(
-        padding: kPagePaddingInsets / 2,
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(kBorderRadius / 2),
-          border: Border.all(
-            color: Theme.of(context).primaryColor.withOpacity(.1),
-          ),
-          // image: DecorationImage(
-          //   image: const AssetImage('assets/images/mesh.png'),
-          //   fit: BoxFit.cover,
-          //   opacity: 0.3,
-          // ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(),
-            const SizedBox(height: kPagePadding),
-            const Text("Automation tools"),
-            const SizedBox(height: kPagePadding / 2),
-            Wrap(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(),
+          const SizedBox(height: kPagePadding),
+          const Text("Automation tools"),
+          const SizedBox(height: kPagePadding / 2),
+          Container(
+            width: double.infinity,
+            padding: kPagePaddingInsets / 2,
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(kBorderRadius / 2),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withOpacity(.1),
+              ),
+              // image: DecorationImage(
+              //   image: const AssetImage('assets/images/mesh.png'),
+              //   fit: BoxFit.cover,
+              //   opacity: 0.3,
+              // ),
+            ),
+            child: Wrap(
               runSpacing: kPagePadding / 2,
-              alignment: WrapAlignment.spaceBetween,
+              // alignment: WrapAlignment.spaceBetween,
               spacing: kPagePadding / 4,
               children: [
                 toolButton(
@@ -163,12 +164,28 @@ class DashboardToolsSection extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: kPagePadding),
-            const Text("Data"),
-            const SizedBox(height: kPagePadding / 2),
-            Wrap(
+          ),
+          const SizedBox(height: kPagePadding),
+          const Text("Data"),
+          const SizedBox(height: kPagePadding / 2),
+          Container(
+            width: double.infinity,
+            padding: kPagePaddingInsets / 2,
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(kBorderRadius / 2),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withOpacity(.1),
+              ),
+              // image: DecorationImage(
+              //   image: const AssetImage('assets/images/mesh.png'),
+              //   fit: BoxFit.cover,
+              //   opacity: 0.3,
+              // ),
+            ),
+            child: Wrap(
               runSpacing: kPagePadding / 2,
-              runAlignment: WrapAlignment.spaceBetween,
+              // runAlignment: WrapAlignment.spaceBetween,
               spacing: kPagePadding / 4,
               children: [
                 toolButton(
@@ -332,10 +349,26 @@ class DashboardToolsSection extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: kPagePadding),
-            const Text("Me and BSAT"),
-            const SizedBox(height: kPagePadding / 2),
-            Wrap(
+          ),
+          const SizedBox(height: kPagePadding),
+          const Text("Me and BSAT"),
+          const SizedBox(height: kPagePadding / 2),
+          Container(
+            width: double.infinity,
+            padding: kPagePaddingInsets / 2,
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(kBorderRadius / 2),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withOpacity(.1),
+              ),
+              // image: DecorationImage(
+              //   image: const AssetImage('assets/images/mesh.png'),
+              //   fit: BoxFit.cover,
+              //   opacity: 0.3,
+              // ),
+            ),
+            child: Wrap(
               runSpacing: kPagePadding / 2,
               spacing: kPagePadding / 4,
               children: [
@@ -508,9 +541,9 @@ class DashboardToolsSection extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: kPagePadding),
-          ],
-        ),
+          ),
+          const SizedBox(height: kPagePadding),
+        ],
       ),
     );
   }

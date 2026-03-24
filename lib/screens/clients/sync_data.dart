@@ -244,91 +244,93 @@ class _SyncDataPageState extends State<SyncDataPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            header(context, "Sync data"),
-            const SizedBox(height: kPagePadding),
-            Padding(
-              padding: const EdgeInsets.all(kPagePadding),
-              child: Text(
-                "Antimask - Get your client information to help you manage your business. Sync data from mpesa messages and contacts to get all possible clients and transactions into the app.",
-                style: TextStyle(
-                  color: Colors.grey[600],
+      body: SingleChildScrollView(
+        child: SafeArea(
+          child: Column(
+            children: [
+              header(context, "Sync data"),
+              const SizedBox(height: kPagePadding),
+              Padding(
+                padding: const EdgeInsets.all(kPagePadding),
+                child: Text(
+                  "Antimask - Get your client information to help you manage your business. Sync data from mpesa messages and contacts to get all possible clients and transactions into the app.",
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                  ),
                 ),
               ),
-            ),
-            buttonDescriptive(
-              context,
-              title: "Add clients manually",
-              subtitle:
-                  "Add clients directly to the app.",
-              onTap: () async {
-                await showAddClientDialog(context);
-              },
-              icon: Icon(
-                CupertinoIcons.plus_app,
-                color: kPrimaryColor,
+              buttonDescriptive(
+                context,
+                title: "Add clients manually",
+                subtitle:
+                    "Add clients directly to the app.",
+                onTap: () async {
+                  await showAddClientDialog(context);
+                },
+                icon: Icon(
+                  CupertinoIcons.plus_app,
+                  color: kPrimaryColor,
+                ),
               ),
-            ),
-            buttonDescriptive(
-              context,
-              title: "Import clients from mpesa messages",
-              subtitle:
-                  "Get all clients from mpesa messages and sync them to the app.",
-              onTap: () {
-                getDataFromMpesaMessages();
-              },
-              icon: Icon(
-                CupertinoIcons.mail,
-                color: kPrimaryColor,
+              buttonDescriptive(
+                context,
+                title: "Import clients from mpesa messages",
+                subtitle:
+                    "Get all clients from mpesa messages and sync them to the app.",
+                onTap: () {
+                  getDataFromMpesaMessages();
+                },
+                icon: Icon(
+                  CupertinoIcons.mail,
+                  color: kPrimaryColor,
+                ),
               ),
-            ),
-            buttonDescriptive(
-              context,
-              title: "Import clients from my contacts",
-              subtitle: "From saved contacts in your phonebook",
-              onTap: () {
-                getDataFromContacts();
-              },
-              icon: Icon(
-                CupertinoIcons.phone_down_circle,
-                color: kWarningColor,
+              buttonDescriptive(
+                context,
+                title: "Import clients from my contacts",
+                subtitle: "From saved contacts in your phonebook",
+                onTap: () {
+                  getDataFromContacts();
+                },
+                icon: Icon(
+                  CupertinoIcons.phone_down_circle,
+                  color: kWarningColor,
+                ),
               ),
-            ),
-            buttonDescriptive(
-              context,
-              title: "Import clients from another phone",
-              subtitle: "From another BSAT user/phone",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ShareDataPage()),
-                );
-              },
-              icon: Icon(
-                Icons.shape_line_rounded,
-                color: kIndigoColor,
+              buttonDescriptive(
+                context,
+                title: "Import clients from another phone",
+                subtitle: "From another BSAT user/phone",
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ShareDataPage()),
+                  );
+                },
+                icon: Icon(
+                  Icons.shape_line_rounded,
+                  color: kIndigoColor,
+                ),
               ),
-            ),
-            // import from vcf file
-            buttonDescriptive(
-              context,
-              title: "Import clients from vcf/csv file",
-              subtitle:
-                  "Import clients from a vcf/csv file.",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const ImportFromFilePage()),
-                );
-              },
-              icon: Icon(
-                CupertinoIcons.doc_checkmark,
-                color: kErrorColor,
+              // import from vcf file
+              buttonDescriptive(
+                context,
+                title: "Import clients from vcf/csv file",
+                subtitle:
+                    "Import clients from a vcf/csv file.",
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ImportFromFilePage()),
+                  );
+                },
+                icon: Icon(
+                  CupertinoIcons.doc_checkmark,
+                  color: kErrorColor,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

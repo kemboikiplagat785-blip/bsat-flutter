@@ -1,3 +1,5 @@
+import 'package:bsat/components/dialogs/add_client_dialog.dart';
+
 import "import_from_file.dart";
 import 'package:another_telephony/telephony.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
@@ -254,6 +256,19 @@ class _SyncDataPageState extends State<SyncDataPage> {
                 style: TextStyle(
                   color: Colors.grey[600],
                 ),
+              ),
+            ),
+            buttonDescriptive(
+              context,
+              title: "Add clients manually",
+              subtitle:
+                  "Add clients directly to the app.",
+              onTap: () async {
+                await showAddClientDialog(context);
+              },
+              icon: Icon(
+                CupertinoIcons.plus_app,
+                color: kPrimaryColor,
               ),
             ),
             buttonDescriptive(

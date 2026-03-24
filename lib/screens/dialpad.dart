@@ -1,5 +1,6 @@
 import 'package:bsat/components/dialogs/choose_sim.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
+import 'package:bsat/components/dialogs/add_client_dialog.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/utils/constants.dart';
@@ -154,6 +155,17 @@ class _DialPadScreenState extends State<DialPadScreen> {
                         ),
                       ),
                     ),
+                    if (clipboardContent.isNotEmpty)
+                      ElevatedButton.icon(
+                        onPressed: () => showAddClientDialog(context, phoneNumber: clipboardContent),
+                        icon: const Icon(CupertinoIcons.person_add, size: 16),
+                        label: const Text('Add Client'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          backgroundColor: kIndigoColor,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
                   ],
                 ),
               ),

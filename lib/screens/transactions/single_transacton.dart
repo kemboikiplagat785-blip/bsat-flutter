@@ -104,14 +104,17 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
               Padding(
                 padding: kPagePaddingInsets,
                 child: GestureDetector(
-                  onTap: () {
-                    Navigator.push(
+                  onTap: () async {
+                    final result = await Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
                             SingleClientPage(id: _client!.id ?? -1),
                       ),
                     );
+                    if (result == true) {
+                      getStuff();
+                    }
                   },
                   child: Container(
                     padding: kPagePaddingInsets,

@@ -34,6 +34,7 @@ dynamic _extractField(dynamic obj, String field) {
     return null;
   }
 }
+
 @pragma('vm:entry-point')
 onBackgroundMessage(dynamic message) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,8 +79,11 @@ onMessageReceive(dynamic smsMessage) async {
           date: date,
         ),
       );
-      // 
+      //
     }
+
+    await TransactionController().sortPleaseCallMe(smsMessage);
+
     int numb = extract9DigitNumber(addr);
     if (await SQLiteService().getCount(
           "processText",
@@ -228,11 +232,8 @@ int extract9DigitNumber(String messageBody) {
   return number;
 }
 
-
 String getReferenceCode(String messageBody) {
   RegExp referenceCodeRegex = RegExp(r'^[\w]*');
-
-  
 
   Match? referenceCodeMatch = referenceCodeRegex.firstMatch(messageBody);
   String referenceCode = referenceCodeMatch?.group(0) ?? "";
@@ -291,7 +292,7 @@ int getAmount(String? smsBody) {
 
   // if (amountWIthCommas == null) return 0; // <-- Fix: return 0 if not found
 
-  if(amountMatch == null) return 0;
+  if (amountMatch == null) return 0;
 
   int? amount = int.tryParse(amountMatch!);
 
@@ -304,7 +305,9 @@ int getAmount(String? smsBody) {
 String getName(String messageBody) {
   // Capture name gracefully, ignoring a possible masked or clear number starting with 01, 07, or 254
   // that appears right after "from". It skips the number and captures the name until a number follows.
-  RegExp nameRegex = RegExp(r'from\s+(?:(?:254|0[17])[\d\*xX\s]+)?\s*([A-Za-z\s]+)\s+\d', caseSensitive: false);
+  RegExp nameRegex = RegExp(
+      r'from\s+(?:(?:254|0[17])[\d\*xX\s]+)?\s*([A-Za-z\s]+)\s+\d',
+      caseSensitive: false);
   Match? nameMatch = nameRegex.firstMatch(messageBody);
   String name = nameMatch?.group(1)?.trim() ?? "";
 
@@ -368,7 +371,8 @@ Future<String> sendEvenInBackground(
 }
 
 Future<int> getBongaBalance(String text) async {
-  RegExp bongaRegex = RegExp(r'(bonga|balance)[\sa-zA-Z]+\s+(\d+)', caseSensitive: false);
+  RegExp bongaRegex =
+      RegExp(r'(bonga|balance)[\sa-zA-Z]+\s+(\d+)', caseSensitive: false);
   Match? bongaMatch = bongaRegex.firstMatch(text);
   String? bongaPoints = bongaMatch?.group(2);
 
@@ -383,19 +387,20 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
   print("Extracted name: $name, body: $body");
 
   String phoneOrMask = '';
-  
+
   RegExp regex = RegExp(r'(?:254|0)[17][\d\*xX]{8,12}', caseSensitive: false);
   Match? match = regex.firstMatch(body);
   if (match != null) {
-     phoneOrMask = match.group(0)!.replaceAll(RegExp(r'\s+'), '');
+    phoneOrMask = match.group(0)!.replaceAll(RegExp(r'\s+'), '');
   } else {
-      return null;
+    return null;
   }
 
   if (name.isEmpty && phoneOrMask.isEmpty) return null;
 
-  List<Map<String, dynamic>> allClients = await SQLiteService().queryAll('clients');
-  
+  List<Map<String, dynamic>> allClients =
+      await SQLiteService().queryAll('clients');
+
   String normalizedMask = phoneOrMask.replaceAll('+254', '0');
   if (normalizedMask.startsWith('254') && normalizedMask.length >= 11) {
     normalizedMask = '0${normalizedMask.substring(3)}';
@@ -403,20 +408,28 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
 
   print("Normalized mask: $normalizedMask");
 
-  String strictPatternStr = '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]'), r'\d') + r'$';
+  String strictPatternStr =
+      '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]'), r'\d') + r'$';
   print("Strict pattern: $strictPatternStr");
   RegExp strictPattern = RegExp(strictPatternStr, caseSensitive: false);
-  String loosePatternStr = '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]+'), r'.*') + r'$';
+  String loosePatternStr =
+      '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]+'), r'.*') + r'$';
   print("Loose pattern: $loosePatternStr");
   RegExp loosePattern = RegExp(loosePatternStr, caseSensitive: false);
 
   print(name);
-  var smsNameWords = name.toLowerCase().split(RegExp(r'\s+')).where((e) => e.length > 2).toSet();
+  var smsNameWords = name
+      .toLowerCase()
+      .split(RegExp(r'\s+'))
+      .where((e) => e.length > 2)
+      .toSet();
 
   for (var clientMap in allClients) {
     String clientPhone = (clientMap['phoneNumber'] ?? '').toString();
-    String clientFirstName = (clientMap['firstName'] ?? '').toString().toLowerCase();
-    String clientLastName = (clientMap['lastName'] ?? '').toString().toLowerCase();
+    String clientFirstName =
+        (clientMap['firstName'] ?? '').toString().toLowerCase();
+    String clientLastName =
+        (clientMap['lastName'] ?? '').toString().toLowerCase();
 
     String normClientPhone = clientPhone.replaceAll('+254', '0');
     if (normClientPhone.startsWith('254') && normClientPhone.length >= 11) {
@@ -425,8 +438,10 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
 
     bool phoneMatches = false;
     if (normalizedMask.contains(RegExp(r'[^0-9]'))) {
-      if (strictPattern.hasMatch(normClientPhone) || loosePattern.hasMatch(normClientPhone)) {
-        print("Phone matches for client ${clientFirstName} ${clientLastName} with phone $normClientPhone");
+      if (strictPattern.hasMatch(normClientPhone) ||
+          loosePattern.hasMatch(normClientPhone)) {
+        print(
+            "Phone matches for client ${clientFirstName} ${clientLastName} with phone $normClientPhone");
         phoneMatches = true;
       }
     } else {
@@ -437,23 +452,60 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
 
     if (phoneMatches) {
       String fullClientName = '$clientFirstName $clientLastName';
-      var clientNameWords = fullClientName.split(RegExp(r'\s+')).where((e) => e.length > 2).toSet();
+      var clientNameWords = fullClientName
+          .split(RegExp(r'\s+'))
+          .where((e) => e.length > 2)
+          .toSet();
       print("SMS name words: $smsNameWords");
       print("Client name words: $clientNameWords");
 
       // If it's a masked number, we MUST have some name overlap to map it confidently
       if (normalizedMask.contains(RegExp(r'[^0-9]'))) {
-         if (smsNameWords.intersection(clientNameWords).isNotEmpty) {
-           return Client.fromMap(clientMap);
-         }
+        if (smsNameWords.intersection(clientNameWords).isNotEmpty) {
+          return Client.fromMap(clientMap);
+        }
       } else {
-         // Direct exact number match, name match is a bonus but optional 
-         return Client.fromMap(clientMap);
+        // Direct exact number match, name match is a bonus but optional
+        return Client.fromMap(clientMap);
       }
     }
   }
 
   return null;
+}
+
+String? unmaskNumberInMessage(String number, String message) {
+  // First, explicitly check for Kenyan/MPesa-like masked numbers (07xx***xxx, 2547xx***xxx, etc.)
+  final RegExp mpesaMaskedPattern = RegExp(
+    r'(?:254|0|\+254)[17]\d*[\*xX]+[\d\*xX]*',
+    caseSensitive: false,
+  );
+
+  if (mpesaMaskedPattern.hasMatch(message)) {
+    return message.replaceAll(mpesaMaskedPattern, number);
+  }
+
+  // Strip non-numeric characters to safely get the last 3 digits
+  final cleanNumber = number.replaceAll(RegExp(r'\D'), '');
+
+  // If the number is too short, we can't reliably find a mask
+  if (cleanNumber.length < 3) {
+    return null;
+  }
+
+  final last3 = cleanNumber.substring(cleanNumber.length - 3);
+
+  final RegExp maskedPattern = RegExp(
+    r'(?:\+?\d{1,4}[\s\-]*)?(?:[\*Xx#]{1,4}[\s\-]*)+[\d\*Xx#\s\-]*' +
+        last3 +
+        r'\b',
+  );
+
+  if (!maskedPattern.hasMatch(message)) {
+    return null;
+  }
+
+  return message.replaceAll(maskedPattern, number);
 }
 
 Future<void> getAdvancedSms() async {}

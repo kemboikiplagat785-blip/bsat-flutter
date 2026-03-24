@@ -7,6 +7,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../components/button_descriptive.dart';
+import '../../components/dialogs/add_client_dialog.dart';
 import 'sync_data.dart';
 
 class ClientsPage extends StatefulWidget {
@@ -114,6 +115,21 @@ class _ClientsPageState extends State<ClientsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          await showAddClientDialog(context);
+          _getClients();
+        },
+        backgroundColor: kPrimaryColor,
+        foregroundColor: Colors.white,
+        child: const Icon(CupertinoIcons.add),
+      ),
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: () => _showAddClientDialog(context),
+      //   backgroundColor: kPrimaryColor,
+      //   foregroundColor: Colors.white,
+      //   child: const Icon(CupertinoIcons.add),
+      // ),
       body: Column(
         children: [
           header(context, "Clients"),
@@ -293,14 +309,17 @@ class _ClientsPageState extends State<ClientsPage> {
                           itemBuilder: (context, index) {
                             final client = _filteredClients[index];
                             return InkWell(
-                              onTap: () {
-                                Navigator.of(context).push(
+                              onTap: () async {
+                                await Navigator.of(context).push(
                                   MaterialPageRoute(
                                     builder: (context) => SingleClientPage(
                                       id: client.id!,
                                     ),
                                   ),
                                 );
+                                // if (result == true) {
+                                _getClients();
+                                // }
                               },
                               child: Card(
                                 margin: const EdgeInsets.only(

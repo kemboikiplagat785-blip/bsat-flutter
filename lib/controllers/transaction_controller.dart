@@ -94,10 +94,19 @@ class TransactionController {
       getMaskedPhoneNumber(smsMessage).then((client) {
         print(
             "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
-        if (client != null) {
-          number = int.parse(client.formattedPhone);
+        if (client?.formattedPhone != null) {
+          number = int.parse(client?.formattedPhone ?? "0");
+          smsMessage = TransactionMessage(
+            body: unmaskNumberInMessage(
+                client?.formattedPhone ?? "0", smsMessage.body ?? ""),
+            subscriptionId: smsMessage.subscriptionId,
+            date: smsMessage.date,
+          );
+
+          print(
+              "Extracted number from masked message: $number, new body: ${smsMessage.body}");
         } else {
-          dontProcess (
+          dontProcess(
             smsMessage.body ?? "",
             transactionId,
             number,
@@ -109,6 +118,11 @@ class TransactionController {
             canRetry: false,
             source: name,
           );
+          // print("0710183925659");
+
+          return; // this return isn't working as intended. The code below is still executing even when the number is invalid. Need to refactor to ensure that the function exits here.
+
+
         }
       });
     }
@@ -2028,5 +2042,40 @@ class TransactionController {
       isAdvanced: response.first['isAdvanced'] != 0,
       enabled: response.first['enabled'] != 0,
     );
+  }
+
+  // check if sms message has "please call" and if it does,
+  // extract the number from the address and look for a transaction
+  // that is TransactionStatuses.paused with that hashed number in the message
+  // and unmsk the message and return it
+  Future<String?> sortPleaseCallMe(SmsMessage message) async {
+    if (message.body != null &&
+        RegExp(r'please call', caseSensitive: false).hasMatch(message.body!)) {
+      int number = extract9DigitNumber(message.address ?? "");
+
+      // remove leading 254 if present
+      if (number.toString().startsWith('254')) {
+        number = int.parse(number.toString().substring(3));
+      }
+
+      List<Map<String, dynamic>> pausedTransactions = await _sqliteService
+          .queryCustom('transactions', 'status = ?',
+              [TransactionStatuses.paused]);
+
+      if (pausedTransactions.isNotEmpty) {
+        for (var transaction in pausedTransactions) {
+          String initialMessage = transaction['initialMessage'] ?? '';
+          String? unmaskedReply =
+              unmaskNumberInMessage('0$number', initialMessage);
+
+          if (unmaskedReply != null) {
+            await _sqliteService.deleteStuff(transaction['id'], 'transactions');
+            makeTransactionGivenSmsBody(unmaskedReply);
+            return unmaskedReply;
+          }
+        }
+      }
+    }
+    return null;
   }
 }

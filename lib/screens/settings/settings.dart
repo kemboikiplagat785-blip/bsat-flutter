@@ -43,6 +43,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool useSignature = false;
   bool autoSwitch = false;
+  bool forwardMaskedMessages = false;
 
   @override
   void initState() {
@@ -62,6 +63,8 @@ class _SettingsPageState extends State<SettingsPage> {
             .toString();
     useSignature = await sharedPreferencesService.getUseSignature() ?? false;
     autoSwitch = await sharedPreferencesService.getCanAutoSwitch() ?? false;
+    forwardMaskedMessages =
+        await sharedPreferencesService.getForwardMaskedMessages() ?? false;
 
     unavailableLimit =
         await sharedPreferencesService.getForwardUnavailableLimit() ?? 0;
@@ -105,28 +108,31 @@ class _SettingsPageState extends State<SettingsPage> {
               onSave: () => _saveField('Prefix', _postfixController.text,
                   sharedPreferencesService.setPostfixCOntactName),
             ),
-            Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
+          ]),
+          _buildSectionTitle('Forwarding & Automation'),
+          _buildGroup([
             _buildToggleTile(
-                label: 'Forward unavailable amounts',
-                value: unavailableLimit > 0,
-                onChanged: (val) async {
-                  if (!val) {
-                    // If turning off, set limit to 0
+              label: 'Forward unavailable amounts',
+              value: unavailableLimit > 0,
+              onChanged: (val) async {
+                if (!val) {
+                  // If turning off, set limit to 0
+                  await sharedPreferencesService.setForwardUnavailableLimit(0);
+                  setState(() => unavailableLimit = 0);
+                } else {
+                  // If turning on, set to a default value if it was previously 0
+                  if (unavailableLimit == 0) {
+                    unavailableLimit = 400; // Default value when enabling
                     await sharedPreferencesService
-                        .setForwardUnavailableLimit(0);
-                    setState(() => unavailableLimit = 0);
-                  } else {
-                    // If turning on, set to a default value if it was previously 0
-                    if (unavailableLimit == 0) {
-                      unavailableLimit = 400; // Default value when enabling
-                      await sharedPreferencesService
-                          .setForwardUnavailableLimit(unavailableLimit);
-                      _forwardUnavailableLimitController.text =
-                          unavailableLimit.toString();
-                    }
-                    setState(() => unavailableLimit = unavailableLimit);
+                        .setForwardUnavailableLimit(unavailableLimit);
+                    _forwardUnavailableLimitController.text =
+                        unavailableLimit.toString();
                   }
-                }),
+                  setState(() => unavailableLimit = unavailableLimit);
+                }
+              },
+            ),
+            // Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
             if (unavailableLimit > 0)
               _buildInputTile(
                 label: 'Forward Unavailable Limit',
@@ -134,14 +140,28 @@ class _SettingsPageState extends State<SettingsPage> {
                 hint: 'Highest "unavailable" amount that can be forwarded',
                 keyboardType: TextInputType.number,
                 onSave: () => _saveField(
-                    'Forward Limit',
-                    _forwardUnavailableLimitController.text,
-                    (val) => sharedPreferencesService
-                        .setForwardUnavailableLimit(int.parse(val))),
+                  'Forward Limit',
+                  _forwardUnavailableLimitController.text,
+                  (val) => sharedPreferencesService.setForwardUnavailableLimit(
+                    int.parse(val),
+                  ),
+                ),
               ),
+
+            _buildToggleTile(
+                label: 'Forward Unmasked Messages',
+                hint: 'Forward messages that are not masked.',
+                value: forwardMaskedMessages,
+                onChanged: (val) async {
+                  setState(() => forwardMaskedMessages = val);
+                  await sharedPreferencesService.setForwardMaskedMessages(val);
+                }),
+            // use signature to detect changes in messages. experimental
           ]),
           _buildSectionTitle('Risk detection'),
           _buildGroup([
+            // forward unmasked messages
+
             _buildToggleTile(
                 label: 'Detect code changes',
                 hint: 'Use signatures to detect if USSD code has changed.',
@@ -150,6 +170,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   setState(() => useSignature = val);
                   await sharedPreferencesService.setUseSignature(val);
                 }),
+
             if (useSignature)
               _buildToggleTile(
                   label: 'Auto-switch when change is detected',
@@ -179,17 +200,6 @@ class _SettingsPageState extends State<SettingsPage> {
           _buildThemeSelector(),
           _buildSectionTitle('Data Management'),
           _buildGroup([
-            _buildInputTile(
-              label: 'Auto-delete after (days)',
-              controller: _deleteDurationController,
-              hint: '0 to disable',
-              keyboardType: TextInputType.number,
-              onSave: () => _saveField(
-                  'Duration',
-                  _deleteDurationController.text,
-                  (val) => sharedPreferencesService
-                      .setAutoDeleteAfterNumberOfDays(int.parse(val))),
-            ),
             ListTile(
               title: const Text('Send Logs to Developer',
                   style: TextStyle(
@@ -198,6 +208,22 @@ class _SettingsPageState extends State<SettingsPage> {
                   color: Colors.blueAccent, size: 20),
               onTap: _handleSendLogs,
             ),
+            // divider
+            Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
+            // clear logs
+            ListTile(
+              title: const Text('Clear Logs',
+                  style: TextStyle(
+                      color: Colors.orangeAccent, fontWeight: FontWeight.w600)),
+              trailing: const Icon(CupertinoIcons.delete,
+                  color: Colors.orangeAccent, size: 20),
+              onTap: () async {
+                await BsatLogger.logFile?.writeAsString('');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Logs cleared')),
+                );
+              },
+            ),
             ListTile(
               title: const Text('Clear Transaction History',
                   style: TextStyle(
@@ -205,6 +231,17 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: const Icon(CupertinoIcons.delete,
                   color: Colors.redAccent, size: 20),
               onTap: _handleDeleteHistory,
+            ),
+            _buildInputTile(
+              label: 'Auto-delete transaction history after (days)',
+              controller: _deleteDurationController,
+              hint: '0 to disable',
+              keyboardType: TextInputType.number,
+              onSave: () => _saveField(
+                  'Duration',
+                  _deleteDurationController.text,
+                  (val) => sharedPreferencesService
+                      .setAutoDeleteAfterNumberOfDays(int.parse(val))),
             ),
           ]),
           _buildSectionTitle('About'),
@@ -252,15 +289,15 @@ class _SettingsPageState extends State<SettingsPage> {
 
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (context) => 
-                    // KillswitchScreen(
-                    //   config: KillswitchConfig(
-                    //     updateUrl: 'https://api.bsat.co.ke/api/general/download-app?arch_type=$arch',
-                    //     message: '',
-                    //     daysRemaining: 1000,
-                    //     enforcement: KillswitchEnforcement.safe,
-                    //   ),
-                    ApkDownloaderPage(),
+                    builder: (context) =>
+                        // KillswitchScreen(
+                        //   config: KillswitchConfig(
+                        //     updateUrl: 'https://api.bsat.co.ke/api/general/download-app?arch_type=$arch',
+                        //     message: '',
+                        //     daysRemaining: 1000,
+                        //     enforcement: KillswitchEnforcement.safe,
+                        //   ),
+                        ApkDownloaderPage(),
                   ),
                 );
               },

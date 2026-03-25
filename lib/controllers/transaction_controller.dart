@@ -48,10 +48,12 @@ class TransactionController {
   /// 8) Execute USSD: advanced or standard dial; derive transaction status.
   /// 9) Persist result to SQLite, emit replies, and auto-save contact when enabled.
 
-  Future<void> makeTransactionGivenSmsBody(String smsBody) async {
+  Future<void> makeTransactionGivenSmsBody(String smsBody,
+      {String? address}) async {
     TransactionMessage fakeMessage = TransactionMessage(
       body: smsBody,
       date: DateTime.now().millisecondsSinceEpoch,
+      address: address,
     );
 
     makeTransaction(fakeMessage);
@@ -90,7 +92,7 @@ class TransactionController {
         ? smsMessage.body!.substring(0, 160)
         : smsMessage.body!;
 
-    if (number == null || number == 0) {
+    if (number == 0) {
       var client = await getMaskedPhoneNumber(smsMessage);
       print(
           "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
@@ -103,40 +105,39 @@ class TransactionController {
           subscriptionId: smsMessage.subscriptionId,
           date: smsMessage.date,
         );
-
-        print(
-            "Extracted number from masked message: $number, new body: ${smsMessage.body}");
       } else {
+        if ((await _sharedPreferencesService.getForwardMaskedMessages() ??
+                false) &&
+            smsMessage.body != null) {
+          await forwardIfNeeded(
+            amount,
+            trimmedBody,
+            smsMessage.body ?? "",
+            transactionId,
+            number,
+            name,
+            autoSaveContacts,
+            status: TransactionStatuses.paused,
+          );
+        } else {
+          dontProcess(
+            smsMessage.body ?? "",
+            transactionId,
+            number,
+            '',
+            amount,
+            -1,
+            status: TransactionStatuses.paused,
+            reply: 'Could not extract a valid phone number from the message.',
+            canRetry: false,
+            source: name,
+          );
 
-        
-        if ((await forwardIfNeeded(
-          amount,
-          trimmedBody,
-          smsMessage.body ?? "",
-          transactionId,
-          number,
-          name,
-          autoSaveContacts,
-        ))) {
-          return;
+          if (smsMessage.address == "MPESA") {
+            sendEvenInBackground('334', smsMessage.body ?? "", sendFirstPartOnly: true);
+          }
         }
 
-        dontProcess(
-          smsMessage.body ?? "",
-          transactionId,
-          number,
-          '',
-          amount,
-          -1,
-          status: TransactionStatuses.paused,
-          reply: 'Could not extract a valid phone number from the message.',
-          canRetry: false,
-          source: name,
-        );
-
-        sendEvenInBackground('334', smsMessage.body ?? "");
-        
-        print(client?.formattedPhone == null);
         return;
       }
     }
@@ -177,6 +178,8 @@ class TransactionController {
 
       return;
     }
+
+    // if()
 
     if ((await forwardIfNeeded(
       amount,
@@ -588,14 +591,14 @@ class TransactionController {
   }
 
   Future<bool> forwardIfNeeded(
-    int amount,
-    String trimmedBody,
-    String smsMessageBody,
-    String transactionId,
-    int number,
-    String name,
-    bool autoSaveContacts,
-  ) async {
+      int amount,
+      String trimmedBody,
+      String smsMessageBody,
+      String transactionId,
+      int number,
+      String name,
+      bool autoSaveContacts,
+      {String? status}) async {
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
       "(amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)",
@@ -631,7 +634,7 @@ class TransactionController {
           '',
           amount,
           -1,
-          status: TransactionStatuses.forwarded,
+          status: status ?? TransactionStatuses.forwarded,
           reply: 'Forwarding to ${toForward[0]["numberToReceive"]}: $reply',
           canRetry: false,
           source: name,
@@ -2064,7 +2067,8 @@ class TransactionController {
   // and unmask the message and return it
   Future<String?> sortPleaseCallMe(SmsMessage message) async {
     if (message.body != null &&
-        RegExp(r'please call|tried to|tried calling', caseSensitive: false).hasMatch(message.body!)) {
+        RegExp(r'please call|tried to|tried calling', caseSensitive: false)
+            .hasMatch(message.body!)) {
       int number = extract9DigitNumber(message.address ?? "");
 
       // remove leading 254 if present
@@ -2094,26 +2098,26 @@ class TransactionController {
   }
 
   Future<String?> sort334Reply(SmsMessage smsMessage) async {
-      // reply might contain phone number. 
-      int number = extract9DigitNumber(smsMessage.body ?? "");
+    // reply might contain phone number.
+    int number = extract9DigitNumber(smsMessage.body ?? "");
 
-      if(number == 0) return null; 
+    if (number == 0) return null;
 
-      List<Map<String, dynamic>> transactions = await _sqliteService.queryCustom(
-        'transactions',
-        'status = ?',
-        [TransactionStatuses.paused],
-      );
+    List<Map<String, dynamic>> transactions = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ?',
+      [TransactionStatuses.paused],
+    );
 
-      for(var transaction in transactions) {
-        String initialMessage = transaction['initialMessage'] ?? '';
-        String? unmaskedReply = unmaskNumberInMessage('0$number', initialMessage);
+    for (var transaction in transactions) {
+      String initialMessage = transaction['initialMessage'] ?? '';
+      String? unmaskedReply = unmaskNumberInMessage('0$number', initialMessage);
 
-        if(unmaskedReply != null) {
-          await _sqliteService.deleteStuff(transaction['id'], 'transactions');
-          makeTransactionGivenSmsBody(unmaskedReply);
-          return unmaskedReply;
-        }
+      if (unmaskedReply != null) {
+        await _sqliteService.deleteStuff(transaction['id'], 'transactions');
+        makeTransactionGivenSmsBody(unmaskedReply);
+        return unmaskedReply;
       }
+    }
   }
 }

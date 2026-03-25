@@ -723,6 +723,27 @@ class SharedPreferencesService {
     return limit;
   }
 
+  Future<bool?> getForwardMaskedMessages() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    bool? forwardMasked = prefs.getBool("forward_masked_messages");
+    return forwardMasked;
+  }
+
+  Future<bool> setForwardMaskedMessages(bool forwardMasked) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setBool("forward_masked_messages", forwardMasked);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
   void printAll() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -732,4 +753,6 @@ class SharedPreferencesService {
       print('$key: $value');
     }
   }
+
+
 }

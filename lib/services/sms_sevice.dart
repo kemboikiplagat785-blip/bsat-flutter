@@ -83,7 +83,7 @@ onMessageReceive(dynamic smsMessage) async {
     }
 
     if (addr == "334") {
-      await TransactionController().sortPleaseCallMe(smsMessage);
+      await TransactionController().sort334Reply(smsMessage);
     }
 
     await TransactionController().sortPleaseCallMe(smsMessage);
@@ -111,6 +111,7 @@ onMessageReceive(dynamic smsMessage) async {
       body: body,
       subscriptionId: subscriptionId,
       date: date,
+      address: addr,
     ),
   );
 }

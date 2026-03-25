@@ -29,6 +29,9 @@ class USSDResponderService : AccessibilityService() {
         "com.transsion.widgetslib.dialog.PromptDialog", // Tecno devices
         "miuix.appcompat.app.AlertDialog", // XIAOMI & Redmi devices
         "miuix.appcompat.app.n", // XIAOMI & Redmi devices
+        "com.android.phone.MMIDialogActivity", // some oppo devices
+        "androidx.appcompat.app.n", // some oppo devices
+        // "android.app.ProgressDialog",
     )
 
     val allowedPackages = listOf(

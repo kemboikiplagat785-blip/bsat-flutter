@@ -10,6 +10,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:csv/csv.dart';
 
+import '../../components/dialogs/show_error_dialog.dart';
+import '../../components/dialogs/success_dialog.dart';
 import '../../components/header.dart';
 // import '../../components/button.dart';
 
@@ -103,7 +105,6 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
 
   Future<void> _processCSV() async {
     if (!mounted) return;
-    showLoadingDialog(context, text: "Importing contacts from CSV...");
 
     try {
       totalToProcess = csvTable.length - 1; // excluding header
@@ -122,8 +123,49 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
       }
 
       int addedCount = 0;
+      bool isCancelled = false;
+      ValueNotifier<int> itemsLeftNotifier = ValueNotifier(totalToProcess);
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (progressContext) {
+          return ValueListenableBuilder<int>(
+            valueListenable: itemsLeftNotifier,
+            builder: (valContext, value, child) {
+              return SimpleDialog(
+                children: [
+                  const SizedBox(height: kPagePadding),
+                  const Center(child: CupertinoActivityIndicator()),
+                  const SizedBox(height: kPagePadding),
+                  Center(
+                    child: Text(
+                      "Processing $value items ...",
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: kPagePadding),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        isCancelled = true;
+                        Navigator.pop(progressContext);
+                      },
+                      child: const Text(
+                        "Cancel",
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
 
       for (int i = 1; i < csvTable.length; i++) {
+        if (isCancelled) break;
         var row = csvTable[i];
         if (row.length <= phoneIndex) continue;
 
@@ -160,29 +202,32 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
           await SQLiteService().insertStuff(client.toMap(), 'clients');
           addedCount++;
         }
+
+        itemsLeftNotifier.value--;
       }
 
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
+      Navigator.pop(context); // Close progress dialog
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Successfully imported $addedCount clients!')),
-      );
+      if (isCancelled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Import cancelled')),
+        );
+      } else {
+        showSuccessDialog(context, text: "Successfully imported $addedCount clients!");
+      }
 
       Navigator.of(context).pop(); // Go back
 
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error importing from CSV: $e')),
-      );
+      Navigator.pop(context); // Close progress dialog
+      showErrorDialog(context, "",   "Error importing from CSV: $e");
     }
   }
 
   Future<void> _processVCF() async {
     if (!mounted) return;
-    showLoadingDialog(context, text: "Importing contacts from VCF...");
 
     try {
       final fileContent = await File(filePath!).readAsString();
@@ -191,8 +236,50 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
       // Matches BEGIN:VCARD to END:VCARD
       final cards = fileContent.split('BEGIN:VCARD');
       int addedCount = 0;
+      int totalCards = cards.length - 1; // excluding empty first element
+      bool isCancelled = false;
+      ValueNotifier<int> itemsLeftNotifier = ValueNotifier(totalCards);
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (progressContext) {
+          return ValueListenableBuilder<int>(
+            valueListenable: itemsLeftNotifier,
+            builder: (valContext, value, child) {
+              return SimpleDialog(
+                children: [
+                  const SizedBox(height: kPagePadding),
+                  const Center(child: CupertinoActivityIndicator()),
+                  const SizedBox(height: kPagePadding),
+                  Center(
+                    child: Text(
+                      "Processing $value items ...",
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: kPagePadding),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        isCancelled = true;
+                        Navigator.pop(progressContext);
+                      },
+                      child: const Text(
+                        "Cancel",
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
 
       for (String card in cards) {
+        if (isCancelled) break;
         if (card.trim().isEmpty) continue;
 
         String name = '';
@@ -234,20 +321,28 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
             addedCount++;
           }
         }
+
+        itemsLeftNotifier.value--;
       }
 
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context); // Close progress dialog
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Successfully imported $addedCount clients!')),
-      );
+      if (isCancelled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Import cancelled')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Successfully imported $addedCount clients!')),
+        );
+      }
 
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(); // Go back
 
     } catch (e) {
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context); // Close progress dialog
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error importing VCF: $e')),
       );

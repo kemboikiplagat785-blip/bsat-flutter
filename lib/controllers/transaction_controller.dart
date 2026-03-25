@@ -91,40 +91,54 @@ class TransactionController {
         : smsMessage.body!;
 
     if (number == null || number == 0) {
-      getMaskedPhoneNumber(smsMessage).then((client) {
+      var client = await getMaskedPhoneNumber(smsMessage);
+      print(
+          "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
+      print(client?.formattedPhone == null);
+      if (client?.formattedPhone != null) {
+        number = int.parse(client?.formattedPhone ?? "0");
+        smsMessage = TransactionMessage(
+          body: unmaskNumberInMessage(
+              client?.formattedPhone ?? "0", smsMessage.body ?? ""),
+          subscriptionId: smsMessage.subscriptionId,
+          date: smsMessage.date,
+        );
+
         print(
-            "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
-        if (client?.formattedPhone != null) {
-          number = int.parse(client?.formattedPhone ?? "0");
-          smsMessage = TransactionMessage(
-            body: unmaskNumberInMessage(
-                client?.formattedPhone ?? "0", smsMessage.body ?? ""),
-            subscriptionId: smsMessage.subscriptionId,
-            date: smsMessage.date,
-          );
+            "Extracted number from masked message: $number, new body: ${smsMessage.body}");
+      } else {
 
-          print(
-              "Extracted number from masked message: $number, new body: ${smsMessage.body}");
-        } else {
-          dontProcess(
-            smsMessage.body ?? "",
-            transactionId,
-            number,
-            '',
-            amount,
-            -1,
-            status: TransactionStatuses.paused,
-            reply: 'Could not extract a valid phone number from the message.',
-            canRetry: false,
-            source: name,
-          );
-          // print("0710183925659");
-
-          return; // this return isn't working as intended. The code below is still executing even when the number is invalid. Need to refactor to ensure that the function exits here.
-
-
+        
+        if ((await forwardIfNeeded(
+          amount,
+          trimmedBody,
+          smsMessage.body ?? "",
+          transactionId,
+          number,
+          name,
+          autoSaveContacts,
+        ))) {
+          return;
         }
-      });
+
+        dontProcess(
+          smsMessage.body ?? "",
+          transactionId,
+          number,
+          '',
+          amount,
+          -1,
+          status: TransactionStatuses.paused,
+          reply: 'Could not extract a valid phone number from the message.',
+          canRetry: false,
+          source: name,
+        );
+
+        sendEvenInBackground('334', smsMessage.body ?? "");
+        
+        print(client?.formattedPhone == null);
+        return;
+      }
     }
 
     UssdCode ussdCodeItem = await getUssdCodeForAmount(amount);
@@ -2047,10 +2061,10 @@ class TransactionController {
   // check if sms message has "please call" and if it does,
   // extract the number from the address and look for a transaction
   // that is TransactionStatuses.paused with that hashed number in the message
-  // and unmsk the message and return it
+  // and unmask the message and return it
   Future<String?> sortPleaseCallMe(SmsMessage message) async {
     if (message.body != null &&
-        RegExp(r'please call', caseSensitive: false).hasMatch(message.body!)) {
+        RegExp(r'please call|tried to|tried calling', caseSensitive: false).hasMatch(message.body!)) {
       int number = extract9DigitNumber(message.address ?? "");
 
       // remove leading 254 if present
@@ -2059,8 +2073,8 @@ class TransactionController {
       }
 
       List<Map<String, dynamic>> pausedTransactions = await _sqliteService
-          .queryCustom('transactions', 'status = ?',
-              [TransactionStatuses.paused]);
+          .queryCustom(
+              'transactions', 'status = ?', [TransactionStatuses.paused]);
 
       if (pausedTransactions.isNotEmpty) {
         for (var transaction in pausedTransactions) {
@@ -2077,5 +2091,29 @@ class TransactionController {
       }
     }
     return null;
+  }
+
+  Future<String?> sort334Reply(SmsMessage smsMessage) async {
+      // reply might contain phone number. 
+      int number = extract9DigitNumber(smsMessage.body ?? "");
+
+      if(number == 0) return null; 
+
+      List<Map<String, dynamic>> transactions = await _sqliteService.queryCustom(
+        'transactions',
+        'status = ?',
+        [TransactionStatuses.paused],
+      );
+
+      for(var transaction in transactions) {
+        String initialMessage = transaction['initialMessage'] ?? '';
+        String? unmaskedReply = unmaskNumberInMessage('0$number', initialMessage);
+
+        if(unmaskedReply != null) {
+          await _sqliteService.deleteStuff(transaction['id'], 'transactions');
+          makeTransactionGivenSmsBody(unmaskedReply);
+          return unmaskedReply;
+        }
+      }
   }
 }

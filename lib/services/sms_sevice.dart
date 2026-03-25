@@ -82,6 +82,10 @@ onMessageReceive(dynamic smsMessage) async {
       //
     }
 
+    if (addr == "334") {
+      await TransactionController().sortPleaseCallMe(smsMessage);
+    }
+
     await TransactionController().sortPleaseCallMe(smsMessage);
 
     int numb = extract9DigitNumber(addr);
@@ -306,13 +310,15 @@ String getName(String messageBody) {
   // Capture name gracefully, ignoring a possible masked or clear number starting with 01, 07, or 254
   // that appears right after "from". It skips the number and captures the name until a number follows.
   RegExp nameRegex = RegExp(
-      r'from\s+(?:(?:254|0[17])[\d\*xX\s]+)?\s*([A-Za-z\s]+)\s+\d',
-      caseSensitive: false);
+    // r'from\s+(?:(?:254|0[17])[\d\*xX\s]+)?\s*([A-Za-z\s]+)\s+\d',
+    r"from\s+(?:(?:254|0[17])[\d\*xX\s]+)?\s*([a-zA-Z\s']+)",
+    caseSensitive: false,
+  );
   Match? nameMatch = nameRegex.firstMatch(messageBody);
   String name = nameMatch?.group(1)?.trim() ?? "";
 
   if (name.isEmpty) {
-    nameRegex = RegExp(r'254[\dxX*]{9,12} ([A-Za-z\s]+)');
+    nameRegex = RegExp(r"254[\dxX*]{9,12} ([a-zA-Z\s']+)");
     nameMatch = nameRegex.firstMatch(messageBody);
     name = nameMatch?.group(1)?.trim() ?? "";
   }
@@ -323,6 +329,7 @@ String getName(String messageBody) {
 Future<String> sendEvenInBackground(
   String address,
   String message, {
+  bool sendFirstPartOnly = false,
   int? simSlot,
   bool checkIfSimilar = true,
 }) async {
@@ -365,6 +372,8 @@ Future<String> sendEvenInBackground(
       // //print("Failed");
       status = "Failed";
     }
+
+    if(sendFirstPartOnly) break;
   }
 
   return status;
@@ -481,8 +490,24 @@ String? unmaskNumberInMessage(String number, String message) {
     caseSensitive: false,
   );
 
-  if (mpesaMaskedPattern.hasMatch(message)) {
-    return message.replaceAll(mpesaMaskedPattern, number);
+  Match? match = mpesaMaskedPattern.firstMatch(message);
+  if (match != null) {
+    String maskedToken = match.group(0)!;
+
+    // Normalize both numbers for comparison
+    String normNum = number.replaceAll('+', '');
+    if (normNum.startsWith('254')) normNum = '0${normNum.substring(3)}';
+
+    String normMask =
+        maskedToken.replaceAll('+', '').replaceAll(RegExp(r'x|X|\*'), r'\d');
+    if (normMask.startsWith('254')) normMask = '0${normMask.substring(3)}';
+
+    // Check if the provided number actually matches this mask
+    if (RegExp('^$normMask\$').hasMatch(normNum)) {
+      return message.replaceFirst(maskedToken, number);
+    }
+
+    // If it's an M-PESA format but doesn't match the regex, do not replace it blindly.
   }
 
   // Strip non-numeric characters to safely get the last 3 digits

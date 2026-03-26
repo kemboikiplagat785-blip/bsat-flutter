@@ -84,6 +84,8 @@ class PhoneService {
       //   return [res, TransactionStatuses.advancedQueue];
       // }
 
+      print("Advanced USSD response: $res");
+
       if (!isGettingSignature) {
         if (res!.contains(RegExp(
             r'USSD session already in progress|duplicate sessions. rejecting new one',
@@ -109,9 +111,15 @@ class PhoneService {
         }
       }
 
+      String status = TransactionStatuses.advancedUssd;
+
+      if (res.isEmpty) {
+        status = TransactionStatuses.error;
+      }
+
       return [
         res,
-        TransactionStatuses.advancedUssd,
+        status,
         // response[0]['conversation'] ?? [] as List<Map<String, dynamic>>,
         response[0]['conversation'] != null
             ? (response[0]['conversation'] as List)
@@ -203,9 +211,9 @@ class PhoneService {
     //print("UssdSession(fl): sendUssdSequence: $fullCode, $subscriptionId");
     if (codeSignature != null) {
       generalUseCodeSignature =
-          await SharedPreferencesService().getUseSignature() ?? false;
+          await SharedPreferencesService().getUseSignature() ?? true;
       generalAutoSwitch =
-          await SharedPreferencesService().getCanAutoSwitch() ?? false;
+          await SharedPreferencesService().getCanAutoSwitch() ?? true;
     }
 // You can make this configurable if needed
     try {

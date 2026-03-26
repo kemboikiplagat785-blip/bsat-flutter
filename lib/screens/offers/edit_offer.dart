@@ -54,6 +54,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
   String _errorDialSim = '';
   String _errorFromSim = '';
 
+  bool _hasChanges = false;
+
   bool isAdvanced = false;
   bool usesBongaPoints = false;
   bool hasAcceptedProcedure = false;
@@ -73,6 +75,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
     acceptedProcedure: null,
     lastProcedure: null,
     importantSteps: [],
+    isActive: false,
+    autoSwitch: true,
   );
 
   void getAndProcessCards() async {
@@ -262,9 +266,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
           signature.sqlSavableForm(),
           'codeSignature',
         );
-
-      } catch (e) {
-      }
+      } catch (e) {}
     }
 
     // if (hasAcceptedProcedure) {
@@ -284,6 +286,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     _amountTextController.clear();
     _fallbackCodeTextController.clear();
     _balanceCheckCodeTextController.clear();
+    _hasChanges = false;
   }
 
   bool ussdSyntaxHaasError() {
@@ -319,16 +322,26 @@ class _EditOfferPageState extends State<EditOfferPage> {
             ? thisData['bongaPointsPerTransaction'].toString()
             : '60';
 
-    signature = CodeSignature.fromMap((await _sqliteService.queryCustom(
+    final loadedSignature =
+        CodeSignature.fromMap((await _sqliteService.queryCustom(
       'codeSignature',
       'ussdCodeId = ?',
       [widget.ruleId],
     ))
-        .first);
+            .first);
 
+    signature = signature.copyWith(
+      id: loadedSignature.id,
+      ussdCodeId: loadedSignature.ussdCodeId,
+      usdCode: loadedSignature.usdCode,
+      acceptedProcedure: loadedSignature.acceptedProcedure,
+      lastProcedure: loadedSignature.lastProcedure,
+      importantSteps: loadedSignature.importantSteps,
+      isActive: loadedSignature.isActive,
+      autoSwitch: loadedSignature.autoSwitch,
+    );
 
     importantSteps = signature.importantSteps;
-
 
     if (mounted) {
       setState(() {
@@ -338,14 +351,63 @@ class _EditOfferPageState extends State<EditOfferPage> {
     }
   }
 
+  void _addChangeListeners() {
+    _amountTextController.addListener(() => setState(() => _hasChanges = true));
+    _codeTextController.addListener(() => setState(() => _hasChanges = true));
+    _fallbackCodeTextController
+        .addListener(() => setState(() => _hasChanges = true));
+    _balanceCheckCodeTextController
+        .addListener(() => setState(() => _hasChanges = true));
+    _bongaPointsPerTransactionTextController
+        .addListener(() => setState(() => _hasChanges = true));
+    signatureTestNumberController
+        .addListener(() => setState(() => _hasChanges = true));
+  }
+
+  Future<void> _handleBackPress() async {
+    if (!_hasChanges) {
+      Navigator.pop(context);
+      return;
+    }
+
+    final shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: const Text('Unsaved Changes'),
+        content: const Text('Do you want to save your changes before leaving?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Discard'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save', style: TextStyle(color: kPrimaryColor)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldSave == true) {
+      final saved = await checkForErrorsAndProceed();
+      if (saved && mounted) {
+        Navigator.pop(context);
+      }
+    } else if (shouldSave == false && mounted) {
+      Navigator.pop(context);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
 
     getAndProcessCards();
+    _addChangeListeners();
 
     if (widget.ruleId >= 0) {
       processData();
+      _hasChanges = false;
     }
   }
 
@@ -353,351 +415,323 @@ class _EditOfferPageState extends State<EditOfferPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return SafeArea(
-      child: Scaffold(
-        backgroundColor: theme.scaffoldBackgroundColor,
-        appBar: AppBar(
-          leading: IconButton(
-            icon: const Icon(CupertinoIcons.back, size: 20),
-            onPressed: () => Navigator.pop(context),
-          ),
-          title: Text(
-            widget.ruleId < 0 ? 'New Entry' : 'Edit Entry',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          actions: [
-            if (widget.ruleId >= 0)
-              IconButton(
-                icon: const Icon(CupertinoIcons.trash,
-                    color: kErrorColor, size: 20),
-                onPressed: () =>
-                    deleteUssdDialog(context, widget.ruleId, 'ussdCodes').then(
-                  (value) => Navigator.pop(context),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        _handleBackPress();
+      },
+      child: SafeArea(
+        child: Scaffold(
+          backgroundColor: theme.scaffoldBackgroundColor,
+          appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(CupertinoIcons.back, size: 20),
+              onPressed: _handleBackPress,
+            ),
+            title: Text(
+              widget.ruleId < 0 ? 'New Entry' : 'Edit Entry',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            actions: [
+              if (widget.ruleId >= 0)
+                IconButton(
+                  icon: const Icon(CupertinoIcons.trash,
+                      color: kErrorColor, size: 20),
+                  onPressed: () =>
+                      deleteUssdDialog(context, widget.ruleId, 'ussdCodes')
+                          .then(
+                    (value) => Navigator.pop(context),
+                  ),
                 ),
-              ),
-          ],
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-        ),
-        body: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          children: [
-            _buildSectionTitle('Trigger Condition'),
-            _buildGroup([
-              _buildInputTile(
-                label: 'Amount (Ksh)',
-                controller: _amountTextController,
-                keyboardType: TextInputType.number,
-                errorText: _errorAmount.isEmpty ? null : _errorAmount,
-                icon: CupertinoIcons.money_dollar,
-              ),
-              _buildSimSelector(
-                label: 'Received On',
-                selectedSimId: _fromSim,
-                isBoth: _fromBothSims,
-                onSelect: (id, both) => setState(() {
-                  _fromSim = id;
-                  _fromBothSims = both;
-                }),
-              ),
-            ]),
+            ],
+            elevation: 0,
+            backgroundColor: Colors.transparent,
+          ),
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            children: [
+              _buildSectionTitle('Trigger Condition'),
+              _buildGroup([
+                _buildInputTile(
+                  label: 'Amount (Ksh)',
+                  controller: _amountTextController,
+                  keyboardType: TextInputType.number,
+                  errorText: _errorAmount.isEmpty ? null : _errorAmount,
+                  icon: CupertinoIcons.money_dollar,
+                ),
+                _buildSimSelector(
+                  label: 'Received On',
+                  selectedSimId: _fromSim,
+                  isBoth: _fromBothSims,
+                  onSelect: (id, both) => setState(() {
+                    _fromSim = id;
+                    _fromBothSims = both;
+                  }),
+                ),
+              ]),
 
-            _buildSectionTitle('Execution'),
-            _buildGroup([
-              _buildInputTile(
-                label: 'USSD Code',
-                controller: _codeTextController,
-                hint: '*180*5*2*n#',
-                icon: CupertinoIcons.number,
-                errorText: _errorUSSDCode.isEmpty ? null : _errorUSSDCode,
-              ),
-              _buildSimSelector(
-                label: 'Dial Using',
-                selectedSimId: _dialSim,
-                isBoth: false,
-                onSelect: (id, _) => setState(() => _dialSim = id),
-              ),
-            ]),
+              _buildSectionTitle('Execution'),
+              _buildGroup([
+                _buildInputTile(
+                  label: 'USSD Code',
+                  controller: _codeTextController,
+                  hint: '*180*5*2*n#',
+                  icon: CupertinoIcons.number,
+                  errorText: _errorUSSDCode.isEmpty ? null : _errorUSSDCode,
+                ),
+                _buildSimSelector(
+                  label: 'Dial Using',
+                  selectedSimId: _dialSim,
+                  isBoth: false,
+                  onSelect: (id, _) => setState(() => _dialSim = id),
+                ),
+              ]),
 
-            _buildSectionTitle('Automation Options'),
-            _buildGroup([
-              _buildSwitchTile(
-                label: 'Advanced USSD',
-                value: isAdvanced,
-                onChanged: (val) {
-                  if (val) showAccessibilityPermissionDialog(context);
-                  setState(() => isAdvanced = val);
-                },
-              ),
-              const Divider(color: Colors.white24),
-              _buildSwitchTile(
-                label: 'Auto-Retry on Error',
-                value: _canRetry,
-                onChanged: (val) => setState(() => _canRetry = val),
-              ),
-            ]),
+              _buildSectionTitle('Automation Options'),
+              _buildGroup([
+                _buildSwitchTile(
+                  label: 'Advanced USSD',
+                  value: isAdvanced,
+                  onChanged: (val) {
+                    if (val) showAccessibilityPermissionDialog(context);
+                    _hasChanges = true;
+                    setState(() => isAdvanced = val);
+                  },
+                ),
+                const Divider(color: Colors.white24),
+                _buildSwitchTile(
+                  label: 'Auto-Retry on Error',
+                  value: _canRetry,
+                  onChanged: (val) {
+                    _hasChanges = true;
+                    setState(() => _canRetry = val);
+                  },
+                ),
+              ]),
 
-            _buildSectionTitle('Auto Switch & risk detection'),
-            _buildGroup([
-              _buildSwitchTile(
-                label: 'Use Bonga Points',
-                value: usesBongaPoints,
-                onChanged: (val) => setState(() => usesBongaPoints = val),
-              ),
-              if (usesBongaPoints) ...[
-                _buildSectionTitle('Bonga Configuration'),
-                _buildGroup([
-                  _buildInputTile(
-                    label:
-                        'Emergency USSD Code (if bonga points balance too low)',
-                    controller: _fallbackCodeTextController,
-                    hint: 'Emergency USSD',
-                    icon: CupertinoIcons.refresh_circled,
-                  ),
-                  _buildInputTile(
-                    label: 'Balance Check',
-                    controller: _balanceCheckCodeTextController,
-                    icon: CupertinoIcons.graph_square,
-                  ),
-                  _buildInputTile(
-                    label: 'Points deducted per Transaction',
-                    controller: _bongaPointsPerTransactionTextController,
-                    keyboardType: TextInputType.number,
-                    icon: CupertinoIcons.bolt_fill,
-                  ),
-                ]),
-              ],
-              const Divider(color: Colors.white24),
-              _buildSwitchTile(
-                label: 'Signature',
-                subtitle:
-                    'Teach the app to recognize this code\'s USSD responses to detect harmful changes',
-                value: signature.isActive ?? false,
-                onChanged: (val) => setState(() {
-                  hasAcceptedProcedure = val;
-                  signature = signature.copyWith(isActive: val);
-                  setState(() {});
-                }),
-              ),
-              if (hasAcceptedProcedure && signature.isActive == true) ...[
-                Column(
-                  children: [
-                    _buildSwitchTile(
-                      label: 'Auto switch ',
-                      subtitle:
-                          'When USSD process is changed by Safaricom, use the new USSD code as detected by the app',
-                      value: signature.autoSwitch ?? false,
-                      onChanged: (val) {
-                        setState(() {
-                          signature = signature.copyWith(autoSwitch: val);
-                        });
-                      },
+              _buildSectionTitle('Auto Switch & risk detection'),
+              _buildGroup([
+                _buildSwitchTile(
+                  label: 'Use Bonga Points',
+                  value: usesBongaPoints,
+                  onChanged: (val) {
+                    _hasChanges = true;
+                    setState(() => usesBongaPoints = val);
+                  },
+                ),
+                if (usesBongaPoints) ...[
+                  _buildSectionTitle('Bonga Configuration'),
+                  _buildGroup([
+                    _buildInputTile(
+                      label:
+                          'Emergency USSD Code (if bonga points balance too low)',
+                      controller: _fallbackCodeTextController,
+                      hint: 'Emergency USSD',
+                      icon: CupertinoIcons.refresh_circled,
                     ),
-                    if (signature.acceptedProcedure != null &&
-                        signature.acceptedProcedure!.isNotEmpty)
-                      Column(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                padding: const EdgeInsets.all(16.0),
-                                decoration: BoxDecoration(
-                                  // 2. The Glass Tint (Semi-transparent white)
-                                  borderRadius: BorderRadius.circular(20),
-                                  // 3. The "Shine" Border
-                                  border: Border.all(
-                                    color: Theme.of(context).hintColor,
-                                    width: 1.5,
+                    _buildInputTile(
+                      label: 'Balance Check',
+                      controller: _balanceCheckCodeTextController,
+                      icon: CupertinoIcons.graph_square,
+                    ),
+                    _buildInputTile(
+                      label: 'Points deducted per Transaction',
+                      controller: _bongaPointsPerTransactionTextController,
+                      keyboardType: TextInputType.number,
+                      icon: CupertinoIcons.bolt_fill,
+                    ),
+                  ]),
+                ],
+                const Divider(color: Colors.white24),
+                _buildSwitchTile(
+                  label: 'Signature',
+                  subtitle:
+                      'Teach the app to recognize this code\'s USSD responses to detect harmful changes',
+                  value: signature.isActive ?? false,
+                  onChanged: (val) => setState(() {
+                    hasAcceptedProcedure = val;
+                    signature = signature.copyWith(isActive: val);
+                    _hasChanges = true;
+                    setState(() {});
+                  }),
+                ),
+                if (hasAcceptedProcedure && signature.isActive == true) ...[
+                  Column(
+                    children: [
+                      _buildSwitchTile(
+                        label: 'Auto switch ',
+                        subtitle:
+                            'When USSD process is changed by Safaricom, use the new USSD code as detected by the app',
+                        value: signature.autoSwitch ?? true,
+                        onChanged: (val) {
+                          _hasChanges = true;
+                          setState(() {
+                            signature = signature.copyWith(autoSwitch: val);
+                          });
+                        },
+                      ),
+                      if (signature.acceptedProcedure != null &&
+                          signature.acceptedProcedure!.isNotEmpty)
+                        Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.all(16.0),
+                                  decoration: BoxDecoration(
+                                    // 2. The Glass Tint (Semi-transparent white)
+                                    borderRadius: BorderRadius.circular(20),
+                                    // 3. The "Shine" Border
+                                    border: Border.all(
+                                      color: Theme.of(context).hintColor,
+                                      width: 1.5,
+                                    ),
                                   ),
-                                ),
-                                child: Column(
-                                  children: [
-                                    // Header Row
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        const Text(
-                                          'Option',
-                                        ),
-                                        Row(
-                                          children: const [
-                                            Text(
-                                              'Text',
-                                            ),
-                                            SizedBox(width: 20),
-                                            Text(
-                                              'Important',
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    const Divider(
-                                      color: Colors.white24,
-                                    ),
+                                  child: Column(
+                                    children: [
+                                      // Header Row
+                                      Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          const Text(
+                                            'Option',
+                                          ),
+                                          Text(
+                                            'Text',
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      const Divider(
+                                        color: Colors.white24,
+                                      ),
 
-                                    // The List Items
-                                    ...signature.acceptedProcedure!.map((e) {
-                                      int index = signature.acceptedProcedure!
-                                          .indexOf(e);
-
-                                      return Theme(
-                                        data: ThemeData(),
-                                        child: Container(
-                                          margin: const EdgeInsets.only(
-                                            bottom: 4,
+                                      ...signature.acceptedProcedure!.map((e) {
+                                        return Padding(
+                                          padding: kPagePaddingInsets,
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Text(
+                                                CodeSignature
+                                                    .extractChosenOption(
+                                                  e,
+                                                ),
+                                              ),
+                                              Text(
+                                                e['choice'].toString(),
+                                              ),
+                                            ],
                                           ),
-                                          decoration: BoxDecoration(
-                                            border: Border(
-                                              bottom: BorderSide(
-                                                  color: Theme.of(context)
-                                                      .hintColor),
-                                            ),
-                                          ),
-                                          child: CheckboxListTile(
-                                            contentPadding: EdgeInsets
-                                                .zero, // Clean alignment
-                                            onChanged: (value) {
-                                              setState(() {
-                                                if (value == true) {
-                                                  importantSteps.add({
-                                                    'stepPosition':
-                                                        index.toString(),
-                                                    'option': CodeSignature
-                                                        .extractChosenOption(e),
-                                                    'choice': e['choice'] ?? '',
-                                                  });
-                                                } else {
-                                                  importantSteps.removeWhere(
-                                                      (step) =>
-                                                          step[
-                                                              'stepPosition'] ==
-                                                          index.toString());
-                                                }
-                                              });
-                                            },
-                                            value: importantSteps.any(
-                                              (step) =>
-                                                  step['stepPosition'] ==
-                                                  index.toString(),
-                                            ),
-                                            controlAffinity: ListTileControlAffinity
-                                                .trailing, // Move checkbox to right
-                                            title: Text(
-                                              CodeSignature.extractChosenOption(
-                                                  e),
-                                              style:
-                                                  const TextStyle(fontSize: 14),
-                                            ),
-                                            secondary: Text(
-                                              e['choice'].toString(),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    }).toList(),
-                                  ],
+                                        );
+                                      }).toList(),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
+                          ],
+                        ),
+                      Container(
+                        margin: const EdgeInsets.all(16.0),
+                        decoration: BoxDecoration(
+                          // color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(kBorderRadius),
+                          border: Border.all(
+                            color:
+                                Theme.of(context).dividerColor.withOpacity(0.1),
                           ),
-                        ],
-                      ),
-                    Container(
-                      margin: const EdgeInsets.all(16.0),
-                      decoration: BoxDecoration(
-                        // color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(kBorderRadius),
-                        border: Border.all(
-                          color:
-                              Theme.of(context).dividerColor.withOpacity(0.1),
+                        ),
+                        child: toolButton(
+                          () async {
+                            var code =
+                                TransactionController().replaceNWithNumber(
+                              _codeTextController.text,
+                              0722000000,
+                            );
+                            // PhoneService phoneService = PhoneService();
+                            List res = await PhoneService().makeAdvancedRequest(
+                              code,
+                              _dialSim,
+                              isGettingSignature: true,
+                            );
+
+                            signature = signature.copyWith(
+                              usdCode: _codeTextController.text,
+                              acceptedProcedure: res[2],
+                              lastProcedure: (res[2] as List?)
+                                  ?.cast<Map<String, dynamic>>(),
+                            );
+
+                            setState(() {});
+
+                            if (signature.acceptedProcedure == null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'Failed to get signature. Please ensure the USSD code is correct and try again. ${signature.toString()}',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                          },
+                          Icon(
+                            CupertinoIcons.shield_lefthalf_fill,
+                            color: kWarningColor,
+                          ),
+                          "Click to Edit Signature",
+                          context,
                         ),
                       ),
-                      child: toolButton(
-                        () async {
-                          var code = TransactionController().replaceNWithNumber(
-                            _codeTextController.text,
-                            0722000000,
-                          );
-                          // PhoneService phoneService = PhoneService();
-                          List res = await PhoneService().makeAdvancedRequest(
-                            code,
-                            _dialSim,
-                            isGettingSignature: true,
-                          );
+                    ],
+                  ),
+                ],
+              ]),
+              const SizedBox(height: 32),
 
-                          signature = signature.copyWith(
-                            usdCode: _codeTextController.text,
-                            acceptedProcedure: res[2],
-                            lastProcedure:
-                                (res[2] as List?)?.cast<Map<String, dynamic>>(),
-                          );
-
-                          setState(() {});
-
-                          if (signature.acceptedProcedure == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Failed to get signature. Please ensure the USSD code is correct and try again. ${signature.toString()}',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-                        },
-                        Icon(CupertinoIcons.shield_lefthalf_fill, color: kWarningColor,),
-                        "Click to Edit Signature",
-                        context,
+              // Action Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => makeOfferTutorialDialog(context),
+                      child: Text('Need Help?',
+                          style: TextStyle(
+                              color: Theme.of(context).hintColor,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kPrimaryColor,
+                        foregroundColor: Colors.white,
+                        // minimumSize: const Offset(0, 56),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
                       ),
+                      onPressed: () {
+                        // HapticFeedback.mediumImpact();
+                        checkForErrorsAndProceed().then(
+                          (value) => value ? Navigator.pop(context) : null,
+                        );
+                      },
+                      child: const Text('Save Rule',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
                     ),
-                  ],
-                ),
-              ],
-            ]),
-            const SizedBox(height: 32),
-
-            // Action Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => makeOfferTutorialDialog(context),
-                    child: Text('Need Help?',
-                        style: TextStyle(
-                            color: Theme.of(context).hintColor,
-                            fontWeight: FontWeight.w600)),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: kPrimaryColor,
-                      foregroundColor: Colors.white,
-                      // minimumSize: const Offset(0, 56),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                    ),
-                    onPressed: () {
-                      // HapticFeedback.mediumImpact();
-                      checkForErrorsAndProceed().then(
-                        (value) => value ? Navigator.pop(context) : null,
-                      );
-                    },
-                    child: const Text('Save Rule',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 40),
-          ],
+                ],
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
         ),
       ),
     );

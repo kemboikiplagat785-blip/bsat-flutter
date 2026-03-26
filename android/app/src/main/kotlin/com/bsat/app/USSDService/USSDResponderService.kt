@@ -31,6 +31,7 @@ class USSDResponderService : AccessibilityService() {
         "miuix.appcompat.app.n", // XIAOMI & Redmi devices
         "com.android.phone.MMIDialogActivity", // some oppo devices
         "androidx.appcompat.app.n", // some oppo devices
+        "androidx.appcompat.app.k", // some oppo devices
         // "android.app.ProgressDialog",
     )
 
@@ -56,6 +57,7 @@ class USSDResponderService : AccessibilityService() {
             && packageName in allowedPackages
         ) {
             if(UssdSession.ussdSteps.isEmpty()) {
+                sendNativeLog("debug", "UssdSession", "No active USSD session, ignoring event. Steps: ${UssdSession.ussdSteps}, finalResponse: ${UssdSession.finalResponse}")
                 return
             }
 

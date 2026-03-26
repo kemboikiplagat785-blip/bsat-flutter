@@ -9,6 +9,8 @@ class ClientService {
     // update name only if number is unique
     final existingClient = await getClientByPhone(client.phoneNumber);
 
+    print("existing client: $existingClient, new client: ${client.toMap()}");
+
     if (existingClient != null) {
       // Update name if it has changed
       if (existingClient.firstName != client.firstName ||

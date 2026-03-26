@@ -63,7 +63,8 @@ onNewMessage(dynamic smsMessage) {
 
 onMessageReceive(dynamic smsMessage) async {
   final addr = _extractField(smsMessage, 'address')?.toString() ?? '';
-  final body = _extractField(smsMessage, 'body')?.toString() ?? '';
+  final body =
+      (_extractField(smsMessage, 'body')?.toString() ?? '').replaceAll("'", "");
   final subscriptionId = _extractField(smsMessage, 'subscriptionId');
   final date = _extractField(smsMessage, 'date');
 
@@ -318,7 +319,7 @@ String getName(String messageBody) {
 
   // remove all apostrophes from the message body to avoid issues with names like O'Connor
   messageBody = messageBody.replaceAll("'", "");
-  
+
   Match? nameMatch = nameRegex.firstMatch(messageBody);
   String name = nameMatch?.group(1)?.trim() ?? "";
 
@@ -378,7 +379,7 @@ Future<String> sendEvenInBackground(
       status = "Failed";
     }
 
-    if(sendFirstPartOnly) break;
+    if (sendFirstPartOnly) break;
   }
 
   return status;
@@ -422,14 +423,15 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
 
   // print("Normalized mask: $normalizedMask");
 
-  String strictPatternStr =
-      '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]'), r'\d') + r'$';
-  // print("Strict pattern: $strictPatternStr");
-  RegExp strictPattern = RegExp(strictPatternStr, caseSensitive: false);
-  String loosePatternStr =
-      '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]+'), r'.*') + r'$';
-  // print("Loose pattern: $loosePatternStr");
-  RegExp loosePattern = RegExp(loosePatternStr, caseSensitive: false);
+  // 2. Create a "Positional" Pattern
+// This replaces EVERY non-digit character with exactly one \d
+  String positionalPatternStr = '^' +
+      normalizedMask.split('').map((char) {
+        return RegExp(r'[0-9]').hasMatch(char) ? char : r'\d';
+      }).join() +
+      r'$';
+
+  RegExp positionalPattern = RegExp(positionalPatternStr);
 
   // print(name);
   var smsNameWords = name
@@ -451,17 +453,15 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
     }
 
     bool phoneMatches = false;
+
     if (normalizedMask.contains(RegExp(r'[^0-9]'))) {
-      if (strictPattern.hasMatch(normClientPhone) ||
-          loosePattern.hasMatch(normClientPhone)) {
-        // print(
-            // "Phone matches for client ${clientFirstName} ${clientLastName} with phone $normClientPhone");
+      // Check if lengths match FIRST, then check regex
+      if (normClientPhone.length == normalizedMask.length &&
+          positionalPattern.hasMatch(normClientPhone)) {
         phoneMatches = true;
       }
     } else {
-      if (normClientPhone == normalizedMask) {
-        phoneMatches = true;
-      }
+      phoneMatches = (normClientPhone == normalizedMask);
     }
 
     if (phoneMatches) {

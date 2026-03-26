@@ -1,10 +1,10 @@
 void main() {
-  String number = "0742342297";
-  String message = "from 254702xxx783 name";
-  String message2 = "from 0742xxx297 name";
+  String number = "0116675236";
+  String message = "from 254116xxx236 name";
+  String message2 = "from 0116xxx236 name";
 
   String? result2 = _test(number, message2);
-  // print("Result2: $result2");
+  print("Result2: $result2");
 }
 
 String? _test(String number, String message) {

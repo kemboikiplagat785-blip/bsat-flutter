@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
+
+import '../../screens/settings/accessibility_setup.dart';
 
 Future<String?> showAccessibilityPermissionDialog(BuildContext context) {
 
@@ -20,7 +21,11 @@ Future<String?> showAccessibilityPermissionDialog(BuildContext context) {
           ),
           TextButton(
             onPressed: () {
-              FlutterAccessibilityService.requestAccessibilityPermission();
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => AccessibilityTutorialScreen(),
+                ),
+              );
             },
             child: Text('Enable'),
           ),

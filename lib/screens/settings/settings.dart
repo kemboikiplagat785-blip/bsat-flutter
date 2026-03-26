@@ -61,8 +61,8 @@ class _SettingsPageState extends State<SettingsPage> {
     _deleteDurationController.text =
         (await sharedPreferencesService.getAutoDeleteAfterNumberOfDays() ?? '')
             .toString();
-    useSignature = await sharedPreferencesService.getUseSignature() ?? false;
-    autoSwitch = await sharedPreferencesService.getCanAutoSwitch() ?? false;
+    useSignature = await sharedPreferencesService.getUseSignature() ?? true;
+    autoSwitch = await sharedPreferencesService.getCanAutoSwitch() ?? true;
     forwardMaskedMessages =
         await sharedPreferencesService.getForwardMaskedMessages() ?? false;
 
@@ -533,8 +533,8 @@ class _SettingsPageState extends State<SettingsPage> {
           return;
         }
 
-        // Limit the payload to the last 500,000 characters (approx 500KB) to prevent Payload Too Large errors
-        const int maxLength = 500000;
+        // Limit the payload to the last 90,000 characters (approx 90KB) to prevent Payload Too Large errors
+        const int maxLength = 90000;
         if (content.length > maxLength) {
           content = content.substring(content.length - maxLength);
         }

@@ -525,12 +525,18 @@ class _SettingsPageState extends State<SettingsPage> {
       }
 
       if (BsatLogger.logFile != null && await BsatLogger.logFile!.exists()) {
-        final content = await BsatLogger.logFile!.readAsString();
+        String content = await BsatLogger.logFile!.readAsString();
         if (content.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Log file is empty.')),
           );
           return;
+        }
+
+        // Limit the payload to the last 500,000 characters (approx 500KB) to prevent Payload Too Large errors
+        const int maxLength = 500000;
+        if (content.length > maxLength) {
+          content = content.substring(content.length - maxLength);
         }
 
         final deviceName = await sharedPreferencesService.getDeviceName();
@@ -555,6 +561,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     Text('Failed: ${response['message'] ?? 'Unknown error'}')),
           );
         }
+        
+        // Ensure logs are cleared whether it succeeded or failed, as requested.
+        await BsatLogger.logFile!.writeAsString('');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No logs available to send.')),

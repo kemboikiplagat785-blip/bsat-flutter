@@ -315,6 +315,10 @@ String getName(String messageBody) {
     r"from\s+(?:(?:254|0[17])[\d\*xX\s]+)?\s*([a-zA-Z\s']+)",
     caseSensitive: false,
   );
+
+  // remove all apostrophes from the message body to avoid issues with names like O'Connor
+  messageBody = messageBody.replaceAll("'", "");
+  
   Match? nameMatch = nameRegex.firstMatch(messageBody);
   String name = nameMatch?.group(1)?.trim() ?? "";
 

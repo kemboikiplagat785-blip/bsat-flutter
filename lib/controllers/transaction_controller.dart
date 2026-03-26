@@ -86,6 +86,8 @@ class TransactionController {
     int amount = getAmount(smsMessage.body);
     String name = getName(smsMessage.body ?? "");
 
+    Client client = Client.fromMpesaMessage(smsMessage.body ?? "");
+
     // print(number);
 
     String trimmedBody = smsMessage.body!.length > 160
@@ -93,18 +95,20 @@ class TransactionController {
         : smsMessage.body!;
 
     if (number == 0) {
-      var client = await getMaskedPhoneNumber(smsMessage);
+      var client1 = await getMaskedPhoneNumber(smsMessage);
       // print(
-          // "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
+      // "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
       // print(client?.formattedPhone == null);
-      if (client?.formattedPhone != null) {
-        number = int.parse(client?.formattedPhone ?? "0");
+      if (client1?.formattedPhone != null) {
+        number = int.parse(client1?.formattedPhone ?? "0");
         smsMessage = TransactionMessage(
           body: unmaskNumberInMessage(
-              client?.formattedPhone ?? "0", smsMessage.body ?? ""),
+              client1?.formattedPhone ?? "0", smsMessage.body ?? ""),
           subscriptionId: smsMessage.subscriptionId,
           date: smsMessage.date,
         );
+
+        client = client1!;
       } else {
         if ((await _sharedPreferencesService.getForwardMaskedMessages() ??
                 false) &&
@@ -424,6 +428,9 @@ class TransactionController {
 
     List requestResponse = [];
 
+    // add client to db. if number isn't unique, it will just update the name
+    await ClientService().insertClient(client);
+
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[4]) {
       debugPrint('advanced starting');
 
@@ -545,14 +552,15 @@ class TransactionController {
   }
 
   Future<bool> forwardIfNeeded(
-      int amount,
-      String trimmedBody,
-      String smsMessageBody,
-      String transactionId,
-      int number,
-      String name,
-      bool autoSaveContacts,
-      {String? status}) async {
+    int amount,
+    String trimmedBody,
+    String smsMessageBody,
+    String transactionId,
+    int number,
+    String name,
+    bool autoSaveContacts, {
+    String? status,
+  }) async {
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
       "(amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)",
@@ -652,7 +660,7 @@ class TransactionController {
                   );
                   return true;
                 }
-                await BackendService().post(
+                final result = await BackendService().post(
                   '/api/fcm/send-secure',
                   body: {
                     'title': "BSAT Online Forwarding",
@@ -666,6 +674,24 @@ class TransactionController {
                     }
                   },
                 );
+
+                // retry after 5 seconds on error
+                if (result['success'] != true) {
+                  dontProcess(
+                    smsMessageBody,
+                    transactionId,
+                    number,
+                    '',
+                    amount,
+                    -1,
+                    status: TransactionStatuses.error,
+                    reply:
+                        'Forwarding failed. Server not reachable. Will retry later.',
+                    canRetry: true,
+                    source: name,
+                  );
+                  return true;
+                }
 
                 dontProcess(
                   smsMessageBody,
@@ -765,7 +791,9 @@ class TransactionController {
   }
 
   Future<List<dynamic>> unavailableAmountCanCompound(
-      int amount, int number) async {
+    int amount,
+    int number,
+  ) async {
     int yesterdayMidnight = getTodayMidnightMillis() - 86400000;
     List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
       'transactions',
@@ -804,6 +832,23 @@ class TransactionController {
               'WHERE (amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)',
         )) >
         0;
+
+    bool canForwardToDevices = (await _sqliteService.getCount(
+          'forwardingDevices',
+          args: [
+            '[$amount,%',
+            '%,$amount,%',
+            '%,$amount]',
+            '[$amount]',
+          ],
+          appendQuery:
+              'WHERE (amounts_to_forward LIKE ? OR amounts_to_forward LIKE ? OR amounts_to_forward LIKE ? OR amounts_to_forward LIKE ?)',
+        )) >
+        0;
+
+    canForward = canForward || canForwardToDevices;
+
+        
 
     // delete the entries from transactions
     if (rawStuff.isNotEmpty && (reply[3] || canForward)) {
@@ -986,13 +1031,6 @@ class TransactionController {
     ))
         .first;
 
-    // bool hasSuccessStatus = transactionItem.isNotEmpty &&
-    //     (transactionItem['status'] != TransactionStatuses.doneConfirmed &&
-    //         transactionItem['status'] != TransactionStatuses.done &&
-    //         transactionItem['status'] != TransactionStatuses.forwarded &&
-    //         transactionItem['status'] != TransactionStatuses.hasOkoa);
-
-    // if (hasSuccessStatus) {
     if (RegExp('Forwarding failed', caseSensitive: false).hasMatch(reply)) {
       await _sqliteService.deleteStuff(
         id,
@@ -1171,7 +1209,6 @@ class TransactionController {
             ))
                 .first['amount'] ??
             '';
-    ;
 
     number = number < 100000000 ? extract9DigitNumber(initialMessage) : number;
     debugPrint(getName(initialMessage));
@@ -2073,5 +2110,7 @@ class TransactionController {
         return unmaskedReply;
       }
     }
+
+    return null;
   }
 }

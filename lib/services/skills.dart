@@ -78,7 +78,7 @@ class Skills {
     } else if (airtimeBalance < amt) {
       return;
     } else if (airtimeBalance > 10000) {
-      amt = 100;
+      amt = 120;
     }
 
     PhoneService().makeMyRequest("*140*$amt*$number#", subId);

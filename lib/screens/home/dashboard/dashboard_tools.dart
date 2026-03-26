@@ -389,8 +389,28 @@ class DashboardToolsSection extends StatelessWidget {
                         //             startTime) /
                         //         1000;
                         // print("took $timeTakenInSeconds seconds");
-                        await AccessibilitySetupProcedure.turnOnAccessibility(
-                            context);
+                        // await AccessibilitySetupProcedure.turnOnAccessibility(
+                        //     context);
+                        Navigator.of(context)
+                            .push(
+                              PageRouteBuilder(
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        const AccessibilityTutorialScreen(),
+                                transitionsBuilder: (context, animation,
+                                    secondaryAnimation, child) {
+                                  return CupertinoPageTransition(
+                                    primaryRouteAnimation: animation,
+                                    secondaryRouteAnimation: secondaryAnimation,
+                                    linearTransition: true,
+                                    child: child,
+                                  );
+                                },
+                              ),
+                            )
+                            .then(
+                              (value) => onReload(),
+                            );
                       }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),

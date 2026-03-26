@@ -6,6 +6,23 @@ class ClientService {
 
   // Insert a new client
   Future<int> insertClient(Client client) async {
+    // update name only if number is unique
+    final existingClient = await getClientByPhone(client.phoneNumber);
+
+    if (existingClient != null) {
+      // Update name if it has changed
+      if (existingClient.firstName != client.firstName ||
+          existingClient.lastName != client.lastName) {
+        final updatedClient = existingClient.copyWith(
+          firstName: client.firstName,
+          lastName: client.lastName,
+        );
+        return await updateClient(updatedClient);
+      }
+      // If name is the same, just return existing client's ID
+      return existingClient.id!;
+    }
+    
     return await _sqliteService.insertStuff(client.toMap(), 'clients');
   }
 

@@ -197,7 +197,7 @@ class _AccessibilityTutorialScreenState
         }
       } else if (step == 1) {
         // Step 2: Open App Info for Restricted Settings
-        await AppSettings.openAppSettings();
+        await AppSettings.openAppSettings(type: AppSettingsType.generalSettings);
         await _waitForAppResume();
 
         // Move to step 2 (Final Try)
@@ -266,24 +266,20 @@ class _AccessibilityTutorialScreenState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFFDF8EE), // Creamy paper color
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text("Setup Guide",
-            style: TextStyle(fontWeight: FontWeight.w900)),
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 24)),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        foregroundColor: Colors.brown[800],
-        centerTitle: true,
+        centerTitle: false,
       ),
       body: _isSuccess
           ? _buildSuccessScreen()
           : Stack(
               children: [
-                // The wobbly kid-book path in the background
-                Positioned.fill(
-                  child: CustomPaint(painter: MapPathPainter()),
-                ),
                 // The interactive steps
                 ListView(
                   padding: const EdgeInsets.symmetric(vertical: 20),
@@ -292,7 +288,7 @@ class _AccessibilityTutorialScreenState
                       stepIndex: 0,
                       title: "1. Find Our App",
                       description:
-                          "Let's turn on Accessibility! Find us under 'Installed Apps' and flip the switch.",
+                          "Let's turn on Accessibility! Find us under 'Installed Apps'. Tap on BSAT even if it is greyed out.",
                       buttonText: "Go to Settings",
                       icon: Icons.settings,
                       color: Colors.blueAccent,
@@ -302,7 +298,7 @@ class _AccessibilityTutorialScreenState
                       stepIndex: 1,
                       title: "2. Restricted?",
                       description:
-                          "Grayed out? Tap here to open App Info, click the 3 dots (⋮) top right, and hit 'Allow restricted settings'.",
+                          "Grayed out? Tap here to open Settings, navigate to 'Apps' -> find our app. Click the 3 dots (⋮) top right, and hit 'Allow restricted settings'.",
                       buttonText: "Unlock Settings",
                       icon: Icons.lock_open_rounded,
                       color: Colors.orangeAccent,
@@ -355,10 +351,10 @@ class _AccessibilityTutorialScreenState
                   width: isActive ? 50 : 40,
                   height: isActive ? 50 : 40,
                   decoration: BoxDecoration(
-                    color: isLocked ? Colors.grey[400] : color,
+                    color: isLocked ? Theme.of(context).disabledColor : color,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Colors.white,
+                      color: Theme.of(context).scaffoldBackgroundColor,
                       width: isActive ? 4 : 2,
                     ),
                     boxShadow: [
@@ -389,10 +385,10 @@ class _AccessibilityTutorialScreenState
                 margin: const EdgeInsets.only(right: 20),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: isActive ? color : Colors.grey[200]!,
+                    color: isActive ? color : Theme.of(context).dividerColor.withOpacity(0.05),
                     width: isActive ? 3 : 1,
                   ),
                   boxShadow: [
@@ -410,8 +406,8 @@ class _AccessibilityTutorialScreenState
                       title,
                       style: TextStyle(
                         fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.brown[800],
+                        fontWeight: FontWeight.w800,
+                        color: Theme.of(context).textTheme.bodyLarge?.color,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -419,7 +415,7 @@ class _AccessibilityTutorialScreenState
                       description,
                       style: TextStyle(
                         fontSize: 15,
-                        color: Colors.brown[600],
+                        color: Theme.of(context).textTheme.bodyMedium?.color,
                         height: 1.4,
                       ),
                     ),
@@ -474,14 +470,16 @@ class _AccessibilityTutorialScreenState
             "All Set!",
             style: TextStyle(
                 fontSize: 32,
-                fontWeight: FontWeight.w900,
-                color: Colors.brown[800]),
+                fontWeight: FontWeight.w800,
+                color: Theme.of(context).textTheme.bodyLarge?.color),
           ),
           const SizedBox(height: 10),
           Text(
             "Accessibility is turned on.\nYou are ready to go!",
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 18, color: Colors.brown[600]),
+            style: TextStyle(
+                fontSize: 18, 
+                color: Theme.of(context).textTheme.bodyMedium?.color),
           ),
           const SizedBox(height: 40),
           ElevatedButton(
@@ -502,26 +500,6 @@ class _AccessibilityTutorialScreenState
       ),
     );
   }
-}
-
-/// A playful custom painter that draws a wobbly dotted "treasure map" line down the left side
-class MapPathPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.brown[300]!.withOpacity(0.5)
-      ..style = PaintingStyle.fill;
-
-    // We draw a dotted wobbly line at X = 40 (center of the 80px width left margin)
-    for (double y = 0; y < size.height; y += 15) {
-      // sin wave makes it wobble playfully
-      double xOffset = sin(y / 30) * 8;
-      canvas.drawCircle(Offset(40 + xOffset, y), 3, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Helper lifecycle observer to detect when user returns from settings

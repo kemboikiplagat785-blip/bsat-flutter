@@ -468,6 +468,8 @@ class TransactionController {
       requestResponse[1] = await transactionStatus(requestResponse);
     }
 
+    print("Rechecking status after USSD execution: ${requestResponse[1]}");
+
     if (requestResponse[1] == TransactionStatuses.hasOkoa) {
       dontProcess(
         smsMessage.body ?? "",
@@ -848,8 +850,6 @@ class TransactionController {
 
     canForward = canForward || canForwardToDevices;
 
-        
-
     // delete the entries from transactions
     if (rawStuff.isNotEmpty && (reply[3] || canForward)) {
       reply[3] = true;
@@ -1024,25 +1024,36 @@ class TransactionController {
   ) async {
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
 
-    var transactionItem = (await _sqliteService.queryCustom(
-      'transactions',
-      'id = ?',
-      [id],
-    ))
-        .first;
+    // var transactionItem = (await _sqliteService.queryCustom(
+    //   'transactions',
+    //   'id = ?',
+    //   [id],
+    // ))
+    //     .first;
 
-    if (RegExp('Forwarding failed', caseSensitive: false).hasMatch(reply)) {
-      await _sqliteService.deleteStuff(
-        id,
-        'transactions',
-      );
+    // if (transactionItem['initialMessage']
+    //     .toString()
+    //     .contains(RegExp(r'received'))) {
+    //   makeTransactionGivenSmsBody(transactionItem['initialMessage'] ?? '');
+    //   await _sqliteService.deleteStuff(
+    //     id,
+    //     'transactions',
+    //   );
+    //   return;
+    // }
 
-      makeTransactionGivenSmsBody(transactionItem['initialMessage'] ?? '');
+    // if (RegExp('Forwarding failed', caseSensitive: false).hasMatch(reply)) {
+    //   await _sqliteService.deleteStuff(
+    //     id,
+    //     'transactions',
+    //   );
 
-      // remove the transaction from the database so that it doesn't keep showing up in the retry list
+    //   makeTransactionGivenSmsBody(transactionItem['initialMessage'] ?? '');
 
-      return;
-    } else {}
+    //   // remove the transaction from the database so that it doesn't keep showing up in the retry list
+
+    //   return;
+    // } else {}
 
     Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
       'transactions',
@@ -1082,6 +1093,15 @@ class TransactionController {
         return;
       }
     }
+
+    // if(initialMessage.contains("received") || initialMessage.contains("sent")){
+    //   makeTransactionGivenSmsBody(initialMessage);
+    //   await _sqliteService.deleteStuff(
+    //     id,
+    //     'transactions',
+    //   );
+    //   return;
+    // }
 
     int number = getNumberFromCode(ussdCode);
     int amount = getAmount(initialMessage);
@@ -1172,6 +1192,22 @@ class TransactionController {
     if (response[1] == TransactionStatuses.done) {
       if (isUsingToken) {
         await _paymentOps.deductSingleToken();
+      }
+    }
+
+    if (response[1] == TransactionStatuses.secondAttempt) {
+      canRetry = 20;
+      print("second attempt");
+      Client? dbClient = await ClientService().getClientByPhone('0$number');
+      if (dbClient != null &&
+          dbClient.alternativePhoneNumber != null &&
+          dbClient.alternativePhoneNumber!.trim().isNotEmpty) {
+        int altNumber = extract9DigitNumber(dbClient.alternativePhoneNumber!);
+        String altMessage = replaceNumberInMessage(
+            "0$number", dbClient.alternativePhoneNumber ?? "", initialMessage);
+        if (altNumber != number && altNumber > 0) {
+          makeTransactionGivenSmsBody(altMessage);
+        }
       }
     }
 

@@ -4,8 +4,13 @@ import 'sqlite_service.dart';
 class ClientService {
   final SQLiteService _sqliteService = SQLiteService();
 
+  Future<void> _ensureAlternativePhoneNumberColumn() async {
+    await _sqliteService.addColumnIfNotExists('clients', 'alternativePhoneNumber', 'TEXT');
+  }
+
   // Insert a new client
   Future<int> insertClient(Client client) async {
+    await _ensureAlternativePhoneNumberColumn();
     // update name only if number is unique
     final existingClient = await getClientByPhone(client.phoneNumber);
 
@@ -30,6 +35,7 @@ class ClientService {
 
   // Get all clients
   Future<List<Client>> getAllClients() async {
+    await _ensureAlternativePhoneNumberColumn();
     final maps = await _sqliteService.queryAll('clients');
     return maps.map((map) => Client.fromMap(map)).toList();
   }
@@ -49,6 +55,7 @@ class ClientService {
 
   // Get client by phone number
   Future<Client?> getClientByPhone(String phoneNumber) async {
+    await _ensureAlternativePhoneNumberColumn();
     final maps = await _sqliteService.queryCustom(
       'clients',
       'phoneNumber = ?',
@@ -111,6 +118,7 @@ class ClientService {
 
   // Update client
   Future<int> updateClient(Client client) async {
+    await _ensureAlternativePhoneNumberColumn();
     return await _sqliteService.updateStuff(
       client.toMap(),
       'id = ?',

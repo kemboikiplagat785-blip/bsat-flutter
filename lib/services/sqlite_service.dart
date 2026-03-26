@@ -35,7 +35,7 @@ class SQLiteService {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'bsat_app.db');
     return await openDatabase(path,
-        version: 9,
+        version: 10,
         onCreate: onCreate,
         onUpgrade: onUpgrade,
         singleInstance: true);
@@ -154,6 +154,7 @@ class SQLiteService {
         firstName TEXT NOT NULL,
         lastName TEXT NOT NULL,
         phoneNumber TEXT NOT NULL UNIQUE,
+        alternativePhoneNumber TEXT,
         createdAt INTEGER NOT NULL,
         lastBought INTEGER,
         noOfPurchases INTEGER NOT NULL DEFAULT 0
@@ -242,6 +243,7 @@ class SQLiteService {
           firstName TEXT NOT NULL,
           lastName TEXT NOT NULL,
           phoneNumber TEXT NOT NULL UNIQUE,
+          alternativePhoneNumber TEXT,
           createdAt INTEGER NOT NULL,
           lastBought INTEGER,
           noOfPurchases INTEGER NOT NULL DEFAULT 0
@@ -429,6 +431,13 @@ class SQLiteService {
           //print('Column paused already exists or error: $e');
         }
 
+        try {
+          await db.execute(
+              'ALTER TABLE clients ADD COLUMN alternativePhoneNumber TEXT');
+        } catch (e) {
+          //print('Column alternativePhoneNumber already exists or error: $e');
+        }
+
         // make forwardingDevices device_name unique
         try {
           await db.execute(
@@ -465,6 +474,15 @@ class SQLiteService {
               'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)');
         } catch (e) {
           //print('Error removing UNIQUE constraint from whitelistedDevices.device_id: $e');
+        }
+      }
+
+      if (oldVersion < 10) {
+        try {
+          await db.execute(
+              'ALTER TABLE clients ADD COLUMN alternativePhoneNumber TEXT');
+        } catch (e) {
+          //print('Column alternativePhoneNumber already exists or error: $e');
         }
       }
     }

@@ -167,6 +167,11 @@ class _SingleClientPageState extends State<SingleClientPage> {
                                   _buildInfoRow(context, "Phone",
                                       _client!.formattedPhone),
                                   const SizedBox(height: kPagePadding / 2),
+                                  if (_client!.alternativePhoneNumber?.isNotEmpty ?? false) ...[
+                                    _buildInfoRow(context, "Alt Phone",
+                                        _client!.alternativePhoneNumber!),
+                                    const SizedBox(height: kPagePadding / 2),
+                                  ],
                                   _buildInfoRow(context, "Purchases",
                                       "${_client!.noOfPurchases}"),
                                   const SizedBox(height: kPagePadding / 2),
@@ -413,6 +418,7 @@ class _SingleClientPageState extends State<SingleClientPage> {
     final firstNameController = TextEditingController(text: _client!.firstName);
     final lastNameController = TextEditingController(text: _client!.lastName);
     final phoneController = TextEditingController(text: _client!.phoneNumber);
+    final altPhoneController = TextEditingController(text: _client!.alternativePhoneNumber ?? "");
 
     final result = await showDialog<bool>(
       context: context,
@@ -438,6 +444,12 @@ class _SingleClientPageState extends State<SingleClientPage> {
                   decoration: const InputDecoration(labelText: 'Phone Number (Required)'),
                   keyboardType: TextInputType.phone,
                 ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: altPhoneController,
+                  decoration: const InputDecoration(labelText: 'Alternative Phone Number'),
+                  keyboardType: TextInputType.phone,
+                ),
               ],
             ),
           ),
@@ -460,6 +472,7 @@ class _SingleClientPageState extends State<SingleClientPage> {
                   firstName: firstNameController.text.trim(),
                   lastName: lastNameController.text.trim(),
                   phoneNumber: phoneController.text.trim(),
+                  alternativePhoneNumber: altPhoneController.text.trim().isNotEmpty ? altPhoneController.text.trim() : null,
                   createdAt: _client!.createdAt,
                   lastBought: _client!.lastBought,
                   noOfPurchases: _client!.noOfPurchases,

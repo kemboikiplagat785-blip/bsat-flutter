@@ -538,4 +538,11 @@ String? unmaskNumberInMessage(String number, String message) {
   return message.replaceAll(maskedPattern, number);
 }
 
+String replaceNumberInMessage(String oldNumber, String newNumber, String message) {
+  // using regex to replace all occurrences of oldNumber with newNumber, but only if oldNumber is not part of a larger number (e.g. 0712345678 should not match 07123456789)
+  final RegExp regex = RegExp(r'(?<!\d)' + RegExp.escape(oldNumber) + r'(?!\d)');
+  String? updatedMessage = message.replaceAll(regex, newNumber);
+  return updatedMessage ?? message;
+}
+
 Future<void> getAdvancedSms() async {}

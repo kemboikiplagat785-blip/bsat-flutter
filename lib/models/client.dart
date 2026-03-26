@@ -7,6 +7,7 @@ class Client {
   final String firstName;
   final String lastName;
   final String phoneNumber;
+  final String? alternativePhoneNumber;
   final DateTime createdAt;
   final DateTime? lastBought;
   final int noOfPurchases;
@@ -16,6 +17,7 @@ class Client {
     required this.firstName,
     required this.lastName,
     required this.phoneNumber,
+    this.alternativePhoneNumber,
     required this.createdAt,
     this.lastBought,
     this.noOfPurchases = 0,
@@ -28,6 +30,7 @@ class Client {
       'firstName': firstName,
       'lastName': lastName,
       'phoneNumber': phoneNumber,
+      'alternativePhoneNumber': alternativePhoneNumber,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'lastBought': lastBought?.millisecondsSinceEpoch,
       'noOfPurchases': noOfPurchases,
@@ -70,6 +73,7 @@ class Client {
       firstName: map['firstName'] ?? '',
       lastName: map['lastName'] ?? '',
       phoneNumber: map['phoneNumber'] ?? '',
+      alternativePhoneNumber: map['alternativePhoneNumber'],
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt']),
       lastBought: map['lastBought'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['lastBought'])
@@ -123,6 +127,7 @@ class Client {
     String? firstName,
     String? lastName,
     String? phoneNumber,
+    String? alternativePhoneNumber,
     DateTime? createdAt,
     DateTime? lastBought,
     int? noOfPurchases,
@@ -132,6 +137,7 @@ class Client {
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
       phoneNumber: phoneNumber ?? this.phoneNumber,
+      alternativePhoneNumber: alternativePhoneNumber ?? this.alternativePhoneNumber,
       createdAt: createdAt ?? this.createdAt,
       lastBought: lastBought ?? this.lastBought,
       noOfPurchases: noOfPurchases ?? this.noOfPurchases,

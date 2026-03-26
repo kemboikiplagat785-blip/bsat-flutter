@@ -530,6 +530,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                     _details["simSubId"],
                                     _details["canRetry"],
                                     _details["ussdReply"]);
+                                    
 
                                 getStuff();
                               },

@@ -57,7 +57,7 @@ class USSDResponderService : AccessibilityService() {
             && packageName in allowedPackages
         ) {
             if(UssdSession.ussdSteps.isEmpty()) {
-                sendNativeLog("debug", "UssdSession", "No active USSD session, ignoring event. Steps: ${UssdSession.ussdSteps}, finalResponse: ${UssdSession.finalResponse}")
+                NativeLogger.sendLog("debug", "UssdSession", "No active USSD session, ignoring event. Steps: ${UssdSession.ussdSteps}, finalResponse: ${UssdSession.finalResponse}")
                 return
             }
 

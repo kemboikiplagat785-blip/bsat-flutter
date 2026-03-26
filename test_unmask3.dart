@@ -8,7 +8,7 @@ void main() {
   String normNum = number.replaceAll('+', '');
   if (normNum.startsWith('254')) normNum = '0${normNum.substring(3)}';
   
-  print("Norm num: $normNum");
+  // print("Norm num: $normNum");
 
   final RegExp mpesaMaskedPattern = RegExp(
     r'(?:254|0|\+254)[17]\d*[\*xX]+[\d\*xX]*',
@@ -21,7 +21,7 @@ void main() {
     String normMask = maskedToken.replaceAll('+', '').replaceAll(RegExp(r'x|X|\*'), r'\d');
     if (normMask.startsWith('254')) normMask = '0${normMask.substring(3)}';
     
-    print("Match 1: $maskedToken -> $normMask");
-    print("Regex match: ${RegExp('^$normMask\$').hasMatch(normNum)}");
+    // print("Match 1: $maskedToken -> $normMask");
+    // print("Regex match: ${RegExp('^$normMask\$').hasMatch(normNum)}");
   }
 }

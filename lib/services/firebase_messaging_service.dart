@@ -157,8 +157,8 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
           // If not subscribed to Online, return an error response if callbackUrl is provided
           String callbackUrl =
               message.data['callbackUrl'] ?? '/api/fcm/receive-data';
-          print(
-              "User not subscribed to Online + tier, callbackUrl: $callbackUrl");
+          // print(
+              // "User not subscribed to Online + tier, callbackUrl: $callbackUrl");
           if (callbackUrl.isNotEmpty) {
             final errorPayload = {
               'type': 'DATA_RESPONSE',
@@ -598,7 +598,7 @@ class FirebaseMessagingService {
     final fCMToken = await _firebaseMessaging.getToken();
 
     if (kDebugMode) {
-      print('FCM Token: $fCMToken');
+      // print('FCM Token: $fCMToken');
     }
 
     // Initialize Local Notifications

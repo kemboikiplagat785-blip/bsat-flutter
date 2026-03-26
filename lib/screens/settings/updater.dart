@@ -98,7 +98,7 @@ class _ApkDownloaderPageState extends State<ApkDownloaderPage> {
       Directory tempDir = await getTemporaryDirectory();
       _savePath = '${tempDir.path}/update.apk';
 
-      print("Downloading APK to: $_savePath from $apkUrl");
+      // print("Downloading APK to: $_savePath from $apkUrl");
 
       // 3. Download the APK using Dio
       Dio dio = Dio();

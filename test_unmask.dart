@@ -3,5 +3,5 @@ void main() {
   String number = "0790133279";
   
   final RegExp mpesaMaskedPattern = RegExp(r'(?:254|0|\+254)[17]\d*[\*xX]+[\d\*xX]*', caseSensitive: false);
-  print(text.replaceAll(mpesaMaskedPattern, number));
+  // print(text.replaceAll(mpesaMaskedPattern, number));
 }

@@ -87,5 +87,5 @@ void main() {
       ),''');
       
   file.writeAsStringSync(content);
-  print('Injected in clients.dart');
+  // print('Injected in clients.dart');
 }

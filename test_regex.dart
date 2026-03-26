@@ -19,7 +19,7 @@ void main() {
 
   // 3. Print the results to prove it handled everything dynamically
   for (var transaction in allTransactions) {
-    print(transaction);
+    // print(transaction);
   }
 }
 

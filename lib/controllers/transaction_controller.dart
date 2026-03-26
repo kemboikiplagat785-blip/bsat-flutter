@@ -86,7 +86,7 @@ class TransactionController {
     int amount = getAmount(smsMessage.body);
     String name = getName(smsMessage.body ?? "");
 
-    print(number);
+    // print(number);
 
     String trimmedBody = smsMessage.body!.length > 160
         ? smsMessage.body!.substring(0, 160)
@@ -94,9 +94,9 @@ class TransactionController {
 
     if (number == 0) {
       var client = await getMaskedPhoneNumber(smsMessage);
-      print(
-          "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
-      print(client?.formattedPhone == null);
+      // print(
+          // "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
+      // print(client?.formattedPhone == null);
       if (client?.formattedPhone != null) {
         number = int.parse(client?.formattedPhone ?? "0");
         smsMessage = TransactionMessage(

@@ -111,5 +111,5 @@ void main() {
   content = content.replaceAll('// Edit and delete could act here if controllers/dialogs existed', editButtonCode);
 
   file.writeAsStringSync(content);
-  print('Injected Edit to single_client.dart');
+  // print('Injected Edit to single_client.dart');
 }

@@ -70,7 +70,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   Future<void> _recheckPlanExpiry() async {
     _lastPayment = await Payment.getHighestTierPayment();
 
-    print("All Paymets: ${await SQLiteService().queryAll('payments', orderBy: 'id DESC')}");
+    // print("All Paymets: ${await SQLiteService().queryAll('payments', orderBy: 'id DESC')}");
 
     tokenBalance = await _sharedPreferencesService.getDeliveryTokens() ?? 0;
 

@@ -4,7 +4,7 @@ void main() {
   String message2 = "from 0742xxx297 name";
 
   String? result2 = _test(number, message2);
-  print("Result2: $result2");
+  // print("Result2: $result2");
 }
 
 String? _test(String number, String message) {

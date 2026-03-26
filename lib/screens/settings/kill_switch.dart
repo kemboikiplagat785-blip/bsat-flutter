@@ -54,7 +54,7 @@ class _KillswitchScreenState extends State<KillswitchScreen> {
         },
       );
     } catch (e) {
-      print('Failed to make OTA update. Details: $e');
+      // print('Failed to make OTA update. Details: $e');
       setState(() {
         isDownloading = false;
       });

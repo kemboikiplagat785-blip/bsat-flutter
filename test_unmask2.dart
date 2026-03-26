@@ -8,6 +8,6 @@ void main() {
     caseSensitive: false,
   );
   
-  print(text1.replaceAll(mpesaMaskedPattern, num1));
-  print(text2.replaceAll(mpesaMaskedPattern, num1));
+  // print(text1.replaceAll(mpesaMaskedPattern, num1));
+  // print(text2.replaceAll(mpesaMaskedPattern, num1));
 }

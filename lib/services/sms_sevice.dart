@@ -394,7 +394,7 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
   if (body.isEmpty) return null;
 
   String name = getName(body);
-  print("Extracted name: $name, body: $body");
+  // print("Extracted name: $name, body: $body");
 
   String phoneOrMask = '';
 
@@ -416,18 +416,18 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
     normalizedMask = '0${normalizedMask.substring(3)}';
   }
 
-  print("Normalized mask: $normalizedMask");
+  // print("Normalized mask: $normalizedMask");
 
   String strictPatternStr =
       '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]'), r'\d') + r'$';
-  print("Strict pattern: $strictPatternStr");
+  // print("Strict pattern: $strictPatternStr");
   RegExp strictPattern = RegExp(strictPatternStr, caseSensitive: false);
   String loosePatternStr =
       '^' + normalizedMask.replaceAll(RegExp(r'[^0-9]+'), r'.*') + r'$';
-  print("Loose pattern: $loosePatternStr");
+  // print("Loose pattern: $loosePatternStr");
   RegExp loosePattern = RegExp(loosePatternStr, caseSensitive: false);
 
-  print(name);
+  // print(name);
   var smsNameWords = name
       .toLowerCase()
       .split(RegExp(r'\s+'))
@@ -450,8 +450,8 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
     if (normalizedMask.contains(RegExp(r'[^0-9]'))) {
       if (strictPattern.hasMatch(normClientPhone) ||
           loosePattern.hasMatch(normClientPhone)) {
-        print(
-            "Phone matches for client ${clientFirstName} ${clientLastName} with phone $normClientPhone");
+        // print(
+            // "Phone matches for client ${clientFirstName} ${clientLastName} with phone $normClientPhone");
         phoneMatches = true;
       }
     } else {
@@ -466,8 +466,8 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
           .split(RegExp(r'\s+'))
           .where((e) => e.length > 2)
           .toSet();
-      print("SMS name words: $smsNameWords");
-      print("Client name words: $clientNameWords");
+      // print("SMS name words: $smsNameWords");
+      // print("Client name words: $clientNameWords");
 
       // If it's a masked number, we MUST have some name overlap to map it confidently
       if (normalizedMask.contains(RegExp(r'[^0-9]'))) {

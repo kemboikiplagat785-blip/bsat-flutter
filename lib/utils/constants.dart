@@ -99,6 +99,7 @@ List<Map<String, dynamic>> kSubscriptionTiers = [
     "tier": "Free",
     "features": [
       "Forwarding MPesa texts (online and offline)",
+      "Calculator (add up unprocessed amounts from a single client)",
     ],
     "plans": [
       {"plan_id": -1, "durationString": "Free Forever", "durationDays": 36500, "amount": 0},
@@ -110,7 +111,6 @@ List<Map<String, dynamic>> kSubscriptionTiers = [
     "tier": "Offline",
     "features": [
       "Everything in Free",
-      "Calculator",
       "Process offline transactions",
       "Reply to customers",
       "Statistics dashboard",

@@ -61,7 +61,7 @@ class Skills {
 
     // get the number of transactons in last 20 minutes (timestamp)
     int transactions20Minutes = await SQLiteService().getCount('transactions',
-        appendQuery: 'timestamp > ?',
+        appendQuery: 'WHERE timestamp > ?',
         args: [DateTime.now().millisecondsSinceEpoch - 20 * 60 * 1000]);
 
     if (transactions20Minutes < 5) {

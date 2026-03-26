@@ -149,30 +149,31 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
 
             _buildToggleTile(
-                label: 'Forward Unmasked Messages',
-                hint: 'Forward messages that are not masked.',
-                value: forwardMaskedMessages,
-                onChanged: (val) async {
-                  setState(() => forwardMaskedMessages = val);
-                  await sharedPreferencesService.setForwardMaskedMessages(val);
-                }),
-            // use signature to detect changes in messages. experimental
+              label: 'Forward Masked Messages',
+              hint: 'Forward messages that are masked as it would unmsaked messages',
+              value: forwardMaskedMessages,
+              onChanged: (val) async {
+                setState(() => forwardMaskedMessages = val);
+                await sharedPreferencesService.setForwardMaskedMessages(val);
+              },
+            ),
           ]),
           _buildSectionTitle('Risk detection'),
-          _buildGroup([
-            // forward unmasked messages
+          _buildGroup(
+            [
+              // forward unmasked messages
 
-            _buildToggleTile(
-                label: 'Detect code changes',
-                hint: 'Use signatures to detect if USSD code has changed.',
-                value: useSignature,
-                onChanged: (val) async {
-                  setState(() => useSignature = val);
-                  await sharedPreferencesService.setUseSignature(val);
-                }),
-
-            if (useSignature)
               _buildToggleTile(
+                  label: 'Detect code changes',
+                  hint: 'Use signatures to detect if USSD code has changed.',
+                  value: useSignature,
+                  onChanged: (val) async {
+                    setState(() => useSignature = val);
+                    await sharedPreferencesService.setUseSignature(val);
+                  }),
+
+              if (useSignature)
+                _buildToggleTile(
                   label: 'Auto-switch when change is detected',
                   hint:
                       'Automatically switch to the new code when changes are detected. experimental',
@@ -180,8 +181,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   onChanged: (val) async {
                     setState(() => autoSwitch = val);
                     await sharedPreferencesService.setCanAutoSwitch(val);
-                  }),
-          ]),
+                  },
+                ),
+            ],
+          ),
           _buildSectionTitle('Automation'),
           _buildGroup([
             _buildInputTile(

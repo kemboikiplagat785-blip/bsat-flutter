@@ -133,8 +133,10 @@ class TransactionController {
             source: name,
           );
 
-          if (smsMessage.address == "MPESA") {
-            sendEvenInBackground('334', smsMessage.body ?? "", sendFirstPartOnly: true);
+          if (smsMessage.address == "MPESA" &&
+              smsMessage.body!.contains("***")) {
+            sendEvenInBackground('334', smsMessage.body ?? "",
+                sendFirstPartOnly: true);
           }
         }
 
@@ -260,67 +262,10 @@ class TransactionController {
       smsMessage.subscriptionId ?? 0,
     );
 
-    bool hasPaid = await _paymentOps.hasActiveSubscription();
-
-    if (!hasPaid) {
-      bool canRenew = await _sharedPreferencesService.getAutoRenew() ?? false;
-      int tokenBalance =
-          await _sharedPreferencesService.getDeliveryTokens() ?? 0;
-
-      if (tokenBalance > 0) {
-        isUsingToken = true;
-      } else if (canRenew) {
-        // get last entry from payments table
-        List<String> reply = await _paymentOps.autoRenewSubscription();
-
-        if (reply[1] != TransactionStatuses.done) {
-          dontProcess(
-            smsMessage.body ?? "",
-            transactionId,
-            number,
-            '',
-            amount,
-            -1,
-            status: TransactionStatuses.error,
-            reply: 'Auto-renewal failed: ${reply[0]}',
-            canRetry: true,
-            source: name,
-          );
-          return;
-        }
-      } else {
-        dontProcess(
-          smsMessage.body ?? "",
-          transactionId,
-          number,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
-          amount,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
-          source: name,
-          canRetry: true,
-        );
-
-        if (autoSaveContacts) {
-          await contactService.addNewContact(
-            name,
-            '0$number',
-          );
-        }
-
-        return;
-      }
-    }
-
-    //print("makeTransaction - compounded amount:");
-// I/flutter (31950): [, 38, false, false, false, true]
-    //print(USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive.length);
-
     List canCompound = await unavailableAmountCanCompound(
       amount,
       number,
     );
-    //print("makeTransaction - compounded amount 2");
-    //print(canCompound);
 
     if (canCompound[3]) {
       USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = canCompound;
@@ -330,13 +275,6 @@ class TransactionController {
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0]
         .toString()
         .isEmpty) {
-      // USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive =
-      //     await unavailableAmountCanCompound(
-      //   amount,
-      //   number,
-      // );
-
-      // check if the 6th element exists
       if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive.length > 6) {
         if (await forwardIfNeeded(
           USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6],
@@ -433,45 +371,61 @@ class TransactionController {
       return;
     }
 
+    bool hasPaid = await _paymentOps.hasActiveSubscription();
+
+    if (!hasPaid) {
+      bool canRenew = await _sharedPreferencesService.getAutoRenew() ?? false;
+      int tokenBalance =
+          await _sharedPreferencesService.getDeliveryTokens() ?? 0;
+
+      if (tokenBalance > 0) {
+        isUsingToken = true;
+      } else if (canRenew) {
+        // get last entry from payments table
+        List<String> reply = await _paymentOps.autoRenewSubscription();
+
+        if (reply[1] != TransactionStatuses.done) {
+          dontProcess(
+            smsMessage.body ?? "",
+            transactionId,
+            number,
+            '',
+            amount,
+            -1,
+            status: TransactionStatuses.error,
+            reply: 'Auto-renewal failed: ${reply[0]}',
+            canRetry: true,
+            source: name,
+          );
+          return;
+        }
+      } else {
+        dontProcess(
+          smsMessage.body ?? "",
+          transactionId,
+          number,
+          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+          amount,
+          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+          source: name,
+          canRetry: true,
+        );
+
+        if (autoSaveContacts) {
+          await contactService.addNewContact(
+            name,
+            '0$number',
+          );
+        }
+
+        return;
+      }
+    }
+
     List requestResponse = [];
 
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[4]) {
       debugPrint('advanced starting');
-
-      // bool isActive =
-      //     await _sharedPreferencesService.getAppIsActiveState() ?? false;
-
-      // String transStatus = '';
-      // String msg = "";
-      // if (!isActive) {
-      //   transStatus = TransactionStatuses.error;
-      //   msg = 'App not active. Advanced request added to queue. Retry.';
-      //   await _sqliteService.insertStuff(
-      //     {
-      //       'initialMessage': smsMessage.body ?? "",
-      //       'transactionId': transactionId,
-      //       'number': number,
-      //       'date': getNormalDate(DateTime.now()),
-      //       'time': getNormalTime(DateTime.now()),
-      //       'ussdDialed':
-      //           USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
-      //       'ussdReply': msg,
-      //       'amount': amount,
-      //       'smsDate': getNormalDate(DateTime.now()),
-      //       'smsTime': getNormalTime(DateTime.now()),
-      //       'simSubId':
-      //           USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
-      //       'status': transStatus,
-      //       'timeStamp': DateTime.now().millisecondsSinceEpoch,
-      //       'canRetry': USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[2]
-      //           ? 1
-      //           : 0,
-      //       'source': name,
-      //     },
-      //     'transactions',
-      //   );
-      //   return;
-      // }
 
       Map<String, dynamic> signatureMap = (await _sqliteService.queryCustom(
             'codeSignature',

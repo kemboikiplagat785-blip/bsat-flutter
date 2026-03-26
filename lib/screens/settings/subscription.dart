@@ -90,175 +90,106 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             subscriptionStatus(),
             const SizedBox(height: kPagePadding),
 
-            // Padding(
-            //   padding: kPagePaddingInsets,
-            //   child: Container(
-            //     padding: kPagePaddingInsets,
-            //     decoration: BoxDecoration(
-            //       color: Theme.of(context).cardColor,
-            //       borderRadius: BorderRadius.circular(kBorderRadius),
-            //     ),
-            //     child: Column(
-            //       children: [
-            //         Row(
-            //           children: [
-            //             Flexible(
-            //               child: Text(
-            //                 (isExpired)
-            //                     ? "No Active Plan"
-            //                     : "Plan: ${_lastPayment.type}, expiry: ${DateTime.fromMillisecondsSinceEpoch(_lastPayment.till)}.",
-            //                 style: TextStyle(
-            //                   fontWeight: FontWeight.bold,
-            //                   color: (!isExpired) ? kPrimaryColor : kErrorColor,
-            //                 ),
-            //               ),
-            //             ),
-            //           ],
-            //         ),
-            //         Row(
-            //           children: [
-            //             Flexible(
-            //               child: Text(
-            //                 "Token balance: $tokenBalance",
-            //                 style: TextStyle(
-            //                   fontWeight: FontWeight.bold,
-            //                   color: (tokenBalance > 0)
-            //                       ? kPrimaryColor
-            //                       : kErrorColor,
-            //                 ),
-            //               ),
-            //             ),
-            //           ],
-            //         ),
-            //       ],
-            //     ),
-            //   ),
-            // ),
-            // Padding(
-            //   padding: const EdgeInsets.symmetric(horizontal: kPagePadding / 2),
-            //   child: Container(
-            //     decoration: BoxDecoration(
-            //       borderRadius: BorderRadius.circular(kBorderRadius),
-            //     ),
-            //     child: Row(
-            //       children: [
-            //         Checkbox(
-            //           value: autoRenew,
-            //           semanticLabel: "Enable Autorenew",
-            //           onChanged: (bool? value) {
-            //             setState(() {
-            //               autoRenew = value ?? false;
-            //               _sharedPreferencesService.setAutoRenew(autoRenew);
-            //             });
-            //           },
-            //         ),
-            //         const Text("Enable Autorenew"),
-            //       ],
-            //     ),
-            //   ),
-            // ),
-            // const Spacer(flex: 2),
+            const Text(
+              'Tokens (Used for Offline and Online requests)',
+            ),
+            // const Spacer(),
+            Padding(
+              padding: kPagePaddingInsets,
+              child: Row(
+                children: kTokens.map((s) {
+                  return Expanded(
+                    child: InkWell(
+                      onTap: () async {
+                        setState(() {
+                          // chosenSubId = s["id"];
+                          chosenTokenId = s["id"];
+                        });
+                        SimCard? sim = await chooseSim(context, sims);
 
-            // const Text(
-            //   'Tokens',
-            // ),
-            // // const Spacer(),
-            // Padding(
-            //   padding: kPagePaddingInsets,
-            //   child: Row(
-            //     children: kTokens.map((s) {
-            //       return Expanded(
-            //         child: InkWell(
-            //           onTap: () async {
-            //             setState(() {
-            //               // chosenSubId = s["id"];
-            //               chosenTokenId = s["id"];
-            //             });
-            //             SimCard? sim = await chooseSim(context, sims);
+                        if (sim == null) {
+                          return;
+                        }
 
-            //             if (sim == null) {
-            //               return;
-            //             }
+                        await paymentOps.payTokens(
+                          s['value'],
+                          sim.subscriptionId,
+                          s['amount'],
+                          planId: s['id'],
+                        );
 
-            //             await paymentOps.payTokens(
-            //               s['value'],
-            //               sim.subscriptionId,
-            //               s['amount'],
-            //               planId: s['id'],
-            //             );
-
-            //             refreshDialog(context, () async {
-            //               await _recheckPlanExpiry();
-            //               Navigator.pop(context);
-            //             });
-            //           },
-            //           child: Padding(
-            //             padding: const EdgeInsets.all(3.0),
-            //             child: Container(
-            //               padding: kPagePaddingInsets,
-            //               decoration: BoxDecoration(
-            //                 color: Theme.of(context).cardColor,
-            //                 borderRadius:
-            //                     BorderRadius.circular(kBorderRadius / 2),
-            //                 boxShadow: [
-            //                   BoxShadow(
-            //                     spreadRadius: 2,
-            //                     color: s["id"] == chosenTokenId
-            //                         ? Theme.of(context)
-            //                             .indicatorColor
-            //                             .withValues(
-            //                               alpha: 0.4,
-            //                             )
-            //                         : Colors.transparent,
-            //                   ),
-            //                 ],
-            //               ),
-            //               child: Column(
-            //                 children: [
-            //                   RichText(
-            //                     textAlign: TextAlign.center,
-            //                     text: TextSpan(
-            //                       children: [
-            //                         TextSpan(
-            //                           text: 'KSH ',
-            //                           style: TextStyle(
-            //                               color: Theme.of(context).hintColor),
-            //                         ),
-            //                         TextSpan(
-            //                           text: '${s["value"]}',
-            //                           style: TextStyle(
-            //                             fontWeight: FontWeight.bold,
-            //                             color: s["id"] == chosenTokenId
-            //                                 ? Theme.of(context).indicatorColor
-            //                                 : Theme.of(context).focusColor,
-            //                           ),
-            //                         ),
-            //                       ],
-            //                     ),
-            //                   ),
-            //                   const SizedBox(height: kPagePadding * 1.5),
-            //                   s["id"] == chosenTokenId
-            //                       ? Icon(
-            //                           CupertinoIcons.checkmark_alt_circle_fill,
-            //                           color: Theme.of(context).indicatorColor,
-            //                         )
-            //                       : Container(),
-            //                   Text(
-            //                     '${s["amount"]} tokens',
-            //                     style: TextStyle(
-            //                       // color: ,
-            //                       fontWeight: FontWeight.bold,
-            //                     ),
-            //                   ),
-            //                 ],
-            //               ),
-            //             ),
-            //           ),
-            //         ),
-            //       );
-            //     }).toList(),
-            //   ),
-            // ),
+                        refreshDialog(context, () async {
+                          await _recheckPlanExpiry();
+                          Navigator.pop(context);
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(3.0),
+                        child: Container(
+                          padding: kPagePaddingInsets,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius:
+                                BorderRadius.circular(kBorderRadius / 2),
+                            boxShadow: [
+                              BoxShadow(
+                                spreadRadius: 2,
+                                color: s["id"] == chosenTokenId
+                                    ? Theme.of(context)
+                                        .indicatorColor
+                                        .withValues(
+                                          alpha: 0.4,
+                                        )
+                                    : Colors.transparent,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: [
+                              RichText(
+                                textAlign: TextAlign.center,
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: 'KSH ',
+                                      style: TextStyle(
+                                          color: Theme.of(context).hintColor),
+                                    ),
+                                    TextSpan(
+                                      text: '${s["value"]}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: s["id"] == chosenTokenId
+                                            ? Theme.of(context).indicatorColor
+                                            : Theme.of(context).focusColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: kPagePadding * 1.5),
+                              s["id"] == chosenTokenId
+                                  ? Icon(
+                                      CupertinoIcons.checkmark_alt_circle_fill,
+                                      color: Theme.of(context).indicatorColor,
+                                    )
+                                  : Container(),
+                              Text(
+                                '${s["amount"]} tokens',
+                                style: TextStyle(
+                                  // color: ,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
             const SizedBox(height: kPagePadding),
             const Text(
               'Subscription Plans',

@@ -93,18 +93,20 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       String body = message.data['body'] ?? message.notification?.body ?? "";
       if (!await subscribedToOnline("Online")) {
         // If not subscribed to Online,
-        TransactionController().dontProcess(
-          body,
-          "00",
-          0,
-          "",
-          0,
-          -1,
-          reply:
-              "You received a forwarded message but it seems you are not subscribed to the Online tier. Please subscribe to Online to process forwarded messages.",
-          status: TransactionStatuses.paused,
-        );
-        return;
+        if (!(await PaymentOps().deductSingleToken())) {
+          TransactionController().dontProcess(
+            body,
+            "00",
+            0,
+            "",
+            0,
+            -1,
+            reply:
+                "You received a forwarded message but it seems you are not subscribed to the Online tier. Please subscribe to Online to process forwarded messages.",
+            status: TransactionStatuses.paused,
+          );
+          return;
+        }
       }
       if (body.isNotEmpty) {
         TransactionController().makeTransactionGivenSmsBody(body);
@@ -151,74 +153,78 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
 
     case 'DATA_REQUEST':
       if (!(await subscribedToOnline("Online +"))) {
-        // If not subscribed to Online, return an error response if callbackUrl is provided
-        String callbackUrl =
-            message.data['callbackUrl'] ?? '/api/fcm/receive-data';
-        print(
-            "User not subscribed to Online + tier, callbackUrl: $callbackUrl");
-        if (callbackUrl.isNotEmpty) {
-          final errorPayload = {
-            'type': 'DATA_RESPONSE',
-            'requestId': message.data['requestId'],
-            'dataType': message.data['tableName'] ?? 'unknown',
-            'data': null,
-            'messageId': message.messageId,
-            'error': 'User not subscribed to Online + tier',
-          };
+        if (!(await PaymentOps().deductSingleToken())) {
+          // If not subscribed to Online, return an error response if callbackUrl is provided
+          String callbackUrl =
+              message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+          print(
+              "User not subscribed to Online + tier, callbackUrl: $callbackUrl");
+          if (callbackUrl.isNotEmpty) {
+            final errorPayload = {
+              'type': 'DATA_RESPONSE',
+              'requestId': message.data['requestId'],
+              'dataType': message.data['tableName'] ?? 'unknown',
+              'data': null,
+              'messageId': message.messageId,
+              'error': 'User not subscribed to Online + tier',
+            };
 
-          try {
-            if (callbackUrl.startsWith('http')) {
-              await http.post(
-                Uri.parse(callbackUrl),
-                headers: {'Content-Type': 'application/json'},
-                body: jsonEncode(errorPayload),
-              );
-            } else {
-              final resp =
-                  await BackendService().post(callbackUrl, body: errorPayload);
-              if (kDebugMode && resp['success'] == false) {}
+            try {
+              if (callbackUrl.startsWith('http')) {
+                await http.post(
+                  Uri.parse(callbackUrl),
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode(errorPayload),
+                );
+              } else {
+                final resp = await BackendService()
+                    .post(callbackUrl, body: errorPayload);
+                if (kDebugMode && resp['success'] == false) {}
+              }
+            } catch (e) {
+              if (kDebugMode)
+                print('Failed to send subscription error response: $e');
             }
-          } catch (e) {
-            if (kDebugMode)
-              print('Failed to send subscription error response: $e');
           }
+          return; // Don't proceed with data request handling
         }
-        return; // Don't proceed with data request handling
       }
       await _handleGetMyDBData(message);
       break;
 
     case 'GENERIC_DATA_REQUEST':
       if (!(await subscribedToOnline("Online +"))) {
-        String callbackUrl =
-            message.data['callbackUrl'] ?? '/api/fcm/receive-data';
-        if (callbackUrl.isNotEmpty) {
-          final errorPayload = {
-            'type': 'GENERIC_DATA_RESPONSE',
-            'requestId': message.data['requestId'],
-            'data': null,
-            'messageId': message.messageId,
-            'error': 'User not subscribed to Online + tier',
-          };
+        if (!(await PaymentOps().deductSingleToken())) {
+          String callbackUrl =
+              message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+          if (callbackUrl.isNotEmpty) {
+            final errorPayload = {
+              'type': 'GENERIC_DATA_RESPONSE',
+              'requestId': message.data['requestId'],
+              'data': null,
+              'messageId': message.messageId,
+              'error': 'User not subscribed to Online + tier',
+            };
 
-          try {
-            if (callbackUrl.startsWith('http')) {
-              await http.post(
-                Uri.parse(callbackUrl),
-                headers: {'Content-Type': 'application/json'},
-                body: jsonEncode(errorPayload),
-              );
-            } else {
-              final resp =
-                  await BackendService().post(callbackUrl, body: errorPayload);
-              if (kDebugMode && resp['success'] == false) {}
+            try {
+              if (callbackUrl.startsWith('http')) {
+                await http.post(
+                  Uri.parse(callbackUrl),
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode(errorPayload),
+                );
+              } else {
+                final resp = await BackendService()
+                    .post(callbackUrl, body: errorPayload);
+                if (kDebugMode && resp['success'] == false) {}
+              }
+            } catch (e) {
+              if (kDebugMode)
+                print('Failed to send subscription error response: $e');
             }
-          } catch (e) {
-            if (kDebugMode)
-              print('Failed to send subscription error response: $e');
           }
+          return; // Don't proceed with generic data request handling
         }
-        return; // Don't proceed with generic data request handling
       }
       await _handleGenericDataRequest(message);
       break;
@@ -232,35 +238,37 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
 
     case 'update_offers':
       if (!(await subscribedToOnline("Online +"))) {
-        // If not subscribed to Online, return an error response if callbackUrl is provided
-        String callbackUrl =
-            message.data['callbackUrl'] ?? '/api/fcm/receive-data';
-        if (callbackUrl.isNotEmpty) {
-          final errorPayload = {
-            'type': 'UPDATE_OFFERS_RESPONSE',
-            'messageId': message.messageId,
-            'status': 'error',
-            'error': 'User not subscribed to Online + tier',
-          };
+        if (!(await PaymentOps().deductSingleToken())) {
+          // If not subscribed to Online, return an error response if callbackUrl is provided
+          String callbackUrl =
+              message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+          if (callbackUrl.isNotEmpty) {
+            final errorPayload = {
+              'type': 'UPDATE_OFFERS_RESPONSE',
+              'messageId': message.messageId,
+              'status': 'error',
+              'error': 'User not subscribed to Online + tier',
+            };
 
-          try {
-            if (callbackUrl.startsWith('http')) {
-              await http.post(
-                Uri.parse(callbackUrl),
-                headers: {'Content-Type': 'application/json'},
-                body: jsonEncode(errorPayload),
-              );
-            } else {
-              final resp =
-                  await BackendService().post(callbackUrl, body: errorPayload);
-              if (kDebugMode && resp['success'] == false) {}
+            try {
+              if (callbackUrl.startsWith('http')) {
+                await http.post(
+                  Uri.parse(callbackUrl),
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode(errorPayload),
+                );
+              } else {
+                final resp = await BackendService()
+                    .post(callbackUrl, body: errorPayload);
+                if (kDebugMode && resp['success'] == false) {}
+              }
+            } catch (e) {
+              if (kDebugMode)
+                print('Failed to send subscription error response: $e');
             }
-          } catch (e) {
-            if (kDebugMode)
-              print('Failed to send subscription error response: $e');
           }
+          return; // Don't proceed with offer update handling
         }
-        return; // Don't proceed with offer update handling
       }
       await _handleEditOffer(message);
       break;
@@ -268,34 +276,36 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     case 'retry_transaction':
       if (!(await subscribedToOnline("Online +"))) {
         // If not subscribed to Online, return an error response if callbackUrl is provided
-        String callbackUrl =
-            message.data['callbackUrl'] ?? '/api/fcm/receive-data';
-        if (callbackUrl.isNotEmpty) {
-          final errorPayload = {
-            'type': 'RETRY_TRANSACTION_RESPONSE',
-            'messageId': message.messageId,
-            'status': 'error',
-            'error': 'User not subscribed to Online + tier',
-          };
+        if (!(await PaymentOps().deductSingleToken())) {
+          String callbackUrl =
+              message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+          if (callbackUrl.isNotEmpty) {
+            final errorPayload = {
+              'type': 'RETRY_TRANSACTION_RESPONSE',
+              'messageId': message.messageId,
+              'status': 'error',
+              'error': 'User not subscribed to Online + tier',
+            };
 
-          try {
-            if (callbackUrl.startsWith('http')) {
-              await http.post(
-                Uri.parse(callbackUrl),
-                headers: {'Content-Type': 'application/json'},
-                body: jsonEncode(errorPayload),
-              );
-            } else {
-              final resp =
-                  await BackendService().post(callbackUrl, body: errorPayload);
-              if (kDebugMode && resp['success'] == false) {}
+            try {
+              if (callbackUrl.startsWith('http')) {
+                await http.post(
+                  Uri.parse(callbackUrl),
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode(errorPayload),
+                );
+              } else {
+                final resp = await BackendService()
+                    .post(callbackUrl, body: errorPayload);
+                if (kDebugMode && resp['success'] == false) {}
+              }
+            } catch (e) {
+              if (kDebugMode)
+                print('Failed to send subscription error response: $e');
             }
-          } catch (e) {
-            if (kDebugMode)
-              print('Failed to send subscription error response: $e');
           }
+          return; // Don't proceed with retry transaction handling
         }
-        return; // Don't proceed with retry transaction handling
       }
       await _handleRetryTransaction(message);
       break;

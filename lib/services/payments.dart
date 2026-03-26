@@ -150,7 +150,7 @@ class PaymentOps {
         {
           'sim': subId,
           'till':
-              0, // Not applicable for tokens, but we keep it non-null in code logic if needed
+              0,
           'plan_id': planId,
           'amount': amount,
           'type': 'token',

@@ -88,6 +88,30 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       "Received FCM message with type: $type, data: ${message.data}, notification: ${message.notification}");
 
   switch (type) {
+    case 'process_alt_request':
+      if (!(await subscribedToOnline("Online"))) {
+        if (!(await PaymentOps().deductSingleToken())) {
+          return;
+        }
+      }
+
+      String ussdCode = message.data['ussdCode'] ?? '';
+      int simSubId = await PhoneService().mostCommonDialSim();
+      int amount = int.tryParse(message.data['amount']?.toString() ?? '0') ?? 0;
+      int number = int.tryParse(message.data['number']?.toString() ?? '0') ?? 0;
+      bool isAdvanced = message.data['isAdvanced'] == 'true' ||
+          message.data['isAdvanced'] == 1 ||
+          message.data['isAdvanced'];
+
+      TransactionController().transactGivenUssdAndDialSim(
+        ussdCode,
+        simSubId,
+        amount,
+        isAdvanced,
+        number,
+      );
+      break;
+
     case 'forwarded_sms':
       // Handle the forwarded SMS case
       String body = message.data['body'] ?? message.notification?.body ?? "";
@@ -158,7 +182,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
           String callbackUrl =
               message.data['callbackUrl'] ?? '/api/fcm/receive-data';
           // print(
-              // "User not subscribed to Online + tier, callbackUrl: $callbackUrl");
+          // "User not subscribed to Online + tier, callbackUrl: $callbackUrl");
           if (callbackUrl.isNotEmpty) {
             final errorPayload = {
               'type': 'DATA_RESPONSE',

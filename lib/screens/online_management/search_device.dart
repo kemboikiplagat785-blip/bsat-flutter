@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import '../../components/device_card.dart';
 import '../../components/header.dart';
 import '../../services/auth_service.dart';
+import '../../services/shared_preferences_service.dart';
 import '../../utils/constants.dart';
+import 'login.dart';
+import 'register_device.dart';
 
 class SearchDevicePage extends StatefulWidget {
   final String query;
@@ -20,6 +23,35 @@ class _SearchDevicePageState extends State<SearchDevicePage> {
   List<Map<String, dynamic>> devices = [];
 
   bool isLoading = false;
+
+  
+  void checkIfLoggedIn() async {
+    // isSignedIn = await myFirebaseAuth.isSignedIn();
+    bool isSignedIn = await AuthService().isLoggedIn();
+    String myDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? "Unknown Device";
+
+    if (!isSignedIn && mounted) {
+      // Navigate to login if not signed in
+      Navigator.of(context).pushReplacement(
+        CupertinoPageRoute(
+          builder: (context) => LoginPage(),
+        ),
+      );
+    } else if (myDeviceName == "Unknown Device") {
+      // If signed in but no device registered, navigate to device registration
+      Navigator.of(context).pushReplacement(
+        CupertinoPageRoute(
+          builder: (context) => RegisterDevicePage(),
+        ),
+      );
+    } else {
+      setState(() {});
+    }
+
+    setState(() {});
+  }
+
 
   void searchDevices() async {
     setState(() {
@@ -52,6 +84,7 @@ class _SearchDevicePageState extends State<SearchDevicePage> {
     // TODO: implement initState
     super.initState();
     searchController.text = widget.query;
+    checkIfLoggedIn();
     if (widget.query.isNotEmpty) {
       searchDevices();
     }

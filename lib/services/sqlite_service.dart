@@ -78,7 +78,10 @@ class SQLiteService {
         usesBongaPoints INTEGER DEFAULT 0,
         fallbackCode TEXT,
         balanceCheckCode TEXT,
-        bongaPointsPerTransaction INTEGER DEFAULT 0
+        bongaPointsPerTransaction INTEGER DEFAULT 0,
+        alternativeUssdCode TEXT,
+        runAltOn TEXT,
+        altIsAdvanced INTEGER DEFAULT 0
       )''',
     );
 
@@ -300,6 +303,41 @@ class SQLiteService {
           isActive INTEGER DEFAULT 1
           )''',
       );
+
+      try {
+        await db.execute(
+            'ALTER TABLE ussdCodes ADD COLUMN alternativeUssdCode TEXT');
+      } catch (e) {
+        // column may already exist
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE ussdCodes ADD COLUMN runAltOn TEXT');
+      } catch (e) {
+        // column may already exist
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE ussdCodes ADD COLUMN altIsAdvanced INTEGER DEFAULT 0');
+      } catch (e) {
+        // column may already exist
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE transactions ADD COLUMN runOn TEXT');
+      } catch (e) {
+        // column may already exist
+      }
+
+      try {
+        await db.execute(
+            'ALTER TABLE ussdCodes ADD COLUMN altIsAdvanced INTEGER DEFAULT 0');
+      } catch (e) {
+        // column may already exist
+      }
 
       if (oldVersion < 4) {
         // Remove UNIQUE constraint on whitelistedDevices.device_id by recreating the table.

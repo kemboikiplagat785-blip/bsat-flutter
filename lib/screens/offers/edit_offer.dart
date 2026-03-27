@@ -4,12 +4,14 @@ import 'package:bsat/components/dialogs/delete_ussd_dialog.dart';
 import 'package:bsat/components/dialogs/make_offer_tutorial_dialog.dart';
 import 'package:bsat/components/dialogs/show_error_dialog.dart';
 import 'package:bsat/components/tool_button.dart';
+import 'package:bsat/screens/online_management/search_device.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sim_data/sim_data.dart';
 
+import '../../components/device_card.dart';
 import '../../components/dialogs/accessibility_permission.dart';
 import '../../controllers/transaction_controller.dart';
 import '../../models/code_signature.dart';
@@ -32,6 +34,9 @@ class EditOfferPage extends StatefulWidget {
 class _EditOfferPageState extends State<EditOfferPage> {
   final TextEditingController _amountTextController = TextEditingController();
   final TextEditingController _codeTextController = TextEditingController();
+  final TextEditingController _alternativeUssdCodeTextController =
+      TextEditingController();
+  final TextEditingController _runAltOnTextController = TextEditingController();
   final TextEditingController _fallbackCodeTextController =
       TextEditingController();
   final TextEditingController _balanceCheckCodeTextController =
@@ -59,6 +64,10 @@ class _EditOfferPageState extends State<EditOfferPage> {
   bool isAdvanced = false;
   bool usesBongaPoints = false;
   bool hasAcceptedProcedure = false;
+  bool hasAlternativeCode = false;
+  bool altIsAdvanced = false;
+
+  List<Map<String, dynamic>> forwardingDevices = [];
 
   bool _fromBothSims = true;
   bool _canRetry = false;
@@ -81,11 +90,22 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
   void getAndProcessCards() async {
     await SimDataPlugin.getSimData().then((value) {
-      setState(() {
-        sims = value.cards;
-      });
+      if (mounted) {
+        setState(() {
+          sims = value.cards;
+        });
+      }
       // debugPrint("Got cards");
     });
+  }
+
+  void getDevices() async {
+    final devices = await _sqliteService.queryAll('forwardingDevices');
+    if (mounted) {
+      setState(() {
+        forwardingDevices = devices;
+      });
+    }
   }
 
   Future<bool> checkAccessibilityPermission() async {
@@ -205,6 +225,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
           'id': widget.ruleId,
           'amount': amount,
           'code': code,
+          'alternativeUssdCode': hasAlternativeCode
+              ? _alternativeUssdCodeTextController.text
+              : null,
+          'runAltOn': hasAlternativeCode ? _runAltOnTextController.text : null,
+          'altIsAdvanced': (hasAlternativeCode && altIsAdvanced) ? 1 : 0,
           'fromSim': _fromSim,
           'dialSim': _dialSim,
           'canRetry': _canRetry ? 1 : 0,
@@ -233,6 +258,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
         {
           'amount': amount,
           'code': code,
+          'alternativeUssdCode': hasAlternativeCode
+              ? _alternativeUssdCodeTextController.text
+              : null,
+          'runAltOn': hasAlternativeCode ? _runAltOnTextController.text : null,
+          'altIsAdvanced': (hasAlternativeCode && altIsAdvanced) ? 1 : 0,
           'fromSim': -1,
           'dialSim': _dialSim,
           'canRetry': _canRetry ? 1 : 0,
@@ -284,6 +314,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
     _codeTextController.clear();
     _amountTextController.clear();
+    _alternativeUssdCodeTextController.clear();
+    _runAltOnTextController.clear();
     _fallbackCodeTextController.clear();
     _balanceCheckCodeTextController.clear();
     _hasChanges = false;
@@ -315,6 +347,15 @@ class _EditOfferPageState extends State<EditOfferPage> {
         ? thisData['usesBongaPoints'] == 1
         : false;
     _fallbackCodeTextController.text = thisData['fallbackCode'] ?? '';
+    _alternativeUssdCodeTextController.text =
+        thisData['alternativeUssdCode'] ?? '';
+    _runAltOnTextController.text = thisData['runAltOn'] ?? '';
+    altIsAdvanced = (thisData['altIsAdvanced'] != null)
+        ? thisData['altIsAdvanced'] == 1
+        : false;
+    if ((thisData['alternativeUssdCode'] ?? '').isNotEmpty) {
+      hasAlternativeCode = true;
+    }
     _balanceCheckCodeTextController.text =
         thisData['balanceCheckCode'] ?? '*126*7*1#';
     _bongaPointsPerTransactionTextController.text =
@@ -354,6 +395,10 @@ class _EditOfferPageState extends State<EditOfferPage> {
   void _addChangeListeners() {
     _amountTextController.addListener(() => setState(() => _hasChanges = true));
     _codeTextController.addListener(() => setState(() => _hasChanges = true));
+    _alternativeUssdCodeTextController
+        .addListener(() => setState(() => _hasChanges = true));
+    _runAltOnTextController
+        .addListener(() => setState(() => _hasChanges = true));
     _fallbackCodeTextController
         .addListener(() => setState(() => _hasChanges = true));
     _balanceCheckCodeTextController
@@ -403,6 +448,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     super.initState();
 
     getAndProcessCards();
+    getDevices();
     _addChangeListeners();
 
     if (widget.ruleId >= 0) {
@@ -450,8 +496,12 @@ class _EditOfferPageState extends State<EditOfferPage> {
           body: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             children: [
-              _buildSectionTitle('Trigger Condition'),
+              _buildSectionTitle('Basics'),
               _buildGroup([
+                Padding(
+                  padding: kPagePaddingInsets,
+                  child: Row(children: [Text('On Receiving')]),
+                ),
                 _buildInputTile(
                   label: 'Amount (Ksh)',
                   controller: _amountTextController,
@@ -468,10 +518,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
                     _fromBothSims = both;
                   }),
                 ),
-              ]),
-
-              _buildSectionTitle('Execution'),
-              _buildGroup([
+                const Divider(color: Colors.white24),
+                Padding(
+                  padding: kPagePaddingInsets,
+                  child: Row(children: [Text('Dial')]),
+                ),
                 _buildInputTile(
                   label: 'USSD Code',
                   controller: _codeTextController,
@@ -485,10 +536,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                   isBoth: false,
                   onSelect: (id, _) => setState(() => _dialSim = id),
                 ),
-              ]),
-
-              _buildSectionTitle('Automation Options'),
-              _buildGroup([
+                const Divider(color: Colors.white24),
                 _buildSwitchTile(
                   label: 'Advanced USSD',
                   value: isAdvanced,
@@ -498,7 +546,10 @@ class _EditOfferPageState extends State<EditOfferPage> {
                     setState(() => isAdvanced = val);
                   },
                 ),
-                const Divider(color: Colors.white24),
+              ]),
+
+              _buildSectionTitle('Error detection and avoidance'),
+              _buildGroup([
                 _buildSwitchTile(
                   label: 'Auto-Retry on Error',
                   value: _canRetry,
@@ -507,10 +558,41 @@ class _EditOfferPageState extends State<EditOfferPage> {
                     setState(() => _canRetry = val);
                   },
                 ),
-              ]),
-
-              _buildSectionTitle('Auto Switch & risk detection'),
-              _buildGroup([
+                const Divider(color: Colors.white24, height: 1),
+                _buildSwitchTile(
+                  label: 'Has Alternative Code',
+                  value: hasAlternativeCode,
+                  onChanged: (val) {
+                    _hasChanges = true;
+                    setState(() => hasAlternativeCode = val);
+                  },
+                ),
+                if (hasAlternativeCode) ...[
+                  Padding(
+                    padding: kPagePaddingInsets,
+                    child: Row(children: [
+                      Text('For when the number has already been recommended')
+                    ]),
+                  ),
+                  _buildInputTile(
+                    label: 'Alternative USSD Code',
+                    controller: _alternativeUssdCodeTextController,
+                    hint: '*180*5*2*n#',
+                    icon: CupertinoIcons.number,
+                  ),
+                  const Divider(color: Colors.white24, height: 1),
+                  _buildSwitchTile(
+                    label: 'Alternative Code is Advanced',
+                    value: altIsAdvanced,
+                    onChanged: (val) {
+                      _hasChanges = true;
+                      setState(() => altIsAdvanced = val);
+                    },
+                  ),
+                  const Divider(color: Colors.white24, height: 1),
+                  _buildRunAltOnSelector(),
+                ],
+                const Divider(color: Colors.white24, height: 1),
                 _buildSwitchTile(
                   label: 'Use Bonga Points',
                   value: usesBongaPoints,
@@ -520,27 +602,34 @@ class _EditOfferPageState extends State<EditOfferPage> {
                   },
                 ),
                 if (usesBongaPoints) ...[
-                  _buildSectionTitle('Bonga Configuration'),
-                  _buildGroup([
-                    _buildInputTile(
-                      label:
-                          'Emergency USSD Code (if bonga points balance too low)',
-                      controller: _fallbackCodeTextController,
-                      hint: 'Emergency USSD',
-                      icon: CupertinoIcons.refresh_circled,
+                  Padding(
+                    padding: kPagePaddingInsets,
+                    child: Text(
+                      'Configure the USSD codes and points required for using bonga points as a fallback when you doen\'t have enough bonga points to complete the transaction.',
+                      style: TextStyle(
+                        color: Theme.of(context).hintColor,
+                        fontSize: 13,
+                      ),
                     ),
-                    _buildInputTile(
-                      label: 'Balance Check',
-                      controller: _balanceCheckCodeTextController,
-                      icon: CupertinoIcons.graph_square,
-                    ),
-                    _buildInputTile(
-                      label: 'Points deducted per Transaction',
-                      controller: _bongaPointsPerTransactionTextController,
-                      keyboardType: TextInputType.number,
-                      icon: CupertinoIcons.bolt_fill,
-                    ),
-                  ]),
+                  ),
+                  _buildInputTile(
+                    label:
+                        'Emergency USSD Code (if bonga points balance too low)',
+                    controller: _fallbackCodeTextController,
+                    hint: 'Emergency USSD',
+                    icon: CupertinoIcons.refresh_circled,
+                  ),
+                  _buildInputTile(
+                    label: 'USSD Balance Check',
+                    controller: _balanceCheckCodeTextController,
+                    icon: CupertinoIcons.graph_square,
+                  ),
+                  _buildInputTile(
+                    label: 'Points deducted per Transaction',
+                    controller: _bongaPointsPerTransactionTextController,
+                    keyboardType: TextInputType.number,
+                    icon: CupertinoIcons.bolt_fill,
+                  ),
                 ],
                 const Divider(color: Colors.white24),
                 _buildSwitchTile(
@@ -700,10 +789,13 @@ class _EditOfferPageState extends State<EditOfferPage> {
                   Expanded(
                     child: TextButton(
                       onPressed: () => makeOfferTutorialDialog(context),
-                      child: Text('Need Help?',
-                          style: TextStyle(
-                              color: Theme.of(context).hintColor,
-                              fontWeight: FontWeight.w600)),
+                      child: Text(
+                        'Need Help?',
+                        style: TextStyle(
+                          color: Theme.of(context).hintColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -745,10 +837,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
       child: Text(
         title.toUpperCase(),
         style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.2,
-            color: kIndigoColor),
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+          color: kIndigoColor,
+        ),
       ),
     );
   }
@@ -898,6 +991,138 @@ class _EditOfferPageState extends State<EditOfferPage> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  void showDevicePicker() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Select Device'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                ListTile(
+                  leading: const Icon(CupertinoIcons.device_phone_portrait),
+                  title: const Text('This Device'),
+                  onTap: () {
+                    setState(() {
+                      _runAltOnTextController.text = '';
+                      _hasChanges = true;
+                    });
+                    Navigator.pop(context);
+                  },
+                ),
+                ...forwardingDevices.map(
+                  (device) {
+                    return ListTile(
+                      leading: const Icon(Icons.devices),
+                      title: Text(device['device_name'] ?? 'Unknown'),
+                      subtitle: Text(device['owner_email'] ?? ''),
+                      onTap: () {
+                        setState(() {
+                          _runAltOnTextController.text = device['device_name'];
+                          _hasChanges = true;
+                        });
+                        Navigator.pop(context);
+                      },
+                    );
+                  },
+                ),
+                // add device icon
+                IconButton(
+                  icon: const Icon(CupertinoIcons.plus_app),
+                  onPressed: () async {
+                    // open device management screen
+                    var device = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => SearchDevicePage(),
+                      ),
+                    );
+
+                    if (device != null) {
+                      Navigator.pop(context); // close the picker dialog
+                      setState(() {
+                        _runAltOnTextController.text = device['device_name'];
+                        _hasChanges = true;
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRunAltOnSelector() {
+    Map<String, dynamic>? selectedDevice;
+    if (_runAltOnTextController.text.isNotEmpty) {
+      try {
+        selectedDevice = forwardingDevices.firstWhere(
+          (d) => d['device_name'] == _runAltOnTextController.text,
+        );
+      } catch (e) {}
+    }
+
+    return InkWell(
+      onTap: showDevicePicker,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Run the code on',
+              style: TextStyle(
+                fontSize: 14,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (selectedDevice != null) ...[
+              deviceCard(
+                context: context,
+                deviceName: selectedDevice['device_name'] ?? 'Unknown',
+                deviceDetails: selectedDevice['owner_email'],
+                iconData: Icons.devices,
+              ),
+              const SizedBox(height: 8),
+            ] else if (_runAltOnTextController.text.isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(Icons.devices, color: kPrimaryColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    _runAltOnTextController.text,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ] else ...[
+              Row(
+                children: [
+                  const Icon(CupertinoIcons.device_phone_portrait,
+                      color: kPrimaryColor),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'This Device',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ],
+        ),
       ),
     );
   }

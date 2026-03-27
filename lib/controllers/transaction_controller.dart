@@ -1024,37 +1024,6 @@ class TransactionController {
   ) async {
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
 
-    // var transactionItem = (await _sqliteService.queryCustom(
-    //   'transactions',
-    //   'id = ?',
-    //   [id],
-    // ))
-    //     .first;
-
-    // if (transactionItem['initialMessage']
-    //     .toString()
-    //     .contains(RegExp(r'received'))) {
-    //   makeTransactionGivenSmsBody(transactionItem['initialMessage'] ?? '');
-    //   await _sqliteService.deleteStuff(
-    //     id,
-    //     'transactions',
-    //   );
-    //   return;
-    // }
-
-    // if (RegExp('Forwarding failed', caseSensitive: false).hasMatch(reply)) {
-    //   await _sqliteService.deleteStuff(
-    //     id,
-    //     'transactions',
-    //   );
-
-    //   makeTransactionGivenSmsBody(transactionItem['initialMessage'] ?? '');
-
-    //   // remove the transaction from the database so that it doesn't keep showing up in the retry list
-
-    //   return;
-    // } else {}
-
     Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
       'transactions',
       'id = ?',
@@ -1093,15 +1062,6 @@ class TransactionController {
         return;
       }
     }
-
-    // if(initialMessage.contains("received") || initialMessage.contains("sent")){
-    //   makeTransactionGivenSmsBody(initialMessage);
-    //   await _sqliteService.deleteStuff(
-    //     id,
-    //     'transactions',
-    //   );
-    //   return;
-    // }
 
     int number = getNumberFromCode(ussdCode);
     int amount = getAmount(initialMessage);
@@ -1157,19 +1117,16 @@ class TransactionController {
 
       if (!isActive) return;
 
-      int ussdCodeId = (await _sqliteService.queryCustom(
-        'ussdCodes',
-        'amount = ?',
-        [amount],
-        columns: ['id'],
-      ))
-          .first['id'];
+      Map<String, dynamic> thisCOde = lecodes.firstWhere(
+        (code) => code['ussdCode'] == ussdCode,
+        orElse: () => {},
+      );
 
       CodeSignature signature = CodeSignature.fromMap(
         (await _sqliteService.queryCustom(
           'codeSignature',
           'ussdCodeId = ?',
-          [ussdCodeId ?? -1],
+          [thisCOde['id'] ?? -1],
         ))
             .first,
       );
@@ -1196,6 +1153,7 @@ class TransactionController {
     }
 
     if (response[1] == TransactionStatuses.secondAttempt) {
+      String bsatMessage = "(Number Altered by BSAT): ";
       canRetry = 20;
       print("second attempt");
       Client? dbClient = await ClientService().getClientByPhone('0$number');
@@ -1203,13 +1161,88 @@ class TransactionController {
           dbClient.alternativePhoneNumber != null &&
           dbClient.alternativePhoneNumber!.trim().isNotEmpty) {
         int altNumber = extract9DigitNumber(dbClient.alternativePhoneNumber!);
-        String altMessage = replaceNumberInMessage(
-            "0$number", dbClient.alternativePhoneNumber ?? "", initialMessage);
-        if (altNumber != number && altNumber > 0) {
-          makeTransactionGivenSmsBody(altMessage);
+        if (!initialMessage.contains(bsatMessage)) {
+          String altMessage = replaceNumberInMessage(
+            "0$number",
+            dbClient.alternativePhoneNumber ?? "",
+            initialMessage,
+            bsatMessage,
+          );
+          if (altNumber != number && altNumber > 0) {
+            await _sqliteService.deleteStuff(
+              id,
+              'transactions',
+            );
+            debugPrint("Running transaction with alternative number: $altNumber");
+            makeTransactionGivenSmsBody(altMessage);
+            return;
+          }
         }
       }
     }
+
+    if (response[1] == TransactionStatuses.secondAttempt && lecodes.isNotEmpty) {
+        String? altUssdCode = lecodes.first['alternativeUssdCode'];
+        String? runAltOn = lecodes.first['runAltOn'];
+        bool altIsAdvanced = lecodes.first['altIsAdvanced'] == 1;
+
+
+// print(object)
+
+
+        if (altUssdCode != null && altUssdCode.isNotEmpty) {
+          if (runAltOn == null || runAltOn.isEmpty) {
+            String processedAltUssdCode = replaceNWithNumber(altUssdCode, number);
+              debugPrint('Running alternative USSD code: $processedAltUssdCode');
+            List<dynamic> altResponse = [];
+            if (altIsAdvanced) {
+              CodeSignature altSignature = CodeSignature.fromMap(
+                (await _sqliteService.queryCustom(
+                  'codeSignature',
+                  'ussdCodeId = ?',
+                  [lecodes.first['id'] ?? -1],
+                ))
+                    .first,
+              );
+
+              altResponse = await PhoneService().makeAdvancedRequest(
+                processedAltUssdCode,
+                simSubId,
+                codeSignature: altSignature,
+              );
+              altResponse[1] = await transactionStatus(altResponse);
+            } else {
+              altResponse = await PhoneService().makeMyRequest(
+                processedAltUssdCode,
+                simSubId,
+              );
+              altResponse[1] = await transactionStatus(altResponse);
+            }
+            response = altResponse;
+          } else {
+            List deviceMatches = await _sqliteService.queryCustom(
+              'forwardingDevices',
+              'device_name = ?',
+              [runAltOn],
+            );
+            if (deviceMatches.isNotEmpty) {
+              String deviceId = deviceMatches.first['device_id'];
+              await BackendService().post('/api/fcm/send-message', body: {
+                'id': deviceId,
+                'data': {
+                  'type': 'process_alt_request',
+                  'ussdCode': altUssdCode,
+                  'simSubId': simSubId,
+                  'isAdvanced': altIsAdvanced,
+                  'amount': amount,
+                  'number': number,
+                  'initialMessage': initialMessage,
+                }
+              });
+            }
+          }
+        }
+      }
 
     canRetry = canRetry + 2;
 

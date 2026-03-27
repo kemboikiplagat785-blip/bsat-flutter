@@ -33,8 +33,8 @@ class BsatLogger {
     try {
       final directory = await getApplicationDocumentsDirectory();
       logFile = File('${directory.path}/bsat_logs.txt');
-      // If file is too large (>5MB), clear it to prevent endless growth
-      if (await logFile!.exists() && await logFile!.length() > 5 * 1024 * 1024) {
+      // If file is too large (>100kb), clear it to prevent endless growth
+      if (await logFile!.exists() && await logFile!.length() > 100 * 1024) {
         await logFile!.writeAsString('');
       }
     } catch (e) {
@@ -69,7 +69,8 @@ class BsatLogger {
         final nativeTag = args['tag'] as String?;
 
         final level = _parseLevel(levelStr);
-        final logger = BsatLogger(tag: 'Native${nativeTag != null ? ':$nativeTag' : ''}');
+        final logger =
+            BsatLogger(tag: 'Native${nativeTag != null ? ':$nativeTag' : ''}');
         logger._log(level, message, null);
       }
     });
@@ -91,19 +92,26 @@ class BsatLogger {
 
   static LogLevel _parseLevel(String? levelStr) {
     switch (levelStr?.toLowerCase()) {
-      case 'info': return LogLevel.info;
-      case 'warn': return LogLevel.warn;
-      case 'error': return LogLevel.error;
-      case 'fatal': return LogLevel.fatal;
-      case 'debug': 
-      default: return LogLevel.debug;
+      case 'info':
+        return LogLevel.info;
+      case 'warn':
+        return LogLevel.warn;
+      case 'error':
+        return LogLevel.error;
+      case 'fatal':
+        return LogLevel.fatal;
+      case 'debug':
+      default:
+        return LogLevel.debug;
     }
   }
 
   void debug(String message, [Object? data]) =>
       _log(LogLevel.debug, message, data);
-  void info(String message, [Object? data]) => _log(LogLevel.info, message, data);
-  void warn(String message, [Object? data]) => _log(LogLevel.warn, message, data);
+  void info(String message, [Object? data]) =>
+      _log(LogLevel.info, message, data);
+  void warn(String message, [Object? data]) =>
+      _log(LogLevel.warn, message, data);
   void error(String message, [Object? data]) =>
       _log(LogLevel.error, message, data);
   void fatal(String message, [Object? data]) =>
@@ -123,12 +131,11 @@ class BsatLogger {
 
   static void defaultSink(LogEvent event) {
     // Format timestamp as HH:mm:ss.ms
-    final timeStr = 
-        "${event.timestamp.hour.toString().padLeft(2, '0')}:"
+    final timeStr = "${event.timestamp.hour.toString().padLeft(2, '0')}:"
         "${event.timestamp.minute.toString().padLeft(2, '0')}:"
         "${event.timestamp.second.toString().padLeft(2, '0')}."
         "${event.timestamp.millisecond.toString().padLeft(3, '0')}";
-        
+
     final buffer = StringBuffer()
       ..write('[$timeStr] ')
       ..write('[${event.level.name.toUpperCase()}] ');

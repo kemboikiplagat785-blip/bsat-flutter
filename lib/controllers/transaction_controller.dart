@@ -146,7 +146,6 @@ class TransactionController {
 
         return;
       }
-
     }
 
     // add client to db. if number isn't unique, it will just update the name
@@ -1088,9 +1087,7 @@ class TransactionController {
 
     //print("New number: $number, amount: $amount, ussdCode: $ussdCode");
 
-
-
-    List lecodes = (await _sqliteService.queryCustom(
+    List<Map<String, dynamic>> lecodes = (await _sqliteService.queryCustom(
       'ussdCodes',
       'amount = ?',
       [amount],
@@ -1194,7 +1191,8 @@ class TransactionController {
               id,
               'transactions',
             );
-            debugPrint("Running transaction with alternative number: $altNumber");
+            debugPrint(
+                "Running transaction with alternative number: $altNumber");
             makeTransactionGivenSmsBody(altMessage);
             return;
           }
@@ -1202,68 +1200,67 @@ class TransactionController {
       }
     }
 
-    if (response[1] == TransactionStatuses.secondAttempt && lecodes.isNotEmpty) {
-        String? altUssdCode = lecodes.first['alternativeUssdCode'];
-        String? runAltOn = lecodes.first['runAltOn'];
-        bool altIsAdvanced = lecodes.first['altIsAdvanced'] == 1;
-
+    if (response[1] == TransactionStatuses.secondAttempt &&
+        lecodes.isNotEmpty) {
+      String? altUssdCode = lecodes.first['alternativeUssdCode'];
+      String? runAltOn = lecodes.first['runAltOn'];
+      bool altIsAdvanced = lecodes.first['altIsAdvanced'] == 1;
 
 // print(object)
 
-
-        if (altUssdCode != null && altUssdCode.isNotEmpty) {
-          if (runAltOn == null || runAltOn.isEmpty) {
-            String processedAltUssdCode = replaceNWithNumber(altUssdCode, number);
-              debugPrint('Running alternative USSD code: $processedAltUssdCode');
-            List<dynamic> altResponse = [];
-            if (altIsAdvanced) {
-              CodeSignature altSignature = CodeSignature.fromMap(
-                (await _sqliteService.queryCustom(
-                  'codeSignature',
-                  'ussdCodeId = ?',
-                  [lecodes.first['id'] ?? -1],
-                ))
-                    .first,
-              );
-
-              altResponse = await PhoneService().makeAdvancedRequest(
-                processedAltUssdCode,
-                simSubId,
-                codeSignature: altSignature,
-              );
-              altResponse[1] = await transactionStatus(altResponse);
-            } else {
-              altResponse = await PhoneService().makeMyRequest(
-                processedAltUssdCode,
-                simSubId,
-              );
-              altResponse[1] = await transactionStatus(altResponse);
-            }
-            response = altResponse;
-          } else {
-            List deviceMatches = await _sqliteService.queryCustom(
-              'forwardingDevices',
-              'device_name = ?',
-              [runAltOn],
+      if (altUssdCode != null && altUssdCode.isNotEmpty) {
+        if (runAltOn == null || runAltOn.isEmpty) {
+          String processedAltUssdCode = replaceNWithNumber(altUssdCode, number);
+          debugPrint('Running alternative USSD code: $processedAltUssdCode');
+          List<dynamic> altResponse = [];
+          if (altIsAdvanced) {
+            CodeSignature altSignature = CodeSignature.fromMap(
+              (await _sqliteService.queryCustom(
+                'codeSignature',
+                'ussdCodeId = ?',
+                [lecodes.first['id'] ?? -1],
+              ))
+                  .first,
             );
-            if (deviceMatches.isNotEmpty) {
-              String deviceId = deviceMatches.first['device_id'];
-              await BackendService().post('/api/fcm/send-message', body: {
-                'id': deviceId,
-                'data': {
-                  'type': 'process_alt_request',
-                  'ussdCode': altUssdCode,
-                  'simSubId': simSubId,
-                  'isAdvanced': altIsAdvanced,
-                  'amount': amount,
-                  'number': number,
-                  'initialMessage': initialMessage,
-                }
-              });
-            }
+
+            altResponse = await PhoneService().makeAdvancedRequest(
+              processedAltUssdCode,
+              simSubId,
+              codeSignature: altSignature,
+            );
+            altResponse[1] = await transactionStatus(altResponse);
+          } else {
+            altResponse = await PhoneService().makeMyRequest(
+              processedAltUssdCode,
+              simSubId,
+            );
+            altResponse[1] = await transactionStatus(altResponse);
+          }
+          response = altResponse;
+        } else {
+          List deviceMatches = await _sqliteService.queryCustom(
+            'forwardingDevices',
+            'device_name = ?',
+            [runAltOn],
+          );
+          if (deviceMatches.isNotEmpty) {
+            String deviceId = deviceMatches.first['device_id'];
+            await BackendService().post('/api/fcm/send-message', body: {
+              'id': deviceId,
+              'data': {
+                'type': 'process_alt_request',
+                'ussdCode': altUssdCode,
+                'simSubId': simSubId,
+                'isAdvanced': altIsAdvanced,
+                'amount': amount,
+                'number': number,
+                'initialMessage': initialMessage,
+              }
+            });
           }
         }
       }
+    }
 
     canRetry = canRetry + 2;
 
@@ -2199,7 +2196,8 @@ class TransactionController {
         // new client
         Client client = Client.fromMpesaMessage(unmaskedReply);
 
-        recordClientPurchase(client.phoneNumber, "${client.firstName} ${client.lastName}");
+        recordClientPurchase(
+            client.phoneNumber, "${client.firstName} ${client.lastName}");
 
         makeTransactionGivenSmsBody(unmaskedReply);
         return unmaskedReply;

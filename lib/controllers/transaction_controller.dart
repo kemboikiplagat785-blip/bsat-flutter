@@ -1088,6 +1088,8 @@ class TransactionController {
 
     //print("New number: $number, amount: $amount, ussdCode: $ussdCode");
 
+
+
     List lecodes = (await _sqliteService.queryCustom(
       'ussdCodes',
       'amount = ?',
@@ -1095,6 +1097,21 @@ class TransactionController {
     ));
 
     if (lecodes.isEmpty) {
+      forwardIfNeeded(
+        amount,
+        initialMessage,
+        initialMessage,
+        transaction['transactionId'] ?? '',
+        number,
+        transaction['source'] ?? '',
+        false,
+        status: TransactionStatuses.unavailableOffer,
+      );
+
+      await _sqliteService.deleteStuff(
+        id,
+        'transactions',
+      );
       return;
     }
 

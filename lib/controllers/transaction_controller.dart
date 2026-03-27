@@ -1140,13 +1140,16 @@ class TransactionController {
         orElse: () => {},
       );
 
+      
+
+      var signatureQuery = await _sqliteService.queryCustom(
+        'codeSignature',
+        'ussdCodeId = ?',
+        [thisCOde['id'] ?? -1],
+      );
+
       CodeSignature signature = CodeSignature.fromMap(
-        (await _sqliteService.queryCustom(
-          'codeSignature',
-          'ussdCodeId = ?',
-          [thisCOde['id'] ?? -1],
-        ))
-            .first,
+        signatureQuery.isNotEmpty ? signatureQuery.first : {},
       );
 
       response = await PhoneService().makeAdvancedRequest(

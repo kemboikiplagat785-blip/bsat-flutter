@@ -724,7 +724,14 @@ class SQLiteService {
       _database = null;
       db = await database;
     }
-    return await db.delete(table, where: where, whereArgs: whereArgs);
+
+    final testQuery = await db.query(table, where: where, whereArgs: whereArgs);
+print('Found ${testQuery.length} rows matching the exact criteria.');
+
+    // print('Deleting from $table where $where with args $whereArgs');
+    int rs = await db.delete(table, where: where, whereArgs: whereArgs);
+    // print('Deleted $rs rows from $table');
+    return rs;
   }
 
   Future<void> addColumnIfNotExists(

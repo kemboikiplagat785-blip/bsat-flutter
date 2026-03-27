@@ -342,6 +342,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                   '${_selectedTransactionIds.length} transactions?',
                             ).then((value) async {
                               if (value == true) {
+                                debugPrint(
+                                  'Deleting transactions with IDs: ${_selectedTransactionIds.join(', ')}',
+                                );
                                 showLoadingDialog(context);
                                 await databaseHelper.deleteWhere(
                                   'transactions',
@@ -1541,11 +1544,16 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                 await databaseHelper.deleteWhere(
                                     'transactions', whereClause, whereArgs);
                               } catch (e) {
+                                print('Error deleting transactions: $e');
                                 // Optionally show an error SnackBar here
                               } finally {
                                 // This guarantees the loading dialog is dismissed
                                 if (context.mounted) {
                                   Navigator.of(context).pop();
+                                  
+                                  // Close bottom sheet and update UI
+                                  Navigator.of(context).pop();
+                                  reloadForNewDate();
                                 }
                               }
                             },

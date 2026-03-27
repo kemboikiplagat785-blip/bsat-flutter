@@ -146,7 +146,11 @@ class TransactionController {
 
         return;
       }
+
     }
+
+    // add client to db. if number isn't unique, it will just update the name
+    await ClientService().insertClient(client);
 
     UssdCode ussdCodeItem = await getUssdCodeForAmount(amount);
 
@@ -428,9 +432,6 @@ class TransactionController {
 
     List requestResponse = [];
 
-    // add client to db. if number isn't unique, it will just update the name
-    await ClientService().insertClient(client);
-
     if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[4]) {
       debugPrint('advanced starting');
 
@@ -449,7 +450,7 @@ class TransactionController {
         );
       }
 
-      requestResponse = await _phoneService.makeAdvancedRequest(
+      requestResponse = await PhoneService().makeAdvancedRequest(
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
         codeSignature: signatureMap.isEmpty ? null : signature,
@@ -461,7 +462,7 @@ class TransactionController {
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[2] = true;
       }
     } else {
-      requestResponse = await _phoneService.makeMyRequest(
+      requestResponse = await PhoneService().makeMyRequest(
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
         USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
       );
@@ -615,6 +616,9 @@ class TransactionController {
         );
 
         if (autoSaveContacts) {
+          ClientService().insertClient(
+            Client.fromMpesaMessage(message),
+          );
           await ContactsService().addNewContact(
             name,
             '0$number',
@@ -1131,7 +1135,7 @@ class TransactionController {
             .first,
       );
 
-      response = await _phoneService.makeAdvancedRequest(
+      response = await PhoneService().makeAdvancedRequest(
         ussdCode,
         simSubId,
         codeSignature: signature,
@@ -1139,7 +1143,7 @@ class TransactionController {
 
       response[1] = await transactionStatus(response);
     } else {
-      response = await _phoneService.makeMyRequest(
+      response = await PhoneService().makeMyRequest(
         ussdCode,
         simSubId,
       );
@@ -2175,6 +2179,11 @@ class TransactionController {
 
       if (unmaskedReply != null) {
         await _sqliteService.deleteStuff(transaction['id'], 'transactions');
+        // new client
+        Client client = Client.fromMpesaMessage(unmaskedReply);
+
+        recordClientPurchase(client.phoneNumber, "${client.firstName} ${client.lastName}");
+
         makeTransactionGivenSmsBody(unmaskedReply);
         return unmaskedReply;
       }

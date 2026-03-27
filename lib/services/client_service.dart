@@ -5,14 +5,15 @@ class ClientService {
   final SQLiteService _sqliteService = SQLiteService();
 
   Future<void> _ensureAlternativePhoneNumberColumn() async {
-    await _sqliteService.addColumnIfNotExists('clients', 'alternativePhoneNumber', 'TEXT');
+    await _sqliteService.addColumnIfNotExists(
+        'clients', 'alternativePhoneNumber', 'TEXT');
   }
 
   // Insert a new client
   Future<int> insertClient(Client client) async {
     await _ensureAlternativePhoneNumberColumn();
     // update name only if number is unique
-    final existingClient = await getClientByPhone(client.phoneNumber);
+    final existingClient = await getClientByPhone(client.formattedPhone);
 
     print("existing client: $existingClient, new client: ${client.toMap()}");
 
@@ -29,7 +30,7 @@ class ClientService {
       // If name is the same, just return existing client's ID
       return existingClient.id!;
     }
-    
+
     return await _sqliteService.insertStuff(client.toMap(), 'clients');
   }
 
@@ -128,7 +129,8 @@ class ClientService {
   }
 
   // Record a purchase for a client
-  Future<void> recordPurchase(String phoneNumber, String firstName, String lastName) async {
+  Future<void> recordPurchase(
+      String phoneNumber, String firstName, String lastName) async {
     final client = await getClientByPhone(phoneNumber);
     if (client != null) {
       // Update existing client
@@ -144,7 +146,8 @@ class ClientService {
   }
 
   // Create client from purchase (extract name from SMS)
-  Future<void> createClientFromPurchase(String firstName, String lastName, String phoneNumber) async {
+  Future<void> createClientFromPurchase(
+      String firstName, String lastName, String phoneNumber) async {
     // This could be enhanced to extract name from SMS message
     final client = Client(
       firstName: firstName,

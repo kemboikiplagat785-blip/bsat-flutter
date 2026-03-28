@@ -744,6 +744,28 @@ class SharedPreferencesService {
     return false;
   }
 
+  // getAutoScheduleFailed
+  Future<bool?> getAutoScheduleFailed() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    bool? autoScheduleFailed = prefs.getBool("auto_schedule_failed");
+    return autoScheduleFailed;
+  }
+
+  Future<bool> setAutoScheduleFailed(bool autoScheduleFailed) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setBool("auto_schedule_failed", autoScheduleFailed);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
   void printAll() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();

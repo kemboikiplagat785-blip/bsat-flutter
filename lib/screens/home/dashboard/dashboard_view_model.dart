@@ -58,6 +58,8 @@ class DashboardViewModel extends ChangeNotifier {
 
   List<Map<String, dynamic>> recentTransactions = [];
 
+  bool _isDisposed = false;
+
   Future<void> initialize() async {
     // housekeeping
     initializeBackgroundService();
@@ -244,6 +246,14 @@ class DashboardViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _reloadTimer?.cancel();
+    _isDisposed = true;
     super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
   }
 }

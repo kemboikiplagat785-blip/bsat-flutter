@@ -44,6 +44,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool useSignature = false;
   bool autoSwitch = false;
   bool forwardMaskedMessages = false;
+  bool autoScheduleFailed = false;
 
   @override
   void initState() {
@@ -70,6 +71,8 @@ class _SettingsPageState extends State<SettingsPage> {
         await sharedPreferencesService.getForwardUnavailableLimit() ?? 0;
 
     _forwardUnavailableLimitController.text = unavailableLimit.toString();
+    autoScheduleFailed =
+        await sharedPreferencesService.getAutoScheduleFailed() ?? false;
 
     if (mounted) setState(() {});
   }
@@ -101,6 +104,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 await sharedPreferencesService.setAutoSaveContacts(val);
               },
             ),
+            if(autoSaveContacts)
             _buildInputTile(
               label: 'Name Prefix',
               controller: _postfixController,
@@ -109,10 +113,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   sharedPreferencesService.setPostfixCOntactName),
             ),
           ]),
-          _buildSectionTitle('Forwarding & Automation'),
+          _buildSectionTitle('Forwarding'),
           _buildGroup([
             _buildToggleTile(
               label: 'Forward unavailable amounts',
+              hint: 'To help other devices calculate too',
               value: unavailableLimit > 0,
               onChanged: (val) async {
                 if (!val) {
@@ -135,7 +140,7 @@ class _SettingsPageState extends State<SettingsPage> {
             // Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
             if (unavailableLimit > 0)
               _buildInputTile(
-                label: 'Forward Unavailable Limit',
+                label: 'Highest amount to forward (KSH)',
                 controller: _forwardUnavailableLimitController,
                 hint: 'Highest "unavailable" amount that can be forwarded',
                 keyboardType: TextInputType.number,
@@ -148,9 +153,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
 
+              const Divider(),
+
             _buildToggleTile(
               label: 'Forward Masked Messages',
-              hint: 'Forward messages that are masked as it would unmsaked messages',
+              hint:
+                  'Forward messages that are masked as it would unmsaked messages',
               value: forwardMaskedMessages,
               onChanged: (val) async {
                 setState(() => forwardMaskedMessages = val);
@@ -158,7 +166,7 @@ class _SettingsPageState extends State<SettingsPage> {
               },
             ),
           ]),
-          _buildSectionTitle('Risk detection'),
+          _buildSectionTitle('Risk detection and avoidance'),
           _buildGroup(
             [
               // forward unmasked messages
@@ -187,8 +195,20 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           _buildSectionTitle('Automation'),
           _buildGroup([
+            // _buildToogleTile(
+            //   label: 'Automatically retry failed recommendations',
+            //   value: (await sharedPreferencesService.getRetryMinutes() ?? 0) > 0,
+            //   onChanged: (val) async {
+            //     if (!val) {
+            //       await sharedPreferencesService.setRetryMinutes(0);
+            //       _retryController.text = '0';
+            //     }
+            //     setState(() {});
+            //   },
+            // ),
             _buildInputTile(
-              label: 'Retry Attempts',
+              label:
+                  'Times to auto-retry failed/error recommendations (minutes)',
               controller: _retryController,
               hint: '0',
               keyboardType: TextInputType.number,
@@ -198,6 +218,19 @@ class _SettingsPageState extends State<SettingsPage> {
                   (val) =>
                       sharedPreferencesService.setRetryMinutes(int.parse(val))),
             ),
+            const Divider(),
+            // automatically schedule "Recommendation failed" clients next midnight
+            _buildToggleTile(
+              label: 'Auto-schedule failed recommendations',
+              hint:
+                  'Automatically schedule clients with "Recommendation failed" status for the next day at midnight.',
+              value: autoScheduleFailed,
+              onChanged: (val) async {
+                setState(() => autoScheduleFailed = val);
+                await sharedPreferencesService.setAutoScheduleFailed(val);
+              },
+            ),
+            
           ]),
           _buildSectionTitle('Appearance'),
           _buildThemeSelector(),
@@ -372,13 +405,13 @@ class _SettingsPageState extends State<SettingsPage> {
       child: Row(
         children: [
           Expanded(
-            flex: 2,
+            flex: 4,
             child: Text(label,
                 style:
                     const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
           ),
           Expanded(
-            flex: 3,
+            flex: 2,
             child: TextField(
               controller: controller,
               keyboardType: keyboardType,
@@ -387,8 +420,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   TextStyle(color: kPrimaryColor, fontWeight: FontWeight.bold),
               decoration: InputDecoration(
                 hintText: hint,
-                border: InputBorder.none,
+                
                 contentPadding: EdgeInsets.zero,
+                // border
+                border: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Theme.of(context).dividerColor)),
               ),
             ),
           ),
@@ -561,7 +597,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     Text('Failed: ${response['message'] ?? 'Unknown error'}')),
           );
         }
-        
+
         // Ensure logs are cleared whether it succeeded or failed, as requested.
         await BsatLogger.logFile!.writeAsString('');
       } else {

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:csv/csv.dart';
@@ -85,7 +86,8 @@ class FileService {
     List<Map<String, dynamic>> offers =
         await sqLiteService.queryAll('ussdCodes');
 
-    String fileName = 'BSAT_offers_${DateTime.now().toIso8601String()}.csv';
+    String fileName =
+        'BSAT_offers_${DateTime.now().toIso8601String().replaceAll(':', '-')}.csv';
 
     if (offers.isEmpty) return "";
     List<String> headers = offers.first.keys.toList();
@@ -100,22 +102,101 @@ class FileService {
     return filePath;
   }
 
-  static Future<String> saveContentToFile(
-      String content, String fileName) async {
+  static Future<String> downloadClientsToCsv() async {
+    SQLiteService sqLiteService = SQLiteService();
+    List<Map<String, dynamic>> clients =
+        await sqLiteService.queryAll('clients');
+    if (clients.isEmpty) return "";
+
+    String fileName =
+        'BSAT_clients_${DateTime.now().toIso8601String().replaceAll(':', '-')}.csv';
+
+    List<String> headers = clients.first.keys.toList();
+    List<List<dynamic>> csvData = [
+      headers,
+      ...clients.map((client) => headers.map((h) => client[h]).toList())
+    ];
+
+    String csvString = const ListToCsvConverter().convert(csvData);
+    return await saveContentToFile(csvString, fileName);
+  }
+
+  static Future<String> downloadClientsToJson() async {
+    SQLiteService sqLiteService = SQLiteService();
+    List<Map<String, dynamic>> clients =
+        await sqLiteService.queryAll('clients');
+    if (clients.isEmpty) return "";
+
+    String fileName =
+        'BSAT_clients_${DateTime.now().toIso8601String().replaceAll(':', '-')}.json';
+
+    String jsonString = jsonEncode(clients);
+    return await saveContentToFile(jsonString, fileName);
+  }
+
+  static Future<String> downloadClientsToVcf() async {
+    SQLiteService sqLiteService = SQLiteService();
+    List<Map<String, dynamic>> clients =
+        await sqLiteService.queryAll('clients');
+    if (clients.isEmpty) return "";
+
+    String fileName =
+        'BSAT_clients_${DateTime.now().toIso8601String().replaceAll(':', '-')}.vcf';
+
+    StringBuffer vcfContent = StringBuffer();
     try {
+      for (var client in clients) {
+        vcfContent.writeln('BEGIN:VCARD');
+        vcfContent.writeln('VERSION:3.0');
+        String firstName = client['firstName']?.toString() ?? '';
+        String lastName = client['lastName']?.toString() ?? '';
+        String phone = client['phoneNumber']?.toString() ?? '';
+        String altPhone = client['alternativePhoneNumber']?.toString() ?? '';
+
+        vcfContent.writeln('N:$lastName;$firstName;;;');
+        vcfContent.writeln('FN:${firstName.trim()} ${lastName.trim()}'.trim());
+        if (phone.isNotEmpty) {
+          vcfContent.writeln('TEL;TYPE=CELL:$phone');
+        }
+        if (altPhone.isNotEmpty) {
+          vcfContent.writeln('TEL;TYPE=HOME:$altPhone');
+        }
+        vcfContent.writeln('END:VCARD');
+      }
+      print("Generated VCF content:\n${vcfContent.toString()}");
+
+      return await saveContentToFile(vcfContent.toString(), fileName);
+    } catch (e) {
+      print('Error generating VCF: $e');
+    }
+    return "";
+  }
+
+  static Future<String> saveContentToFile(
+    String content,
+    String fileName,
+  ) async {
+    try {
+      final bytes = Uint8List.fromList(utf8.encode(content));
       String? outputPath = await FilePicker.platform.saveFile(
         dialogTitle: 'Save your file',
         fileName: fileName,
+        bytes: bytes,
       );
       if (outputPath == null) return "";
-      final file = File(outputPath);
-      if (!await file.exists()) {
-        await file.create(recursive: true);
+      
+      // On platforms where plugin doesn't automatically write the bytes (like desktop),
+      // we need to manually write to the returned path.
+      if (!Platform.isAndroid && !Platform.isIOS) {
+        final file = File(outputPath);
+        if (!await file.exists()) {
+          await file.create(recursive: true);
+        }
+        await file.writeAsBytes(bytes);
       }
-      await file.writeAsBytes(utf8.encode(content));
-      return file.path;
+      return outputPath;
     } catch (e) {
-      //print('Error saving file: $e');
+      print('Error saving file: $e');
       return "";
     }
   }

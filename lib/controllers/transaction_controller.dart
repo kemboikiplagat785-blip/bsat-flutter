@@ -1027,12 +1027,19 @@ class TransactionController {
   ) async {
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
 
-    Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
+    List<Map<String, dynamic>> tx = await _sqliteService.queryCustom(
       'transactions',
       'id = ?',
       [id],
-    ))
-        .first;
+      limit: 1,
+    );
+
+    if (tx.isEmpty) {
+      debugPrint("Transaction with id $id not found for retry.");
+      return;
+    }
+
+    Map<String, dynamic> transaction = tx.first;
 
     String initialMessage = transaction['initialMessage'] ?? '';
 
@@ -1140,8 +1147,6 @@ class TransactionController {
         orElse: () => {},
       );
 
-      
-
       var signatureQuery = await _sqliteService.queryCustom(
         'codeSignature',
         'ussdCodeId = ?',
@@ -1248,16 +1253,12 @@ class TransactionController {
           );
           if (deviceMatches.isNotEmpty) {
             String deviceId = deviceMatches.first['device_id'];
-            await BackendService().post('/api/fcm/send-message', body: {
+            await BackendService().post('/api/devices/process-alt-request', body: {
               'id': deviceId,
               'data': {
                 'type': 'process_alt_request',
                 'ussdCode': altUssdCode,
-                'simSubId': simSubId,
                 'isAdvanced': altIsAdvanced,
-                'amount': amount,
-                'number': number,
-                'initialMessage': initialMessage,
               }
             });
           }
@@ -1507,7 +1508,7 @@ class TransactionController {
 
     //print('Retrying all: ${rawStuff.length}');
 
-    debugPrint('Retrying all transactions: ${rawStuff}');
+    // debugPrint('Retrying all transactions: ${rawStuff}');
 
     for (var stuff in rawStuff) {
       debugPrint(' retrytimes $retryTimes, canRetry ${stuff['canRetry']}');
@@ -1939,6 +1940,10 @@ class TransactionController {
   Future<void> updateWithMessage(TransactionMessage smsMessage) async {
     int number = extract9DigitNumber(smsMessage.body ?? "");
 
+    if (number == 0) {
+      return;
+    }
+
     int twentyMinuteAgo = DateTime.now().millisecondsSinceEpoch - 1200000;
     int replyAmount = getAmount(smsMessage.body ?? "0");
 
@@ -1951,6 +1956,10 @@ class TransactionController {
       ],
       columns: ['id', 'status', 'ussdReply', 'amount', 'source'],
     );
+
+    if (rawStuff.isEmpty) {
+      return;
+    }
 
     if (rawStuff.first['amount'] < getAmount(smsMessage.body ?? "1")) {}
 
@@ -2208,5 +2217,26 @@ class TransactionController {
     }
 
     return null;
+  }
+
+  // autoScheduleFailedRecommendations
+  Future<void> autoScheduleFailedRecommendations() async {
+    int timestamp24HoursAgo =
+        DateTime.now().millisecondsSinceEpoch - Duration(hours: 24).inMilliseconds;
+
+    List<Map<String, dynamic>> failedRecommendations = await _sqliteService
+        .queryCustom(
+            'transactions', 'status = ? AND timestamp > ?', [TransactionStatuses.secondAttempt, timestamp24HoursAgo]);
+
+    for (var recommendation in failedRecommendations) {
+      String? initialMessage = recommendation['initialMessage'];
+
+      if (initialMessage != null) {
+        initialMessage = "Yesterday's transaction redone: $initialMessage";
+
+        await _sqliteService.deleteStuff(recommendation['id'], 'transactions');
+        await makeTransactionGivenSmsBody(initialMessage);
+      }
+    }
   }
 }

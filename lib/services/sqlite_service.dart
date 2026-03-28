@@ -312,8 +312,7 @@ class SQLiteService {
       }
 
       try {
-        await db.execute(
-            'ALTER TABLE ussdCodes ADD COLUMN runAltOn TEXT');
+        await db.execute('ALTER TABLE ussdCodes ADD COLUMN runAltOn TEXT');
       } catch (e) {
         // column may already exist
       }
@@ -326,8 +325,7 @@ class SQLiteService {
       }
 
       try {
-        await db.execute(
-            'ALTER TABLE transactions ADD COLUMN runOn TEXT');
+        await db.execute('ALTER TABLE transactions ADD COLUMN runOn TEXT');
       } catch (e) {
         // column may already exist
       }
@@ -667,6 +665,8 @@ class SQLiteService {
     List<Object> whereArgs, {
     List<String>? columns,
     String? orderBy,
+    int? limit,
+    int? offset,
   }) async {
     Database db = await database;
 
@@ -682,7 +682,9 @@ class SQLiteService {
         table,
         where: query,
         whereArgs: whereArgs,
-        orderBy: orderBy);
+        orderBy: orderBy,
+        limit: limit,
+        offset: offset);
   }
 
   Future<int> updateStuff(
@@ -725,8 +727,8 @@ class SQLiteService {
       db = await database;
     }
 
-    final testQuery = await db.query(table, where: where, whereArgs: whereArgs);
-print('Found ${testQuery.length} rows matching the exact criteria.');
+    // final testQuery = await db.query(table, where: where, whereArgs: whereArgs);
+    // print('Found ${testQuery.length} rows matching the exact criteria.');
 
     // print('Deleting from $table where $where with args $whereArgs');
     int rs = await db.delete(table, where: where, whereArgs: whereArgs);

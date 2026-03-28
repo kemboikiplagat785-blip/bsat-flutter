@@ -332,6 +332,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
       'ussdCodes',
       'id = ?',
       [widget.ruleId],
+      limit: 1,
     ))
         .first;
     _amountTextController.text = thisData['amount'].toString();
@@ -363,13 +364,15 @@ class _EditOfferPageState extends State<EditOfferPage> {
             ? thisData['bongaPointsPerTransaction'].toString()
             : '60';
 
-    final loadedSignature =
-        CodeSignature.fromMap((await _sqliteService.queryCustom(
+    var rawSignature = (await _sqliteService.queryCustom(
       'codeSignature',
       'ussdCodeId = ?',
       [widget.ruleId],
-    ))
-            .first);
+      limit: 1,
+    ));
+
+    final loadedSignature =
+        CodeSignature.fromMap(rawSignature.isEmpty ? {} : rawSignature.first);
 
     signature = signature.copyWith(
       id: loadedSignature.id,
@@ -570,9 +573,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 if (hasAlternativeCode) ...[
                   Padding(
                     padding: kPagePaddingInsets,
-                    child: Row(children: [
-                      Text('For when the number has already been recommended')
-                    ]),
+                    child: Expanded(
+                        child: Text(
+                            'For when the number has already been recommended')),
                   ),
                   _buildInputTile(
                     label: 'Alternative USSD Code',
@@ -580,7 +583,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
                     hint: '*180*5*2*n#',
                     icon: CupertinoIcons.number,
                   ),
-                  const Divider(color: Colors.white24, height: 1),
                   _buildSwitchTile(
                     label: 'Alternative Code is Advanced',
                     value: altIsAdvanced,
@@ -589,12 +591,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
                       setState(() => altIsAdvanced = val);
                     },
                   ),
-                  const Divider(color: Colors.white24, height: 1),
                   _buildRunAltOnSelector(),
                 ],
                 const Divider(color: Colors.white24, height: 1),
                 _buildSwitchTile(
-                  label: 'Use Bonga Points',
+                  label: 'Uses Bonga Points',
                   value: usesBongaPoints,
                   onChanged: (val) {
                     _hasChanges = true;

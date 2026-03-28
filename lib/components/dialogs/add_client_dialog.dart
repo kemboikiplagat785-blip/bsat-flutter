@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 
 import '../../models/client.dart';
 
-Future<void> showAddClientDialog(BuildContext context, {String? phoneNumber}) async {
-    final firstNameController = TextEditingController();
-    final lastNameController = TextEditingController();
+Future<void> showAddClientDialog(BuildContext context, {String? firstName, String? lastName, String? phoneNumber, String? alternativePhoneNumber}) async {
+    final firstNameController = TextEditingController(text: firstName?.trim() ?? '');
+    final lastNameController = TextEditingController(text: lastName?.trim() ?? '');
     final phoneController = TextEditingController(text: phoneNumber?.trim() ?? '');
+    final alternativePhoneController = TextEditingController(text: alternativePhoneNumber?.trim() ?? '');
 
     final result = await showDialog<bool>(
       context: context,
@@ -32,6 +33,12 @@ Future<void> showAddClientDialog(BuildContext context, {String? phoneNumber}) as
                   decoration: const InputDecoration(labelText: 'Phone Number (Required)'),
                   keyboardType: TextInputType.phone,
                 ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: alternativePhoneController,
+                  decoration: const InputDecoration(labelText: 'Alternative Phone Number'),
+                  keyboardType: TextInputType.phone,
+                ),
               ],
             ),
           ),
@@ -53,6 +60,9 @@ Future<void> showAddClientDialog(BuildContext context, {String? phoneNumber}) as
                   firstName: firstNameController.text.trim(),
                   lastName: lastNameController.text.trim(),
                   phoneNumber: phoneController.text.trim(),
+                  alternativePhoneNumber: alternativePhoneController.text.trim().isEmpty
+                      ? null
+                      : alternativePhoneController.text.trim(),
                   createdAt: DateTime.now(),
                 );
                 

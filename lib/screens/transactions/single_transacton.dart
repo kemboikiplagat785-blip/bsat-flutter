@@ -72,6 +72,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
         '%,${_details['amount']}]',
         '[${_details['amount']}]',
       ],
+      
     );
 
     try {
@@ -80,6 +81,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
         'clients',
         'phoneNumber LIKE ? OR phoneNumber LIKE ? OR phoneNumber LIKE ?',
         ['%$numberStr%', '%$numberStr', '0$numberStr'],
+        limit: 1,
       );
       if (clients.isNotEmpty) {
         setState(() {

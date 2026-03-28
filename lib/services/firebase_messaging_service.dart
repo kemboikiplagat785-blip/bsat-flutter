@@ -97,8 +97,8 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
 
       String ussdCode = message.data['ussdCode'] ?? '';
       int simSubId = await PhoneService().mostCommonDialSim();
-      int amount = int.tryParse(message.data['amount']?.toString() ?? '0') ?? 0;
-      int number = int.tryParse(message.data['number']?.toString() ?? '0') ?? 0;
+      int amount = 0;
+      int number = extract9DigitNumber(message.data['ussdCode'] ?? '') ?? 0;
       bool isAdvanced = message.data['isAdvanced'] == 'true' ||
           message.data['isAdvanced'] == 1 ||
           message.data['isAdvanced'];
@@ -112,6 +112,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       );
       break;
 
+    case 'request_contacts_from_device':
     case 'forwarded_sms':
       // Handle the forwarded SMS case
       String body = message.data['body'] ?? message.notification?.body ?? "";

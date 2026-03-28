@@ -43,7 +43,7 @@ onBackgroundMessage(dynamic message) async {
 }
 
 Future<void> initMessagesPlatformState() async {
-  debugPrint("Init messages platform state");
+  // debugPrint("Init messages platform state");
 
   final bool? result = await telephony.requestPhoneAndSmsPermissions;
 

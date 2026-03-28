@@ -5,6 +5,7 @@ import 'package:another_telephony/telephony.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/services/contacts_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
+import 'package:bsat/services/file_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -329,6 +330,61 @@ class _SyncDataPageState extends State<SyncDataPage> {
                   color: kErrorColor,
                 ),
               ),
+              const SizedBox(height: kPagePadding),
+              buttonDescriptive(
+                context,
+                title: "Export clients to CSV",
+                subtitle: "Save all clients to a CSV file.",
+                onTap: () async {
+                  String path = await FileService.downloadClientsToCsv();
+                  if (path.isNotEmpty && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Saved to $path')),
+                    );
+                  }
+                },
+                icon: Icon(
+                  CupertinoIcons.doc_text,
+                  color: kPrimaryColor,
+                ),
+              ),
+              buttonDescriptive(
+                context,
+                title: "Export clients to VCF",
+                subtitle: "Save all clients to a VCF file.",
+                onTap: () async {
+                  print("Exporting clients to VCF...");
+                  String path = await FileService.downloadClientsToVcf();
+                  print(path);
+                  if (path.isNotEmpty && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Saved to $path')),
+                    );
+                  }
+                },
+                icon: Icon(
+                  CupertinoIcons.person_crop_circle_badge_exclam,
+                  color: kWarningColor,
+                ),
+              ),
+              buttonDescriptive(
+                context,
+                title: "Export clients to JSON",
+                subtitle: "Save all clients to a JSON file.",
+                onTap: () async {
+                  String path = await FileService.downloadClientsToJson();
+                  if (path.isNotEmpty && mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Saved to $path')),
+                    );
+                  }
+                },
+                icon: Icon(
+                  CupertinoIcons.doc_plaintext,
+                  color: kIndigoColor,
+                ),
+              ),
+              const SizedBox(height: kPagePadding * 2),
             ],
           ),
         ),

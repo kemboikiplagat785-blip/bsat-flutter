@@ -1,7 +1,7 @@
 import 'package:bsat/components/button_descriptive.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/components/section_header.dart';
-import 'package:bsat/screens/inbox.dart';
+import 'package:bsat/screens/messaging/inbox.dart';
 import 'package:bsat/screens/offers/offers.dart';
 import 'package:bsat/screens/replies/replies.dart';
 import 'package:bsat/screens/stats/statistics.dart';

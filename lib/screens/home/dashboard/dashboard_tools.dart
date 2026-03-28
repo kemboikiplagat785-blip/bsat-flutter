@@ -4,7 +4,7 @@ import 'package:bsat/screens/black_screen.dart';
 import 'package:bsat/screens/blacklist.dart';
 import 'package:bsat/screens/clients/clients.dart';
 import 'package:bsat/screens/dialpad.dart';
-import 'package:bsat/screens/inbox.dart';
+import 'package:bsat/screens/messaging/inbox.dart';
 import 'package:bsat/screens/messaging/send_message_page.dart';
 import 'package:bsat/screens/offers/offers.dart';
 import 'package:bsat/screens/online_management/online_management.dart';

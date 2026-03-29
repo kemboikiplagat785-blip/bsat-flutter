@@ -2208,10 +2208,10 @@ class TransactionController {
         // new client
         Client client = Client.fromMpesaMessage(unmaskedReply);
 
-        recordClientPurchase(
+        await recordClientPurchase(
             client.phoneNumber, "${client.firstName} ${client.lastName}");
 
-        makeTransactionGivenSmsBody(unmaskedReply);
+        await makeTransactionGivenSmsBody(unmaskedReply);
         return unmaskedReply;
       }
     }

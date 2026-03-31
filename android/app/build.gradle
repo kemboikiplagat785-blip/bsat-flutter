@@ -59,7 +59,7 @@ android {
     }
 
 
-    signingConfig {
+    signingConfigs {
         debug {
             storeFile file('keys/debug.keystore')
             storePassword 'android'

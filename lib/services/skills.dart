@@ -84,7 +84,7 @@ class Skills {
     PhoneService().makeMyRequest("*140*$amt*$number#", subId);
   }
 }
-//
+
 // import 'dart:math';
 //
 // String generateHash(String phoneNumber, String amount, int keyDigit) {
@@ -156,6 +156,7 @@ class Skills {
 // void main() {
 //   // Example usage:
 //   String phone = "0708104628"; // 11 digits
+//   // String phone = "0110382792"; // 11 digits
 //   String amt = "50"; // 3 digits
 //   int key = 9; // Single digit key for the shift
 //

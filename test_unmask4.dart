@@ -20,7 +20,7 @@ String? _test(String number, String message) {
     // Normalize both numbers for comparison
     String normNum = number.replaceAll('+', '');
     if (normNum.startsWith('254')) normNum = '0${normNum.substring(3)}';
-    
+
     String normMask = maskedToken.replaceAll('+', '').replaceAll(RegExp(r'x|X|\*'), r'\d');
     if (normMask.startsWith('254')) normMask = '0${normMask.substring(3)}';
     

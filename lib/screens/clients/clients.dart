@@ -20,12 +20,12 @@ class ClientsPage extends StatefulWidget {
 class _ClientsPageState extends State<ClientsPage> {
   final _sqliteService = SQLiteService();
   List<Client> _clients = [];
-  List<Client> _filteredClients =[];
+  List<Client> _filteredClients = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _sortBy = 'Last Active';
-  final List<String> _sortOptions =[
+  final List<String> _sortOptions = [
     'Last Active',
     'Name',
     'Phone',
@@ -121,7 +121,7 @@ class _ClientsPageState extends State<ClientsPage> {
       builder: (context) => AlertDialog(
         title: const Text('Delete Clients'),
         content: Text('Delete ${_selectedClientIds.length} client(s)?'),
-        actions:[
+        actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
@@ -160,12 +160,10 @@ class _ClientsPageState extends State<ClientsPage> {
   void _selectRange(int currentIndex) {
     if (_lastSelectedIndex == null) return;
 
-    final start = _lastSelectedIndex! < currentIndex
-        ? _lastSelectedIndex!
-        : currentIndex;
-    final end = _lastSelectedIndex! > currentIndex
-        ? _lastSelectedIndex!
-        : currentIndex;
+    final start =
+        _lastSelectedIndex! < currentIndex ? _lastSelectedIndex! : currentIndex;
+    final end =
+        _lastSelectedIndex! > currentIndex ? _lastSelectedIndex! : currentIndex;
 
     setState(() {
       for (int i = start; i <= end; i++) {
@@ -191,7 +189,7 @@ class _ClientsPageState extends State<ClientsPage> {
           child: const Icon(CupertinoIcons.add),
         ),
         body: Column(
-          children:[
+          children: [
             // Keeping the selection context bar fixed at the top for better UX
             if (_selectedClientIds.isNotEmpty)
               Container(
@@ -200,7 +198,7 @@ class _ClientsPageState extends State<ClientsPage> {
                     horizontal: kPagePadding, vertical: kPagePadding / 2),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children:[
+                  children: [
                     Text(
                       _isRangeSelectMode
                           ? 'Select range: tap another item'
@@ -212,7 +210,7 @@ class _ClientsPageState extends State<ClientsPage> {
                       ),
                     ),
                     Row(
-                      children:[
+                      children: [
                         if (!_isRangeSelectMode) ...[
                           TextButton(
                             onPressed: () {
@@ -229,8 +227,9 @@ class _ClientsPageState extends State<ClientsPage> {
                           const SizedBox(width: 8),
                         ],
                         IconButton(
-                          onPressed:
-                              _isRangeSelectMode ? null : _sendMessageToSelected,
+                          onPressed: _isRangeSelectMode
+                              ? null
+                              : _sendMessageToSelected,
                           icon: Icon(
                             CupertinoIcons.mail,
                             color: Colors.white,
@@ -238,8 +237,9 @@ class _ClientsPageState extends State<ClientsPage> {
                         ),
                         const SizedBox(width: 8),
                         IconButton(
-                          onPressed:
-                              _isRangeSelectMode ? null : _deleteSelectedClients,
+                          onPressed: _isRangeSelectMode
+                              ? null
+                              : _deleteSelectedClients,
                           icon: Icon(
                             CupertinoIcons.trash,
                             color: kErrorColor,
@@ -264,209 +264,239 @@ class _ClientsPageState extends State<ClientsPage> {
                   ],
                 ),
               ),
-            
+
             Expanded(
               // Wrapped with CustomScrollView so the WHOLE page acts as one scrolling body
-              child: Scrollbar(
-                controller: _scrollController,
-                thumbVisibility: true,
-                interactive: true,
-                child: CustomScrollView(
+              child: ScrollbarTheme(
+                data: ScrollbarThemeData(
+                  thumbVisibility: const WidgetStatePropertyAll(true),
+                  thickness: const WidgetStatePropertyAll(50),
+                  radius: const Radius.circular(12),
+                  trackVisibility: const WidgetStatePropertyAll(true),
+                  thumbColor: WidgetStatePropertyAll(
+                    kPrimaryColor.withValues(alpha: 0.7),
+                  ),
+                ),
+                child: Scrollbar(
                   controller: _scrollController,
-                  slivers:[
-                    SliverToBoxAdapter(
-                      child: header(context, "Clients"),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: kPagePaddingInsets,
-                        child: Container(
-                          padding: const EdgeInsets.all(kPagePadding),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).cardColor,
-                            borderRadius: BorderRadius.circular(kBorderRadius),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                            children: [
-                              Column(
-                                children:[
-                                  Text(
-                                    _clients.length.toString(),
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  const Text('Total Clients'),
-                                ],
-                              ),
-                              Column(
-                                children:[
-                                  Text(
-                                    _clients
-                                        .fold<int>(
-                                            0,
-                                            (sum, client) =>
-                                                sum + client.noOfPurchases)
-                                        .toString(),
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  const Text('Total Purchases'),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
+                  thumbVisibility: true,
+                  interactive: true,
+                  thickness: 10,
+                  radius: const Radius.circular(12),
+                  trackVisibility: true,
+                  child: CustomScrollView(
+                    controller: _scrollController,
+                    slivers: [
+                      SliverToBoxAdapter(
+                        child: header(context, "Clients"),
                       ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: buttonDescriptive(
-                        context,
-                        title: 'Sync client data',
-                        subtitle: 'Import/export all clients and contacts data',
-                        onTap: () async {
-                          await Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => const SyncDataPage(),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: kPagePaddingInsets,
+                          child: Container(
+                            padding: const EdgeInsets.all(kPagePadding),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).cardColor,
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
                             ),
-                          );
-                          _getClients();
-                        },
-                        icon: Icon(
-                          CupertinoIcons.arrow_2_circlepath,
-                          color: kPrimaryColor,
-                        ),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                            kPagePadding, 0, kPagePadding, kPagePadding),
-                        child: Column(
-                          children:[
-                            const SizedBox(height: kPagePadding),
-                            TextField(
-                              controller: _searchController,
-                              onChanged: _filterClients,
-                              decoration: InputDecoration(
-                                hintText: 'Search by name or phone',
-                                prefixIcon: const Icon(CupertinoIcons.search),
-                                suffixIcon: _searchController.text.isNotEmpty
-                                    ? GestureDetector(
-                                        onTap: () {
-                                          _searchController.clear();
-                                          _filterClients('');
-                                        },
-                                        child: const Icon(
-                                            CupertinoIcons.xmark_circle_fill),
-                                      )
-                                    : null,
-                                border: OutlineInputBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(kBorderRadius),
-                                  borderSide: BorderSide.none,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                Column(
+                                  children: [
+                                    Text(
+                                      _clients.length.toString(),
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text('Total Clients'),
+                                  ],
                                 ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children:[
-                                const Text(
-                                  'Sort by:',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                DropdownButton<String>(
-                                  value: _sortBy,
-                                  underline: Container(),
-                                  icon: const Icon(CupertinoIcons.sort_down),
-                                  onChanged: (String? newValue) {
-                                    if (newValue != null) {
-                                      setState(() {
-                                        _sortBy = newValue;
-                                        _sortClients();
-                                      });
-                                    }
-                                  },
-                                  items: _sortOptions
-                                      .map<DropdownMenuItem<String>>(
-                                          (String value) {
-                                    return DropdownMenuItem<String>(
-                                      value: value,
-                                      child: Text(value),
-                                    );
-                                  }).toList(),
+                                Column(
+                                  children: [
+                                    Text(
+                                      _clients
+                                          .fold<int>(
+                                              0,
+                                              (sum, client) =>
+                                                  sum + client.noOfPurchases)
+                                          .toString(),
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text('Total Purchases'),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                    if (_isLoading)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    else if (_filteredClients.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children:[
-                              const Icon(
-                                CupertinoIcons.person_2,
-                                size: 64,
+                      SliverToBoxAdapter(
+                        child: buttonDescriptive(
+                          context,
+                          title: 'Sync client data',
+                          subtitle:
+                              'Import/export all clients and contacts data',
+                          onTap: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => const SyncDataPage(),
                               ),
+                            );
+                            _getClients();
+                          },
+                          icon: Icon(
+                            CupertinoIcons.arrow_2_circlepath,
+                            color: kPrimaryColor,
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                              kPagePadding, 0, kPagePadding, kPagePadding),
+                          child: Column(
+                            children: [
                               const SizedBox(height: kPagePadding),
-                              Text(
-                                "No clients yet",
-                                style: TextStyle(
-                                  color: Theme.of(context)
-                                      .textTheme
-                                      .bodyLarge
-                                      ?.color
-                                      ?.withOpacity(0.5),
+                              TextField(
+                                controller: _searchController,
+                                onChanged: _filterClients,
+                                decoration: InputDecoration(
+                                  hintText: 'Search by name or phone',
+                                  prefixIcon: const Icon(CupertinoIcons.search),
+                                  suffixIcon: _searchController.text.isNotEmpty
+                                      ? GestureDetector(
+                                          onTap: () {
+                                            _searchController.clear();
+                                            _filterClients('');
+                                          },
+                                          child: const Icon(
+                                              CupertinoIcons.xmark_circle_fill),
+                                        )
+                                      : null,
+                                  border: OutlineInputBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(kBorderRadius),
+                                    borderSide: BorderSide.none,
+                                  ),
                                 ),
+                              ),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Sort by:',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  DropdownButton<String>(
+                                    value: _sortBy,
+                                    underline: Container(),
+                                    icon: const Icon(CupertinoIcons.sort_down),
+                                    onChanged: (String? newValue) {
+                                      if (newValue != null) {
+                                        setState(() {
+                                          _sortBy = newValue;
+                                          _sortClients();
+                                        });
+                                      }
+                                    },
+                                    items: _sortOptions
+                                        .map<DropdownMenuItem<String>>(
+                                            (String value) {
+                                      return DropdownMenuItem<String>(
+                                        value: value,
+                                        child: Text(value),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
                         ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: kPagePaddingInsets,
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final client = _filteredClients[index];
-                              final isSelected =
-                                  _selectedClientIds.contains(client.id);
-                              
-                              return InkWell(
-                                onTap: () {
-                                  if (_isRangeSelectMode) {
-                                    // FIX: Calculate the range BEFORE overwriting _lastSelectedIndex
-                                    _selectRange(index);
-                                    _lastSelectedIndex = index;
-                                  } else if (_selectedClientIds.isEmpty) {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (context) => SingleClientPage(
-                                          id: client.id!,
-                                        ),
-                                      ),
-                                    ).then((_) => _getClients());
-                                  } else {
+                      ),
+                      if (_isLoading)
+                        const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (_filteredClients.isEmpty)
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  CupertinoIcons.person_2,
+                                  size: 64,
+                                ),
+                                const SizedBox(height: kPagePadding),
+                                Text(
+                                  "No clients yet",
+                                  style: TextStyle(
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.color
+                                        ?.withValues(alpha: 0.5),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        SliverPadding(
+                          padding: kPagePaddingInsets,
+                          sliver: SliverList(
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                final client = _filteredClients[index];
+                                final isSelected =
+                                    _selectedClientIds.contains(client.id);
+
+                                return InkWell(
+                                  onTap: () {
+                                    if (_isRangeSelectMode) {
+                                      // FIX: Calculate the range BEFORE overwriting _lastSelectedIndex
+                                      _selectRange(index);
+                                      _lastSelectedIndex = index;
+                                    } else if (_selectedClientIds.isEmpty) {
+                                      Navigator.of(context)
+                                          .push(
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  SingleClientPage(
+                                                id: client.id!,
+                                              ),
+                                            ),
+                                          )
+                                          .then((_) => _getClients());
+                                    } else {
+                                      setState(() {
+                                        if (isSelected) {
+                                          _selectedClientIds.remove(client.id);
+                                        } else {
+                                          _selectedClientIds.add(client.id!);
+                                          _lastSelectedIndex = index;
+                                        }
+                                      });
+                                    }
+                                  },
+                                  onLongPress: () {
                                     setState(() {
                                       if (isSelected) {
                                         _selectedClientIds.remove(client.id);
@@ -475,102 +505,92 @@ class _ClientsPageState extends State<ClientsPage> {
                                         _lastSelectedIndex = index;
                                       }
                                     });
-                                  }
-                                },
-                                onLongPress: () {
-                                  setState(() {
-                                    if (isSelected) {
-                                      _selectedClientIds.remove(client.id);
-                                    } else {
-                                      _selectedClientIds.add(client.id!);
-                                      _lastSelectedIndex = index;
-                                    }
-                                  });
-                                },
-                                child: Card(
-                                  margin: const EdgeInsets.only(
-                                      bottom: kPagePadding / 2),
-                                  elevation: 0,
-                                  color: isSelected
-                                      ? kPrimaryColor.withOpacity(0.1)
-                                      : Theme.of(context).cardColor,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(kBorderRadius),
-                                    side: isSelected
-                                        ? BorderSide(
-                                            color: kPrimaryColor, width: 2)
-                                        : BorderSide.none,
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12.0),
-                                    child: Row(
-                                      children:[
-                                        CircleAvatar(
-                                          backgroundColor:
-                                              kPrimaryColor.withOpacity(0.1),
-                                          child: Text(
-                                            client.firstName.isNotEmpty
-                                                ? client.firstName[0]
-                                                    .toUpperCase()
-                                                : "#",
-                                            style: TextStyle(
-                                              color: kPrimaryColor,
-                                              fontWeight: FontWeight.bold,
+                                  },
+                                  child: Card(
+                                    margin: const EdgeInsets.only(
+                                        bottom: kPagePadding / 2),
+                                    elevation: 0,
+                                    color: isSelected
+                                        ? kPrimaryColor.withValues(alpha: 0.1)
+                                        : Theme.of(context).cardColor,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(kBorderRadius),
+                                      side: isSelected
+                                          ? BorderSide(
+                                              color: kPrimaryColor, width: 2)
+                                          : BorderSide.none,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12.0),
+                                      child: Row(
+                                        children: [
+                                          CircleAvatar(
+                                            backgroundColor: kPrimaryColor
+                                                .withValues(alpha: 0.1),
+                                            child: Text(
+                                              client.firstName.isNotEmpty
+                                                  ? client.firstName[0]
+                                                      .toUpperCase()
+                                                  : "#",
+                                              style: TextStyle(
+                                                color: kPrimaryColor,
+                                                fontWeight: FontWeight.bold,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        const SizedBox(width: kPagePadding),
-                                        Expanded(
-                                          child: Column(
+                                          const SizedBox(width: kPagePadding),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  client.fullName.isNotEmpty
+                                                      ? client.fullName
+                                                      : client.phoneNumber,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(client.formattedPhone),
+                                              ],
+                                            ),
+                                          ),
+                                          Column(
                                             crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children:[
+                                                CrossAxisAlignment.end,
+                                            children: [
                                               Text(
-                                                client.fullName.isNotEmpty
-                                                    ? client.fullName
-                                                    : client.phoneNumber,
-                                                style: const TextStyle(
+                                                "${client.noOfPurchases} Purchases",
+                                                style: TextStyle(
                                                   fontWeight: FontWeight.bold,
+                                                  color: kPrimaryColor,
                                                 ),
                                               ),
                                               const SizedBox(height: 4),
-                                              Text(client.formattedPhone),
+                                              if (client.lastBought != null)
+                                                Text(_lastActiveLabel(client)),
                                             ],
                                           ),
-                                        ),
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children:[
-                                            Text(
-                                              "${client.noOfPurchases} Purchases",
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                color: kPrimaryColor,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            if (client.lastBought != null)
-                                              Text(_lastActiveLabel(client)),
-                                          ],
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Icon(
-                                          CupertinoIcons.chevron_forward,
-                                          size: 16,
-                                        ),
-                                      ],
+                                          const SizedBox(width: 8),
+                                          const Icon(
+                                            CupertinoIcons.chevron_forward,
+                                            size: 16,
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
-                            childCount: _filteredClients.length,
+                                );
+                              },
+                              childCount: _filteredClients.length,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

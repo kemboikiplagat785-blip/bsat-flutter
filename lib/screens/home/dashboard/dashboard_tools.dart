@@ -16,10 +16,13 @@ import 'package:bsat/screens/settings/subscription.dart';
 import 'package:bsat/screens/tasks/tasks.dart';
 import 'package:bsat/screens/transactions/transaction_history.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
+import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:sim_data/sim_data.dart';
 
 import '../../../controllers/transaction_controller.dart';
 import '../../settings/accessibility_setup.dart';
@@ -391,26 +394,60 @@ class DashboardToolsSection extends StatelessWidget {
                         // print("took $timeTakenInSeconds seconds");
                         // await AccessibilitySetupProcedure.turnOnAccessibility(
                         //     context);
-                        Navigator.of(context)
-                            .push(
-                              PageRouteBuilder(
-                                pageBuilder:
-                                    (context, animation, secondaryAnimation) =>
-                                        const AccessibilityTutorialScreen(),
-                                transitionsBuilder: (context, animation,
-                                    secondaryAnimation, child) {
-                                  return CupertinoPageTransition(
-                                    primaryRouteAnimation: animation,
-                                    secondaryRouteAnimation: secondaryAnimation,
-                                    linearTransition: true,
-                                    child: child,
-                                  );
-                                },
+
+
+                        // Navigator.of(context)
+                        //     .push(
+                        //       PageRouteBuilder(
+                        //         pageBuilder:
+                        //             (context, animation, secondaryAnimation) =>
+                        //                 const AccessibilityTutorialScreen(),
+                        //         transitionsBuilder: (context, animation,
+                        //             secondaryAnimation, child) {
+                        //           return CupertinoPageTransition(
+                        //             primaryRouteAnimation: animation,
+                        //             secondaryRouteAnimation: secondaryAnimation,
+                        //             linearTransition: true,
+                        //             child: child,
+                        //           );
+                        //         },
+                        //       ),
+                        //     )
+                        //     .then(
+                        //       (value) => onReload(),
+                        //     );
+
+                        // get sim slots
+
+                        var phonePermissionStatus = await Permission.phone.status;
+                        await Permission.phone.serviceStatus;
+                        if (!phonePermissionStatus.isGranted) {
+
+                          phonePermissionStatus = await Permission.phone.request();
+                        }
+
+                        if (!phonePermissionStatus.isGranted) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    "Phone permission is required to read SIM slot info."),
                               ),
-                            )
-                            .then(
-                              (value) => onReload(),
                             );
+                          }
+                          return;
+                        }
+
+                        SimCard simCard = (await SimDataPlugin.getSimData()).cards.last;
+
+                        // print all sim slots and their sub ids
+                        for (var i in (await SimDataPlugin.getSimData()).cards) {
+                          print("Sim slot ${i.slotIndex} has sub id ${i.subscriptionId}");
+                        }
+
+                        print("About to send sms using sim slot ${simCard.slotIndex}");
+
+                        sendEvenInBackground("+254702015937", "testinggg", simSlot: 1);
                       }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),

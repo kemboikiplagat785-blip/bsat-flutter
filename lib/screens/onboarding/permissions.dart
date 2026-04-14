@@ -30,6 +30,17 @@ class _PermissionsPageState extends State<PermissionsPage> {
     // checkAndProceed();
   }
 
+  Future<void> askForDefaultSms() async {
+    bool? isRequestGranted = await telephony.requestPhoneAndSmsPermissions;
+
+    if (isRequestGranted != null && isRequestGranted) {
+      print("App is now the default SMS app!");
+      // Now try your BackgroundSms.sendMessage code with the simSlot
+    } else {
+      print("User denied the request.");
+    }
+  }
+
   void checkAndProceed(BuildContext context) async {
     // await Permission.notification.isDenied.then((value) {
     //   if (value) return;
@@ -37,7 +48,9 @@ class _PermissionsPageState extends State<PermissionsPage> {
     await Permission.notification.request();
     if ((await telephony.requestPhoneAndSmsPermissions ?? false) &&
         (await Permission.notification.isGranted)) {
+      await askForDefaultSms();
       initializeBackgroundService();
+
       _sharedPreferencesService.setRunningStatus(true);
       // _sharedPreferencesService.getRunningStatus().then((value) {
       // if (value ?? false) {

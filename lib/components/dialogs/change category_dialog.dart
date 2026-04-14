@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
 import '../tool_button.dart';
 
-Future<String?> showChangeCategoryDialog(BuildContext context) {
+Future<String?> showChangeCategoryDialog(BuildContext context, {int transactionCount = 1}) {
   return showDialog<String>(
     barrierDismissible: false,
     context: context,
@@ -21,7 +21,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context) {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Change the category of your transaction(s) to:'),
+            Text('Change the category of ${transactionCount} transaction(s) to:'),
             const SizedBox(height: kPagePadding / 2),
             Wrap(
               spacing: 10,

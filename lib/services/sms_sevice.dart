@@ -118,12 +118,27 @@ onMessageReceive(dynamic smsMessage) async {
 }
 
 Future<List<SmsMessage>> getAllSms({int? limit}) async {
+  List<int> numbersToInclude = await SQLiteService().queryAll(
+    'processText',
+    columns: ['number'],
+  ).then((rows) => rows
+      .map((row) => row['number'].toString())
+      .where((numStr) => numStr.isNotEmpty)
+      .map(int.parse)
+      .toList());
+
   List<SmsMessage> relevantMessages = await telephony.getInboxSms(
     columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
     filter: SmsFilter.where(SmsColumn.ADDRESS)
         .equals("Safaricom")
         .or(SmsColumn.ADDRESS)
-        .equals("MPESA"),
+        .equals("MPESA")
+        .or(SmsColumn.ADDRESS)
+        .equals("SAF_OfaMOTO")
+        .or(SmsColumn.ADDRESS)
+        .equals("334")
+        .or(SmsColumn.ADDRESS)
+        .equals("456"),
     sortOrder: [
       OrderBy(SmsColumn.DATE, sort: Sort.DESC),
     ],
@@ -238,15 +253,19 @@ int extract9DigitNumber(String messageBody) {
   return number;
 }
 
-String getReferenceCode(String messageBody) {
-  RegExp referenceCodeRegex = RegExp(r'^[\w]*');
+String getMpesaCode(String messageBody) {
+  RegExp strictMpesaRegex =
+      RegExp(r'\b(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*[0-9])[A-Z0-9]{10}\b');
 
-  Match? referenceCodeMatch = referenceCodeRegex.firstMatch(messageBody);
-  String referenceCode = referenceCodeMatch?.group(0) ?? "";
+  RegExp fallbackRegex = RegExp(r'\b[A-Z0-9]{10}\b');
 
-  // debugPrint("Reference code: $referenceCode");
+  Match? strictMatch = strictMpesaRegex.firstMatch(messageBody);
+  if (strictMatch != null) {
+    return strictMatch.group(0)!;
+  }
 
-  return referenceCode;
+  Match? fallbackMatch = fallbackRegex.firstMatch(messageBody);
+  return fallbackMatch?.group(0) ?? "";
 }
 
 // might be:
@@ -538,9 +557,11 @@ String? unmaskNumberInMessage(String number, String message) {
   return message.replaceAll(maskedPattern, number);
 }
 
-String replaceNumberInMessage(String oldNumber, String newNumber, String message, String bsatMessage) {
+String replaceNumberInMessage(
+    String oldNumber, String newNumber, String message, String bsatMessage) {
   // using regex to replace all occurrences of oldNumber with newNumber, but only if oldNumber is not part of a larger number (e.g. 0712345678 should not match 07123456789)
-  final RegExp regex = RegExp(r'(?<!\d)' + RegExp.escape(oldNumber) + r'(?!\d)');
+  final RegExp regex =
+      RegExp(r'(?<!\d)' + RegExp.escape(oldNumber) + r'(?!\d)');
   String? updatedMessage = message.replaceAll(regex, newNumber);
   // append "Altered by BSAT" to the end of the message if a replacement was made
   if (updatedMessage != message) {

@@ -540,6 +540,7 @@ class SQLiteService {
     int? offset,
     String? where,
     List<Object?>? whereArgs,
+        List<String>? columns,
   }) async {
     Database db = await database;
     if (!db.isOpen) {
@@ -553,6 +554,7 @@ class SQLiteService {
       offset: offset,
       where: where,
       whereArgs: whereArgs,
+      columns: columns,
     );
   }
 

@@ -81,7 +81,7 @@ class TransactionController {
 
     bool isUsingToken = false;
 
-    String transactionId = getReferenceCode(smsMessage.body ?? "");
+    String transactionId = getMpesaCode(smsMessage.body ?? "");
     int number = extract9DigitNumber(smsMessage.body ?? "");
     int amount = getAmount(smsMessage.body);
     String name = getName(smsMessage.body ?? "");
@@ -208,7 +208,7 @@ class TransactionController {
     if (offersMightHaveChanged) {
       dontProcess(
         smsMessage.body ?? "",
-        getReferenceCode(smsMessage.body ?? ""),
+        getMpesaCode(smsMessage.body ?? ""),
         extract9DigitNumber(smsMessage.body ?? ""),
         '',
         getAmount(smsMessage.body),
@@ -554,15 +554,14 @@ class TransactionController {
   }
 
   Future<bool> forwardIfNeeded(
-    int amount,
-    String trimmedBody,
-    String smsMessageBody,
-    String transactionId,
-    int number,
-    String name,
-    bool autoSaveContacts, {
-    String? status,
-  }) async {
+      int amount,
+      String trimmedBody,
+      String smsMessageBody,
+      String transactionId,
+      int number,
+      String name,
+      bool autoSaveContacts,
+      {String? status}) async {
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
       "(amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)",
@@ -1253,7 +1252,8 @@ class TransactionController {
           );
           if (deviceMatches.isNotEmpty) {
             String deviceId = deviceMatches.first['device_id'];
-            await BackendService().post('/api/devices/process-alt-request', body: {
+            await BackendService()
+                .post('/api/devices/process-alt-request', body: {
               'id': deviceId,
               'data': {
                 'type': 'process_alt_request',
@@ -2191,42 +2191,45 @@ class TransactionController {
     // reply might contain phone number.
     int number = extract9DigitNumber(smsMessage.body ?? "");
 
+    String mpesaCode = getMpesaCode(smsMessage.body ?? "");
+
     if (number == 0) return null;
 
-    List<Map<String, dynamic>> transactions = await _sqliteService.queryCustom(
+    Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
       'transactions',
-      'status = ?',
-      [TransactionStatuses.paused],
-    );
+      'status = ? AND transactionId = ?',
+      [TransactionStatuses.paused, mpesaCode],
+    ))
+        .first;
 
-    for (var transaction in transactions) {
-      String initialMessage = transaction['initialMessage'] ?? '';
-      String? unmaskedReply = unmaskNumberInMessage('0$number', initialMessage);
+    // for (var transaction in transactions) {
+    String initialMessage = transaction['initialMessage'] ?? '';
+    String? unmaskedReply = unmaskNumberInMessage('0$number', initialMessage);
+    //
+    if (unmaskedReply != null) {
+      await _sqliteService.deleteStuff(transaction['id'], 'transactions');
+      // new client
+      Client client = Client.fromMpesaMessage(unmaskedReply);
 
-      if (unmaskedReply != null) {
-        await _sqliteService.deleteStuff(transaction['id'], 'transactions');
-        // new client
-        Client client = Client.fromMpesaMessage(unmaskedReply);
+      await recordClientPurchase(
+          client.phoneNumber, "${client.firstName} ${client.lastName}");
 
-        await recordClientPurchase(
-            client.phoneNumber, "${client.firstName} ${client.lastName}");
-
-        await makeTransactionGivenSmsBody(unmaskedReply);
-        return unmaskedReply;
-      }
+      await makeTransactionGivenSmsBody(unmaskedReply);
+      return unmaskedReply;
     }
+    // }
 
     return null;
   }
 
   // autoScheduleFailedRecommendations
   Future<void> autoScheduleFailedRecommendations() async {
-    int timestamp24HoursAgo =
-        DateTime.now().millisecondsSinceEpoch - Duration(hours: 24).inMilliseconds;
+    int timestamp24HoursAgo = DateTime.now().millisecondsSinceEpoch -
+        Duration(hours: 24).inMilliseconds;
 
     List<Map<String, dynamic>> failedRecommendations = await _sqliteService
-        .queryCustom(
-            'transactions', 'status = ? AND timestamp > ?', [TransactionStatuses.secondAttempt, timestamp24HoursAgo]);
+        .queryCustom('transactions', 'status = ? AND timestamp > ?',
+            [TransactionStatuses.secondAttempt, timestamp24HoursAgo]);
 
     for (var recommendation in failedRecommendations) {
       String? initialMessage = recommendation['initialMessage'];

@@ -9,10 +9,20 @@ String getNormalDate(DateTime dateTime) {
 }
 
 String getNormalTime(DateTime dateTime) {
-  String hour = dateTime.hour.toString().padLeft(2, '0');
+  // Determine AM or PM
+  String period = dateTime.hour >= 12 ? "PM" : "AM";
+
+  // Convert to 12-hour format
+  // If hour is 0 (midnight), it becomes 12.
+  // If hour is 13-23, it becomes 1-11.
+  int hourInt = dateTime.hour % 12;
+  if (hourInt == 0) hourInt = 12;
+
+  String hour = hourInt.toString().padLeft(2, '0');
   String minute = dateTime.minute.toString().padLeft(2, '0');
   String second = dateTime.second.toString().padLeft(2, '0');
-  return "$hour:$minute:$second";
+
+  return "$hour:$minute:$second $period";
 }
 
 String getRoughTime(DateTime dateTime) {

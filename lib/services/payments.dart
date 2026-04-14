@@ -117,9 +117,11 @@ class PaymentOps {
   }
 
   bool paymentIsMade(String response) {
+    print(response);
     return response.toLowerCase().contains("sent") ||
         response.toLowerCase().contains(" successful") ||
-        response.toLowerCase().contains(" transferred");
+        response.toLowerCase().contains(" transferred")||
+        response.toLowerCase().contains("umetuma");
   }
 
   Future<List<String>> payTokens(int amount, int subId, int tokens,

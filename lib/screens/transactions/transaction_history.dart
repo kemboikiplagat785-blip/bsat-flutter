@@ -7,11 +7,20 @@ import 'package:bsat/utils/date_ops.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:infinite_scroll_pagination/infinite_scroll_pagination.dart';
+import 'package:bsat/components/dialogs/change category_dialog.dart';
 import '../../components/dialogs/confirmation_dialog.dart';
 import '../../components/dialogs/loading_dialog.dart';
 import '../../components/tool_button.dart';
 import '../../components/dialogs/till_done_dialogue.dart';
 import '../../utils/constants.dart';
+
+enum _SelectionMenuAction {
+  retry,
+  delete,
+  schedule,
+  changeCategory,
+  toggleSelectAll,
+}
 
 class TransactionHistoryPage extends StatefulWidget {
   final String? query;
@@ -263,6 +272,12 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                 padding: kPagePaddingInsets,
                 child: RawScrollbar(
                   controller: _scrollController,
+                  thumbVisibility: true,
+                  interactive: true,
+                  thickness: 10,
+                  radius: const Radius.circular(12),
+                  thumbColor: kPrimaryColor.withValues(alpha: 0.7),
+                  trackVisibility: true,
                   child: PagedListView<int, dynamic>.separated(
                     pagingController: _pagingController,
                     scrollController: _scrollController,
@@ -347,34 +362,60 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   // --- Helper Methods to keep build() clean without losing original UI ---
 
   Widget _buildSelectionActions() {
-    return Row(
-      children: [
-        IconButton(
-            icon: const Icon(CupertinoIcons.refresh),
-            onPressed: () => _handleRetrySelected()),
-        IconButton(
-            icon: const Icon(CupertinoIcons.delete),
-            onPressed: () => _handleDeleteSelected()),
-        IconButton(
-            icon: const Icon(Icons.precision_manufacturing_outlined),
-            onPressed: () => _handleScheduleSelected()),
-        IconButton(
-          icon: Icon(_selectedTransactionIds.length ==
-                  (_pagingController.itemList?.length ?? 0)
-              ? Icons.check_box
-              : Icons.check_box_outline_blank),
-          onPressed: () {
+    final allVisibleSelected = _selectedTransactionIds.length ==
+        (_pagingController.itemList?.length ?? 0);
+
+    return PopupMenuButton<_SelectionMenuAction>(
+      icon: const Icon(Icons.menu),
+      onSelected: (action) async {
+        switch (action) {
+          case _SelectionMenuAction.retry:
+            await _handleRetrySelected();
+            break;
+          case _SelectionMenuAction.delete:
+            await _handleDeleteSelected();
+            break;
+          case _SelectionMenuAction.schedule:
+            await _handleScheduleSelected();
+            break;
+          case _SelectionMenuAction.changeCategory:
+            await _handleChangeCategorySelected();
+            break;
+          case _SelectionMenuAction.toggleSelectAll:
             setState(() {
-              if (_selectedTransactionIds.length ==
-                  (_pagingController.itemList?.length ?? 0)) {
+              if (allVisibleSelected) {
                 _selectedTransactionIds.clear();
               } else {
-                _selectedTransactionIds = _pagingController.itemList!
+                _selectedTransactionIds = (_pagingController.itemList ?? [])
                     .map((e) => e['id'] as int)
                     .toSet();
               }
             });
-          },
+            break;
+        }
+      },
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: _SelectionMenuAction.retry,
+          child: Text('Retry selected'),
+        ),
+        const PopupMenuItem(
+          value: _SelectionMenuAction.delete,
+          child: Text('Delete selected'),
+        ),
+        const PopupMenuItem(
+          value: _SelectionMenuAction.schedule,
+          child: Text('Schedule selected'),
+        ),
+        const PopupMenuItem(
+          value: _SelectionMenuAction.changeCategory,
+          child: Text('Change category'),
+        ),
+        PopupMenuItem(
+          value: _SelectionMenuAction.toggleSelectAll,
+          child: Text(allVisibleSelected
+              ? 'Clear selected visible'
+              : 'Select all visible'),
         ),
       ],
     );
@@ -605,6 +646,38 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       reloadForNewDate();
       Navigator.pop(context);
     }
+  }
+
+  Future<void> _handleChangeCategorySelected() async {
+    final selectedStatus = await showChangeCategoryDialog(context, transactionCount: _selectedTransactionIds.length);
+    if (selectedStatus == null || selectedStatus.isEmpty) return;
+
+    final selectedIds = _selectedTransactionIds.toList();
+    if (selectedIds.isEmpty) return;
+
+    await tillDoneDialogue(
+      context,
+      const Padding(
+        padding: kPagePaddingInsets,
+        child: Text('Updating category'),
+      ),
+      () async {
+        final placeholders = List.filled(selectedIds.length, '?').join(', ');
+        await databaseHelper.updateStuff(
+          {'status': selectedStatus},
+          'id IN ($placeholders)',
+          selectedIds,
+          'transactions',
+        );
+      },
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _selectionMode = false;
+      _selectedTransactionIds.clear();
+    });
+    reloadForNewDate();
   }
 
   Future<dynamic> showRetrySheet(

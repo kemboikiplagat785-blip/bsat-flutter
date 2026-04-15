@@ -138,7 +138,10 @@ Future<List<SmsMessage>> getAllSms({int? limit}) async {
         .or(SmsColumn.ADDRESS)
         .equals("334")
         .or(SmsColumn.ADDRESS)
-        .equals("456"),
+        .equals("456")
+    .or(SmsColumn.ADDRESS)
+
+    .equals("ETOPUP"),
     sortOrder: [
       OrderBy(SmsColumn.DATE, sort: Sort.DESC),
     ],

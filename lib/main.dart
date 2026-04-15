@@ -1,5 +1,3 @@
-// import 'dart:ui';
-
 import 'package:bsat/firebase_options.dart';
 import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:bsat/screens/home/home.dart';
@@ -17,6 +15,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:bsat/utils/logger.dart';
 
 import 'providers/theme_provider.dart';
+import 'screens/messaging/whatsapp.dart';
 import 'screens/settings/kill_switch.dart';
 import 'services/kill_switch_service.dart';
 
@@ -24,9 +23,11 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  BsatLogger.captureLogs();
+  // BsatLogger.captureLogs();
 
-  BsatLogger.runZonedWithLogs(() async {
+  whatsappService.initWhatsapp();
+
+  // BsatLogger.runZonedWithLogs(() async {
     await BsatLogger.initFileLogging();
 
     var databasesPath = await getDatabasesPath();
@@ -61,7 +62,7 @@ Future<void> main() async {
         child: MyApp(),
       ),
     );
-  });
+  // });
 }
 
 class MyApp extends StatefulWidget {

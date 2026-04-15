@@ -6,6 +6,8 @@ import 'package:bsat/screens/clients/clients.dart';
 import 'package:bsat/screens/dialpad.dart';
 import 'package:bsat/screens/messaging/inbox.dart';
 import 'package:bsat/screens/messaging/send_message_page.dart';
+import 'package:bsat/screens/messaging/whatsapp.dart';
+import 'package:bsat/screens/messaging/whatsapp_screen.dart';
 import 'package:bsat/screens/offers/offers.dart';
 import 'package:bsat/screens/online_management/online_management.dart';
 import 'package:bsat/screens/replies/replies.dart';
@@ -395,59 +397,28 @@ class DashboardToolsSection extends StatelessWidget {
                         // await AccessibilitySetupProcedure.turnOnAccessibility(
                         //     context);
 
-
-                        // Navigator.of(context)
-                        //     .push(
-                        //       PageRouteBuilder(
-                        //         pageBuilder:
-                        //             (context, animation, secondaryAnimation) =>
-                        //                 const AccessibilityTutorialScreen(),
-                        //         transitionsBuilder: (context, animation,
-                        //             secondaryAnimation, child) {
-                        //           return CupertinoPageTransition(
-                        //             primaryRouteAnimation: animation,
-                        //             secondaryRouteAnimation: secondaryAnimation,
-                        //             linearTransition: true,
-                        //             child: child,
-                        //           );
-                        //         },
-                        //       ),
-                        //     )
-                        //     .then(
-                        //       (value) => onReload(),
-                        //     );
-
-                        // get sim slots
-
-                        var phonePermissionStatus = await Permission.phone.status;
-                        await Permission.phone.serviceStatus;
-                        if (!phonePermissionStatus.isGranted) {
-
-                          phonePermissionStatus = await Permission.phone.request();
-                        }
-
-                        if (!phonePermissionStatus.isGranted) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    "Phone permission is required to read SIM slot info."),
+                        Navigator.of(context)
+                            .push(
+                              PageRouteBuilder(
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        const WhatsappScreen(),
+                                transitionsBuilder: (context, animation,
+                                    secondaryAnimation, child) {
+                                  return CupertinoPageTransition(
+                                    primaryRouteAnimation: animation,
+                                    secondaryRouteAnimation: secondaryAnimation,
+                                    linearTransition: true,
+                                    child: child,
+                                  );
+                                },
                               ),
+                            )
+                            .then(
+                              (value) => onReload(),
                             );
-                          }
-                          return;
-                        }
 
-                        SimCard simCard = (await SimDataPlugin.getSimData()).cards.last;
-
-                        // print all sim slots and their sub ids
-                        for (var i in (await SimDataPlugin.getSimData()).cards) {
-                          print("Sim slot ${i.slotIndex} has sub id ${i.subscriptionId}");
-                        }
-
-                        print("About to send sms using sim slot ${simCard.slotIndex}");
-
-                        sendEvenInBackground("+254702015937", "testinggg", simSlot: 1);
+                        // whatsappService.sendMessage("254702015937", "dragon moto testing");
                       }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),

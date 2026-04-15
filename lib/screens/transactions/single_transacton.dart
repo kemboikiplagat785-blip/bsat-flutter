@@ -22,6 +22,7 @@ import '../tasks/edit_task.dart';
 
 class SingleTransactionPage extends StatefulWidget {
   final id;
+
   const SingleTransactionPage({required this.id, super.key});
 
   @override
@@ -72,7 +73,6 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
         '%,${_details['amount']}]',
         '[${_details['amount']}]',
       ],
-      
     );
 
     try {
@@ -220,7 +220,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       horizontal: 8,
                                       vertical: 4,
                                     ),
-                                    margin: const EdgeInsets.only(bottom: kPagePadding / 3),
+                                    margin: const EdgeInsets.only(
+                                        bottom: kPagePadding / 3),
                                     decoration: BoxDecoration(
                                       color: kIndigoColor.withOpacity(0.1),
                                       borderRadius:
@@ -301,7 +302,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
                                     content: Text(
-                                      '0${_details['number']} removed from blacklist',
+                                      '0${_details['number']} ${_isBlacklisted ? "added to" : "removed from"} blacklist',
                                     ),
                                   ),
                                 );
@@ -532,7 +533,6 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                     _details["simSubId"],
                                     _details["canRetry"],
                                     _details["ussdReply"]);
-                                    
 
                                 getStuff();
                               },
@@ -743,6 +743,33 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                             size: 14,
                           ),
                           "Forward MPESA message",
+                          context,
+                          textSize: 13,
+                        ),
+                        toolButton(
+                          () async {
+                            showSuccessDialog(context,
+                                text: "Forwarding to 334");
+                            await tillDoneDialogue(
+                                context, Text("Reversing message"), () async {
+                              String trimmedMessage =
+                                  _details["initialMessage"].toString().length >
+                                          160
+                                      ? _details["initialMessage"]
+                                          .toString()
+                                          .substring(0, 160)
+                                      : _details["initialMessage"].toString();
+
+                              sendEvenInBackground('334', trimmedMessage);
+                            });
+                            return;
+                          },
+                          Icon(
+                            CupertinoIcons.exclamationmark_octagon,
+                            color: kErrorColor,
+                            size: 14,
+                          ),
+                          "Forward to 334",
                           context,
                           textSize: 13,
                         ),

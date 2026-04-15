@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:bsat/components/header.dart';
+import 'package:bsat/screens/messaging/whatsapp_screen.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -80,7 +81,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
 
     Map<String, dynamic> data = {
       'reply': _replyTextController.text,
-      'condition': _selectedOption, 
+      'condition': _selectedOption,
       'dialSim': _dialSim,
       'conditionAmount': 1,
       'amounts': jsonEncode(_amountsForReply),
@@ -406,39 +407,61 @@ class _EditReplyPageState extends State<EditReplyPage> {
                             'Using',
                           ),
                           Row(
-                            children: sims.map((s) {
-                              return InkWell(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: sims.map((s) {
+                                  return InkWell(
+                                    onTap: () {
+                                      setState(() {
+                                        _dialSim = s.subscriptionId;
+                                      });
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(
+                                          right: kPagePadding / 2),
+                                      child: Column(
+                                        children: [
+                                          Text(
+                                            s.displayName,
+                                            style: TextStyle(
+                                              color:
+                                                  s.subscriptionId == _dialSim
+                                                      ? kPrimaryColor
+                                                      : null,
+                                            ),
+                                          ),
+                                          const SizedBox(
+                                              height: kPagePadding / 2),
+                                          Icon(
+                                            Icons.sim_card_rounded,
+                                            size: 40,
+                                            color: s.subscriptionId == _dialSim
+                                                ? kPrimaryColor
+                                                : kGrayColor,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                              GestureDetector(
                                 onTap: () {
-                                  setState(() {
-                                    _dialSim = s.subscriptionId;
-                                  });
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          WhatsappScreen(),
+                                    ),
+                                  );
                                 },
-                                child: Padding(
-                                  padding: const EdgeInsets.only(
-                                      right: kPagePadding / 2),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        s.displayName,
-                                        style: TextStyle(
-                                          color: s.subscriptionId == _dialSim
-                                              ? kPrimaryColor
-                                              : null,
-                                        ),
-                                      ),
-                                      const SizedBox(height: kPagePadding / 2),
-                                      Icon(
-                                        Icons.sim_card_rounded,
-                                        size: 40,
-                                        color: s.subscriptionId == _dialSim
-                                            ? kPrimaryColor
-                                            : kGrayColor,
-                                      ),
-                                    ],
-                                  ),
+                                child: Image.asset(
+                                  "assets/icons/whatsapp.png",
+                                  width: 40,
+                                  height: 40,
                                 ),
-                              );
-                            }).toList(),
+                              ),
+                            ],
                           ),
                         ],
                       ),

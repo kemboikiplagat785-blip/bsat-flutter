@@ -8,11 +8,30 @@ final whatsappService = WhatsappService();
 class WhatsappService {
   WhatsappClient? whatsappClient;
 
+  bool get isConnected => whatsappClient?.isConnected ?? false;
+
+  Future<bool> ensureConnected({
+    dynamic Function(String qrString, Uint8List? imageBytes)? onQrCode,
+    void Function(ConnectionEvent event)? onConnectionEvent,
+  }) async {
+    if (isConnected) return true;
+    await initWhatsapp(
+      onQrCode: onQrCode,
+      onConnectionEvent: onConnectionEvent,
+    );
+    return isConnected;
+  }
+
   Future<void> initWhatsapp({
     dynamic Function(String qrString, Uint8List? imageBytes)? onQrCode,
     void Function(ConnectionEvent event)? onConnectionEvent,
   }) async {
     // WhatsappBotUtils.enableLogs(true);
+
+    // if (isConnected) {
+    //   print("Already connected to WhatsApp.");
+    //   return;
+    // }
 
     whatsappClient = await WhatsappBotFlutterMobile.connect(
       onQrCode: (String qrString, Uint8List? imageBytes) {
@@ -31,7 +50,7 @@ class WhatsappService {
   }
 
   Future<void> sendMessage(String number, String text) async {
-    if (whatsappClient != null && whatsappClient!.isConnected) {
+    if (isConnected) {
       print("sending message to $number: $text");
       try {
         print(await whatsappClient!.profile.getMyStatus());

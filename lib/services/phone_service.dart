@@ -105,7 +105,7 @@ class PhoneService {
         }
 
         if (res.contains(RegExp(
-            r'Connection code error|connection problem|try again|unable to process|error from application|currently unavailable|failed due to unresolved',
+            r'Request cannot be completed at the moment|Connection code error|connection problem|try again|unable to process|error from application|currently unavailable|failed due to unresolved',
             caseSensitive: false))) {
           return [res, TransactionStatuses.error];
         }

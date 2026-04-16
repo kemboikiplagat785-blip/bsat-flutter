@@ -56,6 +56,7 @@ class WhatsappService {
         print(await whatsappClient!.profile.getMyStatus());
         // check if still connected before sending
         print(await whatsappClient!.isReadyToChat);
+        print("sending message to $number: $text");
         await whatsappClient!.chat.sendTextMessage(
           phone: "$number@c.us", // Example: 254712345678@c.us
           message: text,

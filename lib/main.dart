@@ -27,7 +27,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // BsatLogger.captureLogs();
 
-  whatsappService.initWhatsapp();
+  // whatsappService.initWhatsapp();
 
   // BsatLogger.runZonedWithLogs(() async {
     await BsatLogger.initFileLogging();

@@ -179,8 +179,8 @@ class _WhatsappScreenState extends State<WhatsappScreen> {
                     onPressed: () {
                       // if (whatsappConnected) {
                       whatsappService.sendMessage(
-                        "254795559924", // Replace with a valid number
-                        "Hdhjsjhdsllo frjkjkkjkjkj",
+                        "254702015937", // Replace with a valid number
+                        "bsat app test message at ${DateTime.now()}",
                       );
                       // }
                     },

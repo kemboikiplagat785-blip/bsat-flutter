@@ -524,53 +524,48 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
 }
 
 String? unmaskNumberInMessage(String number, String message) {
-  // First, explicitly check for Kenyan/MPesa-like masked numbers (07xx***xxx, 2547xx***xxx, etc.)
-  final RegExp mpesaMaskedPattern = RegExp(
-    r'(?:254|0|\+254)[17]\d*[\*xX]+[\d\*xX]*',
+  // 1. Normalize the provided number (Remove +254 or 254, replace with 0)
+  String normNum = number.replaceAll(RegExp(r'[^\d+]'), ''); // Keep only digits and +
+  if (normNum.startsWith('+254')) {
+    normNum = '0${normNum.substring(4)}';
+  } else if (normNum.startsWith('254')) {
+    normNum = '0${normNum.substring(3)}';
+  }
+
+  // Ensure number is long enough to have a first 4 and last 3
+  if (normNum.length < 7) return null;
+
+  // 2. Extract First 4 and Last 3 digits
+  String first4 = normNum.substring(0, 4);
+  String last3 = normNum.substring(normNum.length - 3);
+
+  // 3. Find any masked number in the message
+  // (Looks for +254, 254, or 0 followed by digits, asterisks/X, and ending with digits)
+  final RegExp maskedPattern = RegExp(
+    r'(?:\+?254|0)\d*[\*xX]+\d+\b',
     caseSensitive: false,
   );
 
-  Match? match = mpesaMaskedPattern.firstMatch(message);
-  if (match != null) {
+  for (Match match in maskedPattern.allMatches(message)) {
     String maskedToken = match.group(0)!;
 
-    // Normalize both numbers for comparison
-    String normNum = number.replaceAll('+', '');
-    if (normNum.startsWith('254')) normNum = '0${normNum.substring(3)}';
-
-    String normMask =
-        maskedToken.replaceAll('+', '').replaceAll(RegExp(r'x|X|\*'), r'\d');
-    if (normMask.startsWith('254')) normMask = '0${normMask.substring(3)}';
-
-    // Check if the provided number actually matches this mask
-    if (RegExp('^$normMask\$').hasMatch(normNum)) {
-      return message.replaceFirst(maskedToken, number);
+    // 4. Normalize the masked token found in the message
+    String normMask = maskedToken.toUpperCase();
+    if (normMask.startsWith('+254')) {
+      normMask = '0${normMask.substring(4)}';
+    } else if (normMask.startsWith('254')) {
+      normMask = '0${normMask.substring(3)}';
     }
 
-    // If it's an M-PESA format but doesn't match the regex, do not replace it blindly.
+    // 5. Compare the First 4 and Last 3
+    if (normMask.startsWith(first4) && normMask.endsWith(last3)) {
+      // It's a perfect match! Replace it in the original message.
+      return message.replaceFirst(maskedToken, number);
+    }
   }
 
-  // Strip non-numeric characters to safely get the last 3 digits
-  final cleanNumber = number.replaceAll(RegExp(r'\D'), '');
-
-  // If the number is too short, we can't reliably find a mask
-  if (cleanNumber.length < 3) {
-    return null;
-  }
-
-  final last3 = cleanNumber.substring(cleanNumber.length - 3);
-
-  final RegExp maskedPattern = RegExp(
-    r'(?:\+?\d{1,4}[\s\-]*)?(?:[\*Xx#]{1,4}[\s\-]*)+[\d\*Xx#\s\-]*' +
-        last3 +
-        r'\b',
-  );
-
-  if (!maskedPattern.hasMatch(message)) {
-    return null;
-  }
-
-  return message.replaceAll(maskedPattern, number);
+  // Return null if no matching masks were found
+  return null;
 }
 
 String replaceNumberInMessage(

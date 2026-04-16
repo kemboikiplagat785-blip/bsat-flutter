@@ -22,17 +22,16 @@ class InboxPage extends StatefulWidget {
 
 class _InboxPageState extends State<InboxPage> {
   final List<SmsMessage> _originalSmsList = [];
+  final List<SmsMessage> _filteredSmsList = [];
   List<SmsMessage> _smsList = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMoreToReveal = false;
   final ScrollController _pageScrollController = ScrollController();
 
   final Set<int> _selectedIndices = {};
   int? _lastSelectedIndex;
   bool _isRangeSelectMode = false;
-
-  final TextEditingController _maxVisibleMessagesController =
-      TextEditingController(text: '100');
-  Timer? _searchDebounce;
 
   String _searchQuery = '';
   String? _selectedSender;
@@ -40,13 +39,20 @@ class _InboxPageState extends State<InboxPage> {
   final Set<String> _uniqueSenders = {};
   final Set<String> _uniqueAmounts = {};
 
-  int _maxVisibleMessages = 100;
+  int _maxVisibleMessages = 500;
+  int _visibleMessageCount = 0;
   int _filteredMessageCount = 0;
   bool _isMessageListTruncated = false;
+  static const int _pageSize = 50;
+
+  final TextEditingController _maxVisibleMessagesController =
+  TextEditingController(text: '500');
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
+    _pageScrollController.addListener(_handleScroll);
     _fetchSms();
   }
 
@@ -54,13 +60,20 @@ class _InboxPageState extends State<InboxPage> {
   void dispose() {
     _searchDebounce?.cancel();
     _maxVisibleMessagesController.dispose();
+    _pageScrollController.removeListener(_handleScroll);
     _pageScrollController.dispose();
     super.dispose();
   }
 
   Future<void> _fetchSms() async {
-    final limit = kDebugMode ? 20 : 400;
+    final limit = _maxVisibleMessages;
     try {
+      if (mounted) {
+        setState(() {
+          _isLoading = true;
+          _isLoadingMore = false;
+        });
+      }
       final messages = await getAllSms(limit: limit);
       if (!mounted) return;
       setState(() {
@@ -68,13 +81,15 @@ class _InboxPageState extends State<InboxPage> {
           ..clear()
           ..addAll(messages);
         _extractUniqueSendersAndAmounts(messages);
-        _applyFilters();
+        _applyFilters(resetPagination: true);
         _isLoading = false;
       });
+      _scheduleAutoRevealMore();
     } catch (_) {
       if (mounted) {
         setState(() {
           _isLoading = false;
+          _isLoadingMore = false;
         });
       }
     }
@@ -99,8 +114,10 @@ class _InboxPageState extends State<InboxPage> {
     return match?.group(0) ?? '';
   }
 
-  void _applyFilters() {
-    final filteredMessages = _originalSmsList.where((msg) {
+  void _applyFilters({bool resetPagination = false}) {
+    _filteredSmsList
+      ..clear()
+      ..addAll(_originalSmsList.where((msg) {
       if (_searchQuery.isNotEmpty) {
         final body = (msg.body ?? '').toLowerCase();
         final address = (msg.address ?? '').toLowerCase();
@@ -124,15 +141,25 @@ class _InboxPageState extends State<InboxPage> {
       }
 
       return true;
-    }).toList();
+    }));
 
-    _filteredMessageCount = filteredMessages.length;
-    _isMessageListTruncated = _filteredMessageCount > _maxVisibleMessages;
-    _smsList = filteredMessages.take(_maxVisibleMessages).toList();
+    _filteredMessageCount = _filteredSmsList.length;
 
-    _selectedIndices.clear();
-    _lastSelectedIndex = null;
-    _isRangeSelectMode = false;
+    if (resetPagination) {
+      _visibleMessageCount = _filteredMessageCount < _pageSize
+          ? _filteredMessageCount
+          : _pageSize;
+      _selectedIndices.clear();
+      _lastSelectedIndex = null;
+      _isRangeSelectMode = false;
+    } else if (_visibleMessageCount > _filteredMessageCount) {
+      _visibleMessageCount = _filteredMessageCount;
+    }
+
+    _smsList = _filteredSmsList.take(_visibleMessageCount).toList();
+    _isMessageListTruncated = _filteredMessageCount > _visibleMessageCount;
+    _hasMoreToReveal = _visibleMessageCount < _filteredMessageCount;
+
   }
 
   void _onSearchChanged(String query) {
@@ -154,7 +181,54 @@ class _InboxPageState extends State<InboxPage> {
 
     setState(() {
       _maxVisibleMessages = parsed;
-      _applyFilters();
+    });
+
+    unawaited(_fetchSms());
+  }
+
+  void _handleScroll() {
+    if (!_pageScrollController.hasClients || _isLoading || _isLoadingMore) {
+      return;
+    }
+
+    if (!_hasMoreToReveal) return;
+
+    if (_pageScrollController.position.extentAfter < 240) {
+      _loadMoreVisibleMessages();
+    }
+  }
+
+  Future<void> _loadMoreVisibleMessages() async {
+    if (_isLoading || _isLoadingMore || !_hasMoreToReveal) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+
+    setState(() {
+      final nextCount = _visibleMessageCount + _pageSize;
+      _visibleMessageCount = nextCount > _filteredMessageCount
+          ? _filteredMessageCount
+          : nextCount;
+      _smsList = _filteredSmsList.take(_visibleMessageCount).toList();
+      _isMessageListTruncated = _filteredMessageCount > _visibleMessageCount;
+      _hasMoreToReveal = _visibleMessageCount < _filteredMessageCount;
+      _isLoadingMore = false;
+    });
+
+    _scheduleAutoRevealMore();
+  }
+
+  void _scheduleAutoRevealMore() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageScrollController.hasClients) return;
+      final position = _pageScrollController.position;
+      if (_hasMoreToReveal && position.extentAfter < 240) {
+        unawaited(_loadMoreVisibleMessages());
+      }
     });
   }
 
@@ -266,67 +340,92 @@ class _InboxPageState extends State<InboxPage> {
                   ),
                 ),
               ),
-            SliverToBoxAdapter(
-              child: _isLoading
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  : _smsList.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 48),
-                          child: Center(child: Text('No messages found')),
-                        )
-                      : Padding(
-                          padding: const EdgeInsets.only(top: kPagePadding),
-                          child: ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(
-                              vertical: kPagePadding,
-                            ),
-                            itemCount: _smsList.length,
-                            itemBuilder: (context, index) {
-                              final item = _smsList[index];
-                              final isSelected =
-                                  _selectedIndices.contains(index);
+            if (_isLoading)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 48),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              )
+            else if (_smsList.isEmpty)
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 48),
+                  child: Center(child: Text('No messages found')),
+                ),
+              )
+            else ...[
+              SliverPadding(
+                padding: const EdgeInsets.only(top: kPagePadding),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final item = _smsList[index];
+                      final isSelected = _selectedIndices.contains(index);
 
-                              return _SmsTile(
-                                item: item,
-                                index: index,
-                                isSelected: isSelected,
-                                onTap: () {
-                                  if (_isRangeSelectMode) {
-                                    _selectRange(index);
-                                    _lastSelectedIndex = index;
-                                  } else if (_selectedIndices.isEmpty) {
-                                    _handleMessageTap(item);
-                                  } else {
-                                    setState(() {
-                                      if (isSelected) {
-                                        _selectedIndices.remove(index);
-                                      } else {
-                                        _selectedIndices.add(index);
-                                        _lastSelectedIndex = index;
-                                      }
-                                    });
-                                  }
-                                },
-                                onLongPress: () {
-                                  setState(() {
-                                    if (isSelected) {
-                                      _selectedIndices.remove(index);
-                                    } else {
-                                      _selectedIndices.add(index);
-                                      _lastSelectedIndex = index;
-                                    }
-                                  });
-                                },
-                              );
-                            },
-                          ),
-                        ),
-            ),
+                      return _SmsTile(
+                        item: item,
+                        index: index,
+                        isSelected: isSelected,
+                        onTap: () {
+                          if (_isRangeSelectMode) {
+                            _selectRange(index);
+                            _lastSelectedIndex = index;
+                          } else if (_selectedIndices.isEmpty) {
+                            _handleMessageTap(item);
+                          } else {
+                            setState(() {
+                              if (isSelected) {
+                                _selectedIndices.remove(index);
+                              } else {
+                                _selectedIndices.add(index);
+                                _lastSelectedIndex = index;
+                              }
+                            });
+                          }
+                        },
+                        onLongPress: () {
+                          setState(() {
+                            if (isSelected) {
+                              _selectedIndices.remove(index);
+                            } else {
+                              _selectedIndices.add(index);
+                              _lastSelectedIndex = index;
+                            }
+                          });
+                        },
+                      );
+                    },
+                    childCount: _smsList.length,
+                  ),
+                ),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    top: 12,
+                    bottom: 32,
+                  ),
+                  child: Center(
+                    child: _isLoadingMore
+                        ? const SizedBox(
+                            height: 28,
+                            width: 28,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          )
+                        : _hasMoreToReveal
+                            ? Text(
+                                'Scroll to load more messages',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              )
+                            : Text(
+                                'End of messages',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

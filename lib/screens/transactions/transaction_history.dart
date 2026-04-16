@@ -649,7 +649,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   }
 
   Future<void> _handleChangeCategorySelected() async {
-    final selectedStatus = await showChangeCategoryDialog(context, transactionCount: _selectedTransactionIds.length);
+    final selectedStatus = await showChangeCategoryDialog(context);
     if (selectedStatus == null || selectedStatus.isEmpty) return;
 
     final selectedIds = _selectedTransactionIds.toList();

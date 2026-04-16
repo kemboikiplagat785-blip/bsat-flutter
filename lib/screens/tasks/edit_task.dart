@@ -223,278 +223,280 @@ class _EditTaskPageState extends State<EditTaskPage> {
   @override
   Widget build(BuildContext context) {
     // Permission.scheduleExactAlarm.st
-    return Scaffold(
-      body: SingleChildScrollView(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            header(context, 'Edit Task'),
-            Padding(
-              padding: kPagePaddingInsets,
-              child: Container(
+    return SafeArea(
+      child: Scaffold(
+        body: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              header(context, 'Edit Task'),
+              Padding(
                 padding: kPagePaddingInsets,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(kBorderRadius),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Offer',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: kPagePadding / 2),
-                    DropdownButtonFormField(
-                      value: _selectedItem,
-                      items: myOffers.map((offer) {
-                        return DropdownMenuItem(
-                          value: "${offer['amount']} - ${offer['code']}",
-                          child: Text('${offer['amount']} (${offer['code']})'),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _selectedItem = value;
-                          _selectedAmount = int.parse(
-                            value!
-                                .split(' - ')[0]
-                                .replaceAll(RegExp(r'\D'), ''),
-                          );
-                          _selectedOffer = value.split(' - ')[1];
-
-                          if (_dialSim < 0) {
-                            _dialSim = myOffers.firstWhere(
-                                  (offer) =>
-                                      "${offer['amount']} - ${offer['code']}" ==
-                                      _selectedItem,
-                                  orElse: () => {'dialSim': -1},
-                                )['dialSim'] ??
-                                -1;
-
-                            debugPrint("Dial SIM set to $_dialSim");
-                          }
-                        });
-                      },
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(kBorderRadius),
-                        ),
+                child: Container(
+                  padding: kPagePaddingInsets,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(kBorderRadius),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Offer',
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                    ),
-                    const SizedBox(height: kPagePadding),
-                    const Text(
-                      'Number',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: kPagePadding / 2),
-                    SizedBox(
-                      child: TextField(
-                        // keyboardType: TextInputType.number,
-                        controller: _numberTextController,
+                      const SizedBox(height: kPagePadding / 2),
+                      DropdownButtonFormField(
+                        value: _selectedItem,
+                        items: myOffers.map((offer) {
+                          return DropdownMenuItem(
+                            value: "${offer['amount']} - ${offer['code']}",
+                            child: Text('${offer['amount']} (${offer['code']})'),
+                          );
+                        }).toList(),
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedItem = value;
+                            _selectedAmount = int.parse(
+                              value!
+                                  .split(' - ')[0]
+                                  .replaceAll(RegExp(r'\D'), ''),
+                            );
+                            _selectedOffer = value.split(' - ')[1];
+      
+                            if (_dialSim < 0) {
+                              _dialSim = myOffers.firstWhere(
+                                    (offer) =>
+                                        "${offer['amount']} - ${offer['code']}" ==
+                                        _selectedItem,
+                                    orElse: () => {'dialSim': -1},
+                                  )['dialSim'] ??
+                                  -1;
+      
+                              debugPrint("Dial SIM set to $_dialSim");
+                            }
+                          });
+                        },
                         decoration: InputDecoration(
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(kBorderRadius),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: kPagePadding),
-                    const Text(
-                      'On SIM',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: kPagePadding / 2),
-                    Row(
-                      children: sims.map((s) {
-                        return InkWell(
-                          onTap: () {
-                            setState(() {
-                              _dialSim = s.subscriptionId;
-                            });
-                            // mustUseBothSimsDialog(context);
-                          },
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.only(right: kPagePadding / 2),
-                            child: Column(
-                              children: [
-                                Text(
-                                  s.displayName,
-                                  style: TextStyle(
+                      const SizedBox(height: kPagePadding),
+                      const Text(
+                        'Number',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: kPagePadding / 2),
+                      SizedBox(
+                        child: TextField(
+                          // keyboardType: TextInputType.number,
+                          controller: _numberTextController,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(kBorderRadius),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: kPagePadding),
+                      const Text(
+                        'On SIM',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: kPagePadding / 2),
+                      Row(
+                        children: sims.map((s) {
+                          return InkWell(
+                            onTap: () {
+                              setState(() {
+                                _dialSim = s.subscriptionId;
+                              });
+                              // mustUseBothSimsDialog(context);
+                            },
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.only(right: kPagePadding / 2),
+                              child: Column(
+                                children: [
+                                  Text(
+                                    s.displayName,
+                                    style: TextStyle(
+                                      color: s.subscriptionId == _dialSim
+                                          ? kPrimaryColor
+                                          : kDullColor,
+                                    ),
+                                  ),
+                                  const SizedBox(height: kPagePadding / 2),
+                                  Icon(
+                                    Icons.sim_card_rounded,
+                                    size: 40,
                                     color: s.subscriptionId == _dialSim
                                         ? kPrimaryColor
-                                        : kDullColor,
+                                        : kGrayColor,
                                   ),
-                                ),
-                                const SizedBox(height: kPagePadding / 2),
-                                Icon(
-                                  Icons.sim_card_rounded,
-                                  size: 40,
-                                  color: s.subscriptionId == _dialSim
-                                      ? kPrimaryColor
-                                      : kGrayColor,
-                                ),
-                              ],
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: kPagePadding),
+                      const Text(
+                        'Starting on',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: kPagePadding / 2),
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () async {
+                              await _selectDate(context);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(kPagePadding / 4),
+                              decoration: BoxDecoration(
+                                color: kPrimaryColorLight,
+                                borderRadius:
+                                    BorderRadius.circular(kBorderRadius),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    date,
+                                    // style: textTheme.labelSmall,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  const Icon(
+                                    CupertinoIcons.chevron_compact_down,
+                                    color: kPrimaryColor,
+                                    size: 14,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: kPagePadding),
-                    const Text(
-                      'Starting on',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: kPagePadding / 2),
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () async {
-                            await _selectDate(context);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(kPagePadding / 4),
-                            decoration: BoxDecoration(
-                              color: kPrimaryColorLight,
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  date,
-                                  // style: textTheme.labelSmall,
-                                ),
-                                const SizedBox(width: 3),
-                                const Icon(
-                                  CupertinoIcons.chevron_compact_down,
-                                  color: kPrimaryColor,
-                                  size: 14,
-                                ),
-                              ],
+                          const SizedBox(width: kPagePadding / 2),
+                          GestureDetector(
+                            onTap: () async {
+                              await _showTimePicker(context);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(kPagePadding / 4),
+                              decoration: BoxDecoration(
+                                color: kPrimaryColorLight,
+                                borderRadius:
+                                    BorderRadius.circular(kBorderRadius),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    getNormalTime(_selectedDate),
+                                    // style: textTheme.labelSmall,
+                                  ),
+                                  const SizedBox(width: 3),
+                                  const Icon(
+                                    CupertinoIcons.chevron_compact_down,
+                                    color: kPrimaryColor,
+                                    size: 14,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: kPagePadding / 2),
-                        GestureDetector(
-                          onTap: () async {
-                            await _showTimePicker(context);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(kPagePadding / 4),
-                            decoration: BoxDecoration(
-                              color: kPrimaryColorLight,
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
+                        ],
+                      ),
+                      const SizedBox(height: kPagePadding),
+                      const Text(
+                        'Repeat for (number of days)',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: kPagePadding / 2),
+                      SizedBox(
+                        child: TextField(
+                          keyboardType: TextInputType.number,
+                          controller: _durationTextController,
+                          decoration: InputDecoration(
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(kBorderRadius),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  getNormalTime(_selectedDate),
-                                  // style: textTheme.labelSmall,
-                                ),
-                                const SizedBox(width: 3),
-                                const Icon(
-                                  CupertinoIcons.chevron_compact_down,
-                                  color: kPrimaryColor,
-                                  size: 14,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: kPagePadding),
-                    const Text(
-                      'Repeat for (number of days)',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: kPagePadding / 2),
-                    SizedBox(
-                      child: TextField(
-                        keyboardType: TextInputType.number,
-                        controller: _durationTextController,
-                        decoration: InputDecoration(
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(kBorderRadius),
                           ),
                         ),
                       ),
+                      const SizedBox(height: kPagePadding),
+                      const Text('Delete this task after it runs'),
+                      CheckboxListTile(
+                        value: _deleteAfterRunning,
+                        onChanged: (value) {
+                          setState(() {
+                            _deleteAfterRunning = value!;
+                          });
+                        },
+                        title: const Text('Delete after running'),
+                      ),
+                      const SizedBox(height: kPagePadding),
+                    ],
+                  ),
+                ),
+              ),
+      
+              const SizedBox(height: kPagePadding),
+              // Spacer(),
+              Padding(
+                padding: kPagePaddingInsets,
+                child: Flex(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  direction: Axis.horizontal,
+                  children: [
+                    widget.taskId >= 0
+                        ? Flexible(
+                            child: IconButton(
+                              onPressed: () {
+                                deleteUssdDialog(context, widget.taskId, 'tasks')
+                                    .then(
+                                  (value) {
+                                    Navigator.pop(context);
+                                  },
+                                );
+                              },
+                              icon: const Icon(Icons.delete_forever),
+                            ),
+                          )
+                        : Container(),
+                    const SizedBox(width: kPagePadding),
+                    Flexible(
+                      flex: 3,
+                      child: TextButton(
+                        onPressed: () async {
+                          await _checkAndSave().then((value) {
+                            // debugPrint('$value');
+                            if (value) {
+                              showSuccessDialog(context, text: 'Saved Sucessfully')
+                                  .then(
+                                (value) => Navigator.pop(context),
+                              );
+                            } else {
+                              showErrorDialog(
+                                context,
+                                'Error',
+                                'Check if all fields are filled',
+                              );
+                            }
+                          });
+                        },
+                        child: const Text('Save'),
+                      ),
                     ),
-                    const SizedBox(height: kPagePadding),
-                    const Text('Delete this task after it runs'),
-                    CheckboxListTile(
-                      value: _deleteAfterRunning,
-                      onChanged: (value) {
-                        setState(() {
-                          _deleteAfterRunning = value!;
-                        });
-                      },
-                      title: const Text('Delete after running'),
-                    ),
-                    const SizedBox(height: kPagePadding),
                   ],
                 ),
               ),
-            ),
-
-            const SizedBox(height: kPagePadding),
-            // Spacer(),
-            Padding(
-              padding: kPagePaddingInsets,
-              child: Flex(
-                mainAxisAlignment: MainAxisAlignment.end,
-                direction: Axis.horizontal,
-                children: [
-                  widget.taskId >= 0
-                      ? Flexible(
-                          child: IconButton(
-                            onPressed: () {
-                              deleteUssdDialog(context, widget.taskId, 'tasks')
-                                  .then(
-                                (value) {
-                                  Navigator.pop(context);
-                                },
-                              );
-                            },
-                            icon: const Icon(Icons.delete_forever),
-                          ),
-                        )
-                      : Container(),
-                  const SizedBox(width: kPagePadding),
-                  Flexible(
-                    flex: 3,
-                    child: TextButton(
-                      onPressed: () async {
-                        await _checkAndSave().then((value) {
-                          // debugPrint('$value');
-                          if (value) {
-                            showSuccessDialog(context, text: 'Saved Sucessfully')
-                                .then(
-                              (value) => Navigator.pop(context),
-                            );
-                          } else {
-                            showErrorDialog(
-                              context,
-                              'Error',
-                              'Check if all fields are filled',
-                            );
-                          }
-                        });
-                      },
-                      child: const Text('Save'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

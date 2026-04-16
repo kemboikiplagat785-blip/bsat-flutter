@@ -28,10 +28,10 @@ class WhatsappService {
   }) async {
     // WhatsappBotUtils.enableLogs(true);
 
-    // if (isConnected) {
-    //   print("Already connected to WhatsApp.");
-    //   return;
-    // }
+    if (isConnected) {
+      print("Already connected to WhatsApp.");
+      return;
+    }
 
     whatsappClient = await WhatsappBotFlutterMobile.connect(
       onQrCode: (String qrString, Uint8List? imageBytes) {

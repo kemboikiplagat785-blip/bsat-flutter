@@ -109,8 +109,8 @@ class _WhatsappScreenState extends State<WhatsappScreen> {
                             whatsappConnected
                                 ? "WhatsApp connected"
                                 : connectionInProgress
-                                    ? "Waiting for QR..."
-                                    : "Not connected",
+                                ? "Waiting for QR..."
+                                : "Not connected",
                           ),
                         ],
                       );
@@ -131,7 +131,7 @@ class _WhatsappScreenState extends State<WhatsappScreen> {
                               ),
                               padding: EdgeInsets.all(16),
                               child:
-                                  Image.memory(value, width: 250, height: 250),
+                              Image.memory(value, width: 250, height: 250),
                             ),
                             // Your custom Logo overlay
                             Container(
@@ -158,8 +158,8 @@ class _WhatsappScreenState extends State<WhatsappScreen> {
                     whatsappConnected
                         ? "Connected"
                         : (connectionInProgress
-                            ? "Reconnecting..."
-                            : "Reconnect WhatsApp"),
+                        ? "Reconnecting..."
+                        : "Reconnect WhatsApp"),
                   ),
                 ),
                 if (whatsappConnected)
@@ -179,7 +179,7 @@ class _WhatsappScreenState extends State<WhatsappScreen> {
                     onPressed: () {
                       // if (whatsappConnected) {
                       whatsappService.sendMessage(
-                        "254115584442", // Replace with a valid number
+                        "254795559924", // Replace with a valid number
                         "Hdhjsjhdsllo frjkjkkjkjkj",
                       );
                       // }

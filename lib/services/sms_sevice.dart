@@ -118,36 +118,49 @@ onMessageReceive(dynamic smsMessage) async {
 }
 
 Future<List<SmsMessage>> getAllSms({int? limit}) async {
-  List<int> numbersToInclude = await SQLiteService().queryAll(
+  final int actualLimit = limit ?? 100;
+
+  // 1. Fetch DB numbers efficiently
+  final List<Map<String, dynamic>> dbRows = await SQLiteService().queryAll(
     'processText',
     columns: ['number'],
-  ).then((rows) => rows
-      .map((row) => row['number'].toString())
-      .where((numStr) => numStr.isNotEmpty)
-      .map(int.parse)
-      .toList());
+  );
 
+  final Iterable<String> dbNumbers = dbRows
+      .map((row) => row['number'].toString())
+      .where((numStr) => numStr.isNotEmpty);
+
+  // 2. Combine all target addresses
+  final List<String> targetAddresses = [
+    "Safaricom", "MPESA", "SAF_OfaMOTO",
+    "334", "REVERSAL", "456", "ETOPUP"
+  ];
+
+  // Add DB numbers (capped at 900 to avoid Android SQLite limits)
+  targetAddresses.addAll(dbNumbers.take(900));
+
+  if (targetAddresses.isEmpty) return [];
+
+  // 3. DYNAMICALLY BUILD THE FILTER
+  // Start with the first address
+  SmsFilter filter = SmsFilter.where(SmsColumn.ADDRESS).equals(targetAddresses.first);
+
+  // Loop through the rest and chain .or() automatically
+  for (int i = 1; i < targetAddresses.length; i++) {
+    filter = filter.or(SmsColumn.ADDRESS).equals(targetAddresses[i]);
+  }
+
+  // 4. Fetch the SMS using the dynamic filter
   List<SmsMessage> relevantMessages = await telephony.getInboxSms(
     columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
-    filter: SmsFilter.where(SmsColumn.ADDRESS)
-        .equals("Safaricom")
-        .or(SmsColumn.ADDRESS)
-        .equals("MPESA")
-        .or(SmsColumn.ADDRESS)
-        .equals("SAF_OfaMOTO")
-        .or(SmsColumn.ADDRESS)
-        .equals("334")
-        .or(SmsColumn.ADDRESS)
-        .equals("456")
-    .or(SmsColumn.ADDRESS)
-
-    .equals("ETOPUP"),
+    filter: filter,
     sortOrder: [
       OrderBy(SmsColumn.DATE, sort: Sort.DESC),
     ],
   );
 
-  return relevantMessages.sublist(0, limit ?? 100);
+  // 5. Safely return the requested amount
+  return relevantMessages.take(actualLimit).toList();
 }
 
 Future<List<SmsMessage>> searchSms(String query) async {

@@ -397,28 +397,28 @@ class DashboardToolsSection extends StatelessWidget {
                         // await AccessibilitySetupProcedure.turnOnAccessibility(
                         //     context);
 
-                        Navigator.of(context)
-                            .push(
-                              PageRouteBuilder(
-                                pageBuilder:
-                                    (context, animation, secondaryAnimation) =>
-                                        const WhatsappScreen(),
-                                transitionsBuilder: (context, animation,
-                                    secondaryAnimation, child) {
-                                  return CupertinoPageTransition(
-                                    primaryRouteAnimation: animation,
-                                    secondaryRouteAnimation: secondaryAnimation,
-                                    linearTransition: true,
-                                    child: child,
-                                  );
-                                },
-                              ),
-                            )
-                            .then(
-                              (value) => onReload(),
-                            );
+                        // Navigator.of(context)
+                        //     .push(
+                        //       PageRouteBuilder(
+                        //         pageBuilder:
+                        //             (context, animation, secondaryAnimation) =>
+                        //                 const WhatsappScreen(),
+                        //         transitionsBuilder: (context, animation,
+                        //             secondaryAnimation, child) {
+                        //           return CupertinoPageTransition(
+                        //             primaryRouteAnimation: animation,
+                        //             secondaryRouteAnimation: secondaryAnimation,
+                        //             linearTransition: true,
+                        //             child: child,
+                        //           );
+                        //         },
+                        //       ),
+                        //     )
+                        //     .then(
+                        //       (value) => onReload(),
+                        //     );
 
-                        // whatsappService.sendMessage("254702015937", "dragon moto testing");
+                        whatsappService.sendMessage("254714951041", "dragon moto testing");
                       }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),

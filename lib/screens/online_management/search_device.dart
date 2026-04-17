@@ -126,7 +126,7 @@ class _SearchDevicePageState extends State<SearchDevicePage> {
             const SizedBox(height: kPagePadding * 2),
             if (pairedDevices.isNotEmpty && searchController.text.isEmpty)
               ...pairedDevices.map((device) => Padding(
-                padding: kPagePaddingInsets,
+                padding: EdgeInsets.only(bottom: kPagePadding / 2, left: kPagePadding, right: kPagePadding),
                 child: GestureDetector(
                   onTap: () {
                     Navigator.of(context).pop(device);

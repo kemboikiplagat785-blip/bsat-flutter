@@ -573,9 +573,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 if (hasAlternativeCode) ...[
                   Padding(
                     padding: kPagePaddingInsets,
-                    child: Expanded(
-                        child: Text(
-                            'For when the number has already been recommended')),
+                    child: Text(
+                        'For when the number has already been recommended'),
                   ),
                   _buildInputTile(
                     label: 'Alternative USSD Code',

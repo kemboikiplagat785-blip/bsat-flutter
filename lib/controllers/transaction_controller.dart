@@ -19,6 +19,7 @@ import '../models/transaction_message.dart';
 import '../models/ussd_code.dart';
 import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
+
 // import '../services/skills.dart';
 import '../services/sms_sevice.dart';
 import '../services/phone_service.dart';
@@ -1213,7 +1214,7 @@ class TransactionController {
       String? runAltOn = lecodes.first['runAltOn'];
       bool altIsAdvanced = lecodes.first['altIsAdvanced'] == 1;
 
-// print(object)
+      // print(object)
 
       if (altUssdCode != null && altUssdCode.isNotEmpty) {
         if (runAltOn == null || runAltOn.isEmpty) {
@@ -1250,17 +1251,57 @@ class TransactionController {
             'device_name = ?',
             [runAltOn],
           );
+          if (deviceMatches.isEmpty) {
+            deviceMatches = await _sqliteService.queryCustom(
+              'whitelistedDevices',
+              'device_name = ?',
+              [runAltOn],
+            );
+          }
           if (deviceMatches.isNotEmpty) {
-            String deviceId = deviceMatches.first['device_id'];
-            await BackendService()
-                .post('/api/devices/process-alt-request', body: {
-              'id': deviceId,
-              'data': {
-                'type': 'process_alt_request',
-                'ussdCode': altUssdCode,
-                'isAdvanced': altIsAdvanced,
-              }
-            });
+            String deviceName = deviceMatches.first['device_name'];
+
+            final res = await BackendService().post(
+
+              // '/api/fcm/send-secure',
+              // body: {
+              //   'title': "BSAT Online Forwarding",
+              //   'body': smsMessageBody,
+              //   'senderDeviceName': senderDeviceName,
+              //   'recipientDeviceName': recipientDeviceName,
+              //   'data': {
+              //     'type': 'process_alt_request',
+              //     'body': smsMessageBody,
+              //     'title': "Forwarded Message",
+              //   }
+              // },
+
+
+
+              '/api/devices/process-alt-request',
+              body: {
+                'deviceName': deviceName,
+                'data': {
+                  'type': 'process_alt_request',
+                  'ussdCode': altUssdCode,
+                  'isAdvanced': altIsAdvanced,
+                  'deviceName': deviceName,
+                }
+              },
+            );
+
+            if (res['success'] == true) {
+              debugPrint(
+                  'Alternative USSD code request sent to ${deviceMatches.first['device_name']} successfully.');
+              // add to ussdReply "sent alt ussd code request to deviceName"
+              response[0] =
+                  "\nSent alternative USSD code request to ${deviceMatches.first['device_name']} $interpunct ${tx[0]['ussdReply'] ?? ''}";
+              response[1] = TransactionStatuses.doneConfirmed;
+            } else {
+              debugPrint(
+                'Failed to send alternative USSD code request to ${deviceMatches.first['device_name']}.',
+              );
+            }
           }
         }
       }

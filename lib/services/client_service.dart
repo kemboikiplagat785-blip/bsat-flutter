@@ -4,6 +4,14 @@ import 'sqlite_service.dart';
 class ClientService {
   final SQLiteService _sqliteService = SQLiteService();
 
+  // Ensure new inserts never carry an external ID into SQLite AUTOINCREMENT rows.
+  Client _prepareClientForInsert(Client client) {
+    return client.copyWith(
+      id: null,
+      phoneNumber: client.formattedPhone,
+    );
+  }
+
   Future<void> _ensureAlternativePhoneNumberColumn() async {
     await _sqliteService.addColumnIfNotExists(
         'clients', 'alternativePhoneNumber', 'TEXT');
@@ -12,18 +20,21 @@ class ClientService {
   // Insert a new client
   Future<int> insertClient(Client client) async {
     await _ensureAlternativePhoneNumberColumn();
-    // update name only if number is unique
-    final existingClient = await getClientByPhone(client.formattedPhone);
+    final preparedClient = _prepareClientForInsert(client);
 
-    print("existing client: $existingClient, new client: ${client.toMap()}");
+    // update name only if number is unique
+    final existingClient = await getClientByPhone(preparedClient.formattedPhone);
+
+    print(
+        "existing client: $existingClient, new client: ${preparedClient.toMap()}");
 
     if (existingClient != null) {
       // Update name if it has changed
-      if (existingClient.firstName != client.firstName ||
-          existingClient.lastName != client.lastName) {
+      if (existingClient.firstName != preparedClient.firstName ||
+          existingClient.lastName != preparedClient.lastName) {
         final updatedClient = existingClient.copyWith(
-          firstName: client.firstName,
-          lastName: client.lastName,
+          firstName: preparedClient.firstName,
+          lastName: preparedClient.lastName,
         );
         return await updateClient(updatedClient);
       }
@@ -31,7 +42,7 @@ class ClientService {
       return existingClient.id!;
     }
 
-    return await _sqliteService.insertStuff(client.toMap(), 'clients');
+    return await _sqliteService.insertStuff(preparedClient.toMap(), 'clients');
   }
 
   // Get all clients

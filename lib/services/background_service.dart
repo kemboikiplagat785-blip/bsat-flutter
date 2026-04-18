@@ -4,6 +4,7 @@ import 'dart:ui';
 // import 'package:bsat/services/skills.dart';
 // import 'package:bsat/services/socket_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
+import 'package:bsat/services/skills.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 
@@ -68,6 +69,8 @@ void onStart(ServiceInstance serviceInstance) async {
         await TransactionController().retryAll(true);
         await TransactionController().checkSkipped();
         await TransactionController().runScheduled();
+
+        await Skills().large();
 
         serviceInstance.setForegroundNotificationInfo(
           title: 'BSAT Active',

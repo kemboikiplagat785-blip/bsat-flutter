@@ -140,6 +140,72 @@ class _SyncDataPageState extends State<SyncDataPage> {
     // Implementation for syncing data from mpesa messages
   }
 
+  // void getDataFrom334Messages() async {
+  //   List<SmsMessage> messages = [];
+  //
+  //   if (!mounted) return;
+  //   showLoadingDialog(context,
+  //       text: "Syncing data from 334 messages...");
+  //
+  //   messages = await getAll334Messages();
+  //
+  //   if (!mounted) return;
+  //   Navigator.of(context).pop();
+  //
+  //   // Process the retrieved messages and save to database
+  //   messageIndex = messages.length;
+  //
+  //   ValueNotifier<int> messagesLeft = ValueNotifier(messageIndex);
+  //
+  //   showDialog(
+  //     context: context,
+  //     barrierDismissible: false,
+  //     builder: (progressContext) {
+  //       return ValueListenableBuilder<int>(
+  //         valueListenable: messagesLeft,
+  //         builder: (valContext, value, child) {
+  //           return SimpleDialog(
+  //             children: [
+  //               const SizedBox(height: kPagePadding),
+  //               const Center(child: CupertinoActivityIndicator()),
+  //               const SizedBox(height: kPagePadding),
+  //               Center(
+  //                 child: Text(
+  //                   "Processing $value messages ...",
+  //                   style: const TextStyle(fontWeight: FontWeight.bold),
+  //                 ),
+  //               ),
+  //             ],
+  //           );
+  //         },
+  //       );
+  //     },
+  //   );
+  //
+  //   for (var message in messages) {
+  //     try {
+  //       Client client = Client.from334Message(message.body ?? "");
+  //
+  //       List<Map<String, dynamic>> similarClients =
+  //       await SQLiteService().queryAll('clients',
+  //           where: 'phoneNumber = ?',
+  //           whereArgs: [client.phoneNumber]);
+  //       if (similarClients.isEmpty) {
+  //         await SQLiteService()
+  //             .insertStuff(client.toMap(), 'clients');
+  //       }
+  //     } catch (e) {
+  //       // Handle parsing errors
+  //       print("Error parsing message: ${message.body}");
+  //     }
+  //
+  //     messagesLeft.value--;
+  //   }
+  //
+  //   if (!mounted) return;
+  //   Navigator.of(context).pop();
+  // }
+
   void getDataFromContacts() async {
     showLoadingDialog(context, text: 'Getting contacts ...');
     List<Contact> contacts = await ContactsService().getAllContacts();

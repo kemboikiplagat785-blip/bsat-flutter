@@ -95,7 +95,9 @@ class TransactionController {
         ? smsMessage.body!.substring(0, 160)
         : smsMessage.body!;
 
-    if (number == 0 || client.formattedPhone == null || client.formattedPhone!.length < 9) {
+    if (number == 0 ||
+        client.formattedPhone == null ||
+        client.formattedPhone!.length < 9) {
       var client1 = await getMaskedPhoneNumber(smsMessage);
       // print(
       // "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
@@ -589,7 +591,7 @@ class TransactionController {
           checkIfSimilar: false,
         );
         dontProcess(
-          smsMessageBody,
+          "$smsMessageBody $interpunct TPN${toForward[0]["numberToReceive"]}",
           transactionId,
           number,
           '',
@@ -677,6 +679,9 @@ class TransactionController {
                   },
                 );
 
+                smsMessageBody =
+                    "$smsMessageBody $interpunct TDN$recipientDeviceName";
+
                 // retry after 5 seconds on error
                 if (result['success'] != true) {
                   dontProcess(
@@ -753,6 +758,7 @@ class TransactionController {
           continue;
         }
 
+        message = "$message $interpunct TDN${device['device_name']}";
         await BackendService().post(
           '/api/fcm/send-secure',
           body: {
@@ -767,24 +773,25 @@ class TransactionController {
             }
           },
         );
+
+        // print("No forwarding devices found to forward the message.");
+        dontProcess(
+          message,
+          '',
+          number,
+          '',
+          amount,
+          -1,
+          status: TransactionStatuses.forwarded,
+          reply:
+              'Forwarded unavailable amount(Ksh $amount) to all paired devices',
+          canRetry: false,
+          source: name,
+        );
       }
     }
 
     if (devices.isNotEmpty) {
-      // print("No forwarding devices found to forward the message.");
-      dontProcess(
-        message,
-        '',
-        number,
-        '',
-        amount,
-        -1,
-        status: TransactionStatuses.forwarded,
-        reply:
-            'Forwarded unavailable amount(Ksh $amount) to all paired devices',
-        canRetry: false,
-        source: name,
-      );
       return true;
     }
 
@@ -1256,36 +1263,34 @@ class TransactionController {
             );
           }
           if (deviceMatches.isNotEmpty) {
-            String deviceName = deviceMatches.first['device_name'];
+            String recipientDeviceName = deviceMatches.first['device_name'];
+            String senderDeviceName =
+                await SharedPreferencesService().getDeviceName() ??
+                    "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
+
+            print("Forwarding alternative USSD code request to $recipientDeviceName for transaction $id");
 
             final res = await BackendService().post(
-
-              // '/api/fcm/send-secure',
-              // body: {
-              //   'title': "BSAT Online Forwarding",
-              //   'body': smsMessageBody,
-              //   'senderDeviceName': senderDeviceName,
-              //   'recipientDeviceName': recipientDeviceName,
-              //   'data': {
-              //     'type': 'process_alt_request',
-              //     'body': smsMessageBody,
-              //     'title': "Forwarded Message",
-              //   }
-              // },
-
-
-
-              '/api/devices/process-alt-request',
+              '/api/fcm/send-secure',
               body: {
-                'deviceName': deviceName,
+                'title': "BSAT Online Forwarding",
+                // keep notification.body scalar for FCM compatibility
+                'body': 'Forwarded alternative USSD request',
+                'senderDeviceName': senderDeviceName,
+                'recipientDeviceName': recipientDeviceName,
                 'data': {
                   'type': 'process_alt_request',
                   'ussdCode': altUssdCode,
-                  'isAdvanced': altIsAdvanced,
-                  'deviceName': deviceName,
+                  'isAdvanced': altIsAdvanced.toString(),
+                  'smsMessage': initialMessage,
+                  'body': 'Forwarded alternative USSD request',
+                  'title': "Forwarded Code",
                 }
               },
             );
+
+            initialMessage =
+                "$initialMessage $interpunct TDN$recipientDeviceName";
 
             if (res['success'] == true) {
               debugPrint(
@@ -1309,7 +1314,7 @@ class TransactionController {
     //print("Response: $response, canRetry: $canRetry");
 
     await _sqliteService.updateOnly(
-      "UPDATE transactions SET ussdDialed=?, date=?, time=?, ussdReply=?, status=?, timeStamp=?, canRetry=? WHERE id=?",
+      "UPDATE transactions SET ussdDialed=?, date=?, time=?, ussdReply=?, status=?, timeStamp=?, canRetry=?, initialMessage=? WHERE id=?",
       [
         ussdCode,
         getNormalDate(DateTime.now()),
@@ -1318,6 +1323,7 @@ class TransactionController {
         response[1] == "" ? "No reply" : response[1],
         DateTime.now().millisecondsSinceEpoch,
         canRetry,
+        initialMessage,
         id,
       ],
     );
@@ -1816,6 +1822,7 @@ class TransactionController {
     int amount,
     bool isAdvanced,
     int number,
+  {String? message}
   ) async {
     bool hasPaid = await _paymentOps.hasActiveSubscription();
 
@@ -1836,7 +1843,7 @@ class TransactionController {
 
         if (reply[1] != TransactionStatuses.done) {
           dontProcess(
-            "",
+            message ?? "",
             "00",
             number,
             ussdCode,
@@ -1849,7 +1856,7 @@ class TransactionController {
         }
       } else {
         dontProcess(
-          "",
+          message ?? "",
           "00",
           number,
           ussdCode,
@@ -1873,7 +1880,7 @@ class TransactionController {
         transStatus = TransactionStatuses.error;
         msg = "Waiting for turn ...";
         dontProcess(
-          "",
+          message ?? "",
           "00",
           number,
           ussdCode,

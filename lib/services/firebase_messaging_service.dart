@@ -97,11 +97,12 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
 
       String ussdCode = message.data['ussdCode'] ?? '';
       int simSubId = await PhoneService().mostCommonDialSim();
-      int amount = 0;
-      int number = extract9DigitNumber(message.data['ussdCode'] ?? '') ?? 0;
-      bool isAdvanced = message.data['isAdvanced'] == 'true' ||
-          message.data['isAdvanced'] == 1 ||
-          message.data['isAdvanced'];
+      int amount = getAmount(message.data['smsMessage'] ?? '') ?? 0;
+      int number = extract9DigitNumber(message.data['smsMessage'] ?? '') ?? 0;
+      final dynamic isAdvancedRaw = message.data['isAdvanced'];
+      final bool isAdvanced = isAdvancedRaw == true ||
+          isAdvancedRaw == 1 ||
+          isAdvancedRaw?.toString().toLowerCase() == 'true';
 
       TransactionController().transactGivenUssdAndDialSim(
         ussdCode,
@@ -109,6 +110,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         amount,
         isAdvanced,
         number,
+        message: message.data['smsMessage'] ?? '',
       );
       break;
 

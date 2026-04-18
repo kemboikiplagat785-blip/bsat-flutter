@@ -209,7 +209,8 @@ class Skills {
 //
 // void main() {
 //   // Example usage:
-//   String phone = "0708104628"; // 11 digits
+//   // String phone = "0708104628"; // 11 digits
+//   String phone = "0115584442"; // 11 digits
 //   // String phone = "0110382792"; // 11 digits
 //   String amt = "50"; // 3 digits
 //   int key = 9; // Single digit key for the shift

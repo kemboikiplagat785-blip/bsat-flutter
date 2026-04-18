@@ -19,6 +19,7 @@ enum _SelectionMenuAction {
   delete,
   schedule,
   changeCategory,
+  range,
   toggleSelectAll,
 }
 
@@ -39,6 +40,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
   Set<int> _selectedTransactionIds = {};
   bool _selectionMode = false;
+  bool _isRangeSelectMode = false;
+  int? _lastSelectedVisibleIndex;
 
   // Performance Fix: Removed redundant _transactionList to save RAM
   int _successfulConfirmedCount = 0,
@@ -159,7 +162,38 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
   // Performance Fix: Use refresh() instead of manual list clearing
   void reloadForNewDate() {
+    _resetSelectionState();
     _pagingController.refresh();
+  }
+
+  void _clearSelectionState() {
+    _selectionMode = false;
+    _isRangeSelectMode = false;
+    _lastSelectedVisibleIndex = null;
+    _selectedTransactionIds.clear();
+  }
+
+  void _resetSelectionState() {
+    if (!mounted) return;
+    setState(_clearSelectionState);
+  }
+
+  void _selectRangeByVisibleIndex(int currentIndex) {
+    final anchor = _lastSelectedVisibleIndex;
+    final items = _pagingController.itemList;
+    if (anchor == null || items == null || items.isEmpty) return;
+
+    final start = anchor < currentIndex ? anchor : currentIndex;
+    final end = anchor > currentIndex ? anchor : currentIndex;
+
+    for (int i = start; i <= end; i++) {
+      if (i >= 0 && i < items.length) {
+        _selectedTransactionIds.add(items[i]['id'] as int);
+      }
+    }
+
+    _isRangeSelectMode = false;
+    _lastSelectedVisibleIndex = currentIndex;
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -183,10 +217,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     return WillPopScope(
       onWillPop: () async {
         if (_selectionMode) {
-          setState(() {
-            _selectionMode = false;
-            _selectedTransactionIds.clear();
-          });
+          _resetSelectionState();
           return false;
         }
         return true;
@@ -212,10 +243,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                 children: [
                   IconButton(
                       onPressed: _selectionMode
-                          ? () => setState(() {
-                                _selectionMode = false;
-                                _selectedTransactionIds.clear();
-                              })
+                          ? _resetSelectionState
                           : () => Navigator.of(context).pop(),
                       icon: (!widget.isDashboard || _selectionMode)
                           ? const Icon(CupertinoIcons.back, size: 14)
@@ -223,7 +251,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                   const SizedBox(width: kPagePadding / 2),
                   Text(
                       _selectionMode
-                          ? '${_selectedTransactionIds.length} selected'
+                          ? (_isRangeSelectMode
+                              ? 'Select range: tap another item'
+                              : '${_selectedTransactionIds.length} selected')
                           : 'History',
                       style: textTheme.titleLarge),
                   const Spacer(),
@@ -293,15 +323,23 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                             onLongPress: () => setState(() {
                               _selectionMode = true;
                               _selectedTransactionIds.add(id);
+                              _isRangeSelectMode = false;
+                              _lastSelectedVisibleIndex = index;
                             }),
                             onTap: () {
                               if (_selectionMode) {
                                 setState(() {
-                                  isSelected
-                                      ? _selectedTransactionIds.remove(id)
-                                      : _selectedTransactionIds.add(id);
-                                  if (_selectedTransactionIds.isEmpty)
-                                    _selectionMode = false;
+                                  if (_isRangeSelectMode) {
+                                    _selectRangeByVisibleIndex(index);
+                                  } else {
+                                    isSelected
+                                        ? _selectedTransactionIds.remove(id)
+                                        : _selectedTransactionIds.add(id);
+                                    _lastSelectedVisibleIndex = index;
+                                  }
+                                  if (_selectedTransactionIds.isEmpty) {
+                                    _clearSelectionState();
+                                  }
                                 });
                               }
                             },
@@ -321,8 +359,12 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                                     .add(id)
                                                 : _selectedTransactionIds
                                                     .remove(id);
-                                            if (_selectedTransactionIds.isEmpty)
-                                              _selectionMode = false;
+                                            if (checked == true) {
+                                              _lastSelectedVisibleIndex = index;
+                                            }
+                                            if (_selectedTransactionIds.isEmpty) {
+                                              _clearSelectionState();
+                                            }
                                           });
                                         }),
                                   Expanded(
@@ -381,20 +423,34 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           case _SelectionMenuAction.changeCategory:
             await _handleChangeCategorySelected();
             break;
+          case _SelectionMenuAction.range:
+            setState(() {
+              _isRangeSelectMode = true;
+            });
+            break;
           case _SelectionMenuAction.toggleSelectAll:
             setState(() {
               if (allVisibleSelected) {
-                _selectedTransactionIds.clear();
+                _clearSelectionState();
               } else {
                 _selectedTransactionIds = (_pagingController.itemList ?? [])
                     .map((e) => e['id'] as int)
                     .toSet();
+                _selectionMode = _selectedTransactionIds.isNotEmpty;
+                _isRangeSelectMode = false;
+                _lastSelectedVisibleIndex =
+                    _selectedTransactionIds.isNotEmpty ? 0 : null;
               }
             });
             break;
         }
       },
       itemBuilder: (context) => [
+        PopupMenuItem(
+          value: _SelectionMenuAction.range,
+          enabled: _selectedTransactionIds.isNotEmpty,
+          child: const Text('Range'),
+        ),
         const PopupMenuItem(
           value: _SelectionMenuAction.retry,
           child: Text('Retry selected'),
@@ -608,10 +664,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       showLoadingDialog(context);
       await TransactionController()
           .retryTransactionsGivenIds(_selectedTransactionIds.toList());
-      setState(() {
-        _selectionMode = false;
-        _selectedTransactionIds.clear();
-      });
+      _resetSelectionState();
       reloadForNewDate();
       Navigator.pop(context);
     }
@@ -625,10 +678,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       showLoadingDialog(context);
       await databaseHelper.deleteWhere(
           'transactions', 'id IN (${_selectedTransactionIds.join(',')})', []);
-      setState(() {
-        _selectionMode = false;
-        _selectedTransactionIds.clear();
-      });
+      _resetSelectionState();
       reloadForNewDate();
       Navigator.pop(context);
     }
@@ -673,10 +723,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     );
 
     if (!mounted) return;
-    setState(() {
-      _selectionMode = false;
-      _selectedTransactionIds.clear();
-    });
+    _resetSelectionState();
     reloadForNewDate();
   }
 

@@ -1221,6 +1221,9 @@ class TransactionController {
       // print(object)
 
       if (altUssdCode != null && altUssdCode.isNotEmpty) {
+
+        altUssdCode = replaceNWithNumber(altUssdCode, number);
+
         if (runAltOn == null || runAltOn.isEmpty) {
           String processedAltUssdCode = replaceNWithNumber(altUssdCode, number);
           debugPrint('Running alternative USSD code: $processedAltUssdCode');
@@ -1269,8 +1272,6 @@ class TransactionController {
                     "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
 
             print("Forwarding alternative USSD code request to $recipientDeviceName for transaction $id");
-
-            altUssdCode = replaceNWithNumber(altUssdCode, number);
 
             final res = await BackendService().post(
               '/api/fcm/send-secure',

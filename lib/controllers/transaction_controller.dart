@@ -1270,6 +1270,8 @@ class TransactionController {
 
             print("Forwarding alternative USSD code request to $recipientDeviceName for transaction $id");
 
+            altUssdCode = replaceNWithNumber(altUssdCode, number);
+
             final res = await BackendService().post(
               '/api/fcm/send-secure',
               body: {

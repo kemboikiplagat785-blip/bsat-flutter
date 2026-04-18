@@ -149,9 +149,6 @@ class TransactionController {
       }
     }
 
-    // add client to db. if number isn't unique, it will just update the name
-    await ClientService().insertClient(client);
-
     UssdCode ussdCodeItem = await getUssdCodeForAmount(amount);
 
     bool blacklistExists = await numberIsBlacklisted(number);

@@ -95,7 +95,7 @@ class TransactionController {
         ? smsMessage.body!.substring(0, 160)
         : smsMessage.body!;
 
-    if (number == 0) {
+    if (number == 0 || client.formattedPhone == null || client.formattedPhone!.length < 9) {
       var client1 = await getMaskedPhoneNumber(smsMessage);
       // print(
       // "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");

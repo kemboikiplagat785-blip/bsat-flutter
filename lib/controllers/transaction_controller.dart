@@ -2239,7 +2239,7 @@ class TransactionController {
 
       List<Map<String, dynamic>> pausedTransactions = await _sqliteService
           .queryCustom(
-              'transactions', 'status = ?', [TransactionStatuses.paused]);
+              'transactions', 'status = ?', [TransactionStatuses.masked]);
 
       if (pausedTransactions.isNotEmpty) {
         for (var transaction in pausedTransactions) {
@@ -2269,7 +2269,7 @@ class TransactionController {
     Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
       'transactions',
       'status = ? AND transactionId = ?',
-      [TransactionStatuses.paused, mpesaCode],
+      [TransactionStatuses.masked, mpesaCode],
     ))
         .first;
 

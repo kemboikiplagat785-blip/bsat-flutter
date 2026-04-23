@@ -264,7 +264,45 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                       style: textTheme.titleLarge),
                   const Spacer(),
                   if (_selectionMode)
-                    _buildSelectionActions()
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(CupertinoIcons.arrow_2_circlepath),
+                          tooltip: 'Retry',
+                          onPressed: _handleRetrySelected,
+                        ),
+                        IconButton(
+                          icon: const Icon(CupertinoIcons.trash),
+                          tooltip: 'Delete',
+                          onPressed: _handleDeleteSelected,
+                        ),
+                        // select all
+                        IconButton(
+                          icon: const Icon(Icons.select_all),
+                          tooltip: 'Select all visible',
+                          onPressed: () {
+                            setState(() {
+                              final allVisibleSelected =
+                                  _selectedTransactionIds.length ==
+                                      (_pagingController.itemList?.length ?? 0);
+                              if (allVisibleSelected) {
+                                _clearSelectionState();
+                              } else {
+                                _selectedTransactionIds = (_pagingController.itemList ??
+                                        [])
+                                    .map((e) => e['id'] as int)
+                                    .toSet();
+                                _selectionMode = _selectedTransactionIds.isNotEmpty;
+                                _isRangeSelectMode = false;
+                                _lastSelectedVisibleIndex =
+                                    _selectedTransactionIds.isNotEmpty ? 0 : null;
+                              }
+                            });
+                          },
+                        ),
+                        _buildSelectionActions()
+                      ],
+                    )
                   else
                     _buildDateButton(textTheme),
                 ],
@@ -456,14 +494,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           value: _SelectionMenuAction.range,
           enabled: _selectedTransactionIds.isNotEmpty,
           child: const Text('Range'),
-        ),
-        const PopupMenuItem(
-          value: _SelectionMenuAction.retry,
-          child: Text('Retry selected'),
-        ),
-        const PopupMenuItem(
-          value: _SelectionMenuAction.delete,
-          child: Text('Delete selected'),
         ),
         const PopupMenuItem(
           value: _SelectionMenuAction.schedule,
@@ -899,29 +929,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               });
                             });
                           },
-                          child: Container(
-                            padding: const EdgeInsets.all(kPagePadding / 8),
-                            decoration: BoxDecoration(
-                              color: kPrimaryColorLight,
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  getNormalDate(startDate),
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                                const SizedBox(width: 3),
-                                const Icon(
-                                  CupertinoIcons.chevron_compact_down,
-                                  color: kPrimaryColor,
-                                  size: 14,
-                                ),
-                              ],
-                            ),
-                          ),
+                          child: _dateTimeBox(getNormalDate(startDate)),
                         ),
                         const SizedBox(width: kPagePadding),
                         GestureDetector(
@@ -941,29 +949,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               });
                             });
                           },
-                          child: Container(
-                            padding: const EdgeInsets.all(kPagePadding / 8),
-                            decoration: BoxDecoration(
-                              color: kPrimaryColorLight,
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  getRoughTime(startDate),
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                                const SizedBox(width: 3),
-                                const Icon(
-                                  CupertinoIcons.chevron_compact_down,
-                                  color: kPrimaryColor,
-                                  size: 14,
-                                ),
-                              ],
-                            ),
-                          ),
+                          child: _dateTimeBox(getRoughTime(startDate)),
                         ),
                       ],
                     ),
@@ -985,29 +971,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               });
                             });
                           },
-                          child: Container(
-                            padding: const EdgeInsets.all(kPagePadding / 8),
-                            decoration: BoxDecoration(
-                              color: kPrimaryColorLight,
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  getNormalDate(endDate),
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                                const SizedBox(width: 3),
-                                const Icon(
-                                  CupertinoIcons.chevron_compact_down,
-                                  color: kPrimaryColor,
-                                  size: 14,
-                                ),
-                              ],
-                            ),
-                          ),
+                          child: _dateTimeBox(getNormalDate(endDate)),
                         ),
                         const SizedBox(width: kPagePadding),
                         GestureDetector(
@@ -1027,29 +991,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               });
                             });
                           },
-                          child: Container(
-                            padding: const EdgeInsets.all(kPagePadding / 8),
-                            decoration: BoxDecoration(
-                              color: kPrimaryColorLight,
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  getRoughTime(endDate),
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                                const SizedBox(width: 3),
-                                const Icon(
-                                  CupertinoIcons.chevron_compact_down,
-                                  color: kPrimaryColor,
-                                  size: 14,
-                                ),
-                              ],
-                            ),
-                          ),
+                          child: _dateTimeBox(getRoughTime(endDate)),
                         ),
                       ],
                     ),

@@ -87,6 +87,40 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
           children: [
             header(context, "Payments & subscriptions"),
             const SizedBox(height: kPagePadding),
+            Container(
+              margin: kPagePaddingInsets,
+              padding: kPagePaddingInsets,
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(kBorderRadius),
+                border: Border.all(
+                  color: Colors.orange.withOpacity(0.5),
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    color: Colors.orange.shade700,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Before purchasing, verify that your SIM card supports Sambaza (airtime transfer). Dial *140*5*number# to test transferring airtime to another number.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange.shade900,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: kPagePadding),
             subscriptionStatus(),
             const SizedBox(height: kPagePadding),
 

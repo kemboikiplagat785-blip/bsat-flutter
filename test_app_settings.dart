@@ -67,20 +67,66 @@ void decode(String hash) {
 
 }
 
-void main() {
-  // Example usage:
-  String phone = "0115584442"; // 11 digits
-  // String phone = "0110382792"; // 11 digits
-  String amt = "90"; // 3 digits
-  int key = 9; // Single digit key for the shift
+// void main() {
+//   // Example usage:
+//   String phone = "0115584442"; // 11 digits
+//   // String phone = "0110382792"; // 11 digits
+//   String amt = "90"; // 3 digits
+//   int key = 9; // Single digit key for the shift
 
-  String hash = generateHash(phone, amt, key);
-  print("Generated Hash: $hash");
+//   String hash = generateHash(phone, amt, key);
+//   print("Generated Hash: $hash");
 
-  decode(hash);
-}
+//   decode(hash);
+// }
+
+
+
+
+
 
 
 // VDTMFZJJKKOORNNNLJOJNDBKQDHSO - 0115584442, 50
 // VOPHBZJJQJKORKMMQJLJRKZRUVVCS - 0701581337, 20
 // HGRNDZJJKKOORNNNLJJJQVKULTWVV - 0115584442, 90
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var numbers = [0,4,7,2,0];
+
+void main() {
+  for (var number in numbers) {
+    print("Number $number");
+  }
+}

@@ -35,7 +35,7 @@ class SQLiteService {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'bsat_app.db');
     return await openDatabase(path,
-        version: 10,
+        version: 11,
         onCreate: onCreate,
         onUpgrade: onUpgrade,
         singleInstance: true);
@@ -200,6 +200,15 @@ class SQLiteService {
         )''',
     );
 
+    await db.execute(
+      '''CREATE TABLE IF NOT EXISTS "custom codes" (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pattern TEXT NOT NULL,
+          transactionStatus TEXT NOT NULL,
+          isCaseSensitive INTEGER DEFAULT 0
+        )''',
+    );
+
     // Create indexes for better performance
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phoneNumber)');
@@ -225,6 +234,9 @@ class SQLiteService {
         'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_device_id ON forwardingDevices(device_id)');
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_user_id ON forwardingDevices(user_id)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_custom_codes_pattern ON "custom codes"(pattern)',
+    );
   }
 
   void onUpgrade(Database db, int oldVersion, int newVersion) async {
@@ -263,6 +275,19 @@ class SQLiteService {
           amounts_to_forward TEXT
         )''',
       );
+
+      await db.execute(
+          '''CREATE TABLE IF NOT EXISTS "custom codes" (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              pattern TEXT NOT NULL,
+              transactionStatus TEXT NOT NULL,
+              isCaseSensitive INTEGER DEFAULT 0
+            )''',
+        );
+
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_custom_codes_pattern ON "custom codes"(pattern)',
+        );
 
       // Create indexes for better performance
       await db.execute(
@@ -789,5 +814,64 @@ class SQLiteService {
       db = await database;
     }
     return await db.rawQuery(query, args);
+  }
+
+  Future<List<Map<String, dynamic>>> getCustomCodes() async {
+    Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
+    return await db.rawQuery(
+      'SELECT id, pattern, transactionStatus, isCaseSensitive FROM "custom codes" ORDER BY id DESC',
+    );
+  }
+
+  Future<int> insertCustomCode({
+    required String pattern,
+    required String transactionStatus,
+    bool isCaseSensitive = false,
+  }) async {
+    Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
+
+    return await db.rawInsert(
+      'INSERT INTO "custom codes"(pattern, transactionStatus, isCaseSensitive) VALUES(?, ?, ?)',
+      [pattern, transactionStatus, isCaseSensitive ? 1 : 0],
+    );
+  }
+
+  Future<int> updateCustomCode(
+    int id, {
+    required String pattern,
+    required String transactionStatus,
+    bool isCaseSensitive = false,
+  }) async {
+    Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
+
+    return await db.rawUpdate(
+      'UPDATE "custom codes" SET pattern = ?, transactionStatus = ?, isCaseSensitive = ? WHERE id = ?',
+      [pattern, transactionStatus, isCaseSensitive ? 1 : 0, id],
+    );
+  }
+
+  Future<int> deleteCustomCode(int id) async {
+    Database db = await database;
+    if (!db.isOpen) {
+      _database = null;
+      db = await database;
+    }
+
+    return await db.rawDelete(
+      'DELETE FROM "custom codes" WHERE id = ?',
+      [id],
+    );
   }
 }

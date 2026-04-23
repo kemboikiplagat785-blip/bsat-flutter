@@ -53,7 +53,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _unavailableOfferCount = 0,
       _pausedCount = 0,
       _advancedCount = 0,
-      _okoaCount = 0;
+      _okoaCount = 0,
+      _maskedCount = 0;
 
   final _pagingController = PagingController<int, dynamic>(firstPageKey: 0);
   final _searchBarController = TextEditingController();
@@ -117,6 +118,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       databaseHelper.getCount('transactions',
           appendQuery:
               "WHERE (status = '${TransactionStatuses.advancedUssd}' OR status = '${TransactionStatuses.advancedQueue}') AND date = '${getNormalDate(DateTime.now())}'"),
+      databaseHelper.getCount('transactions',
+          appendQuery:
+              "WHERE status = '${TransactionStatuses.masked}' AND date = '$dateStr'"),
+
     ]);
 
     if (!mounted) return;
@@ -131,6 +136,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _pausedCount = results[7];
       _okoaCount = results[8];
       _advancedCount = results[9];
+      _maskedCount = results[10];
     });
   }
 
@@ -584,6 +590,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               _failedCount,
               kErrorColor,
               'Error'),
+        const SizedBox(width: 8),
+          _tool(
+              TransactionStatuses.masked,
+              const Icon(Icons.masks, color: kErrorColor, size: 14),
+              _maskedCount,
+              kErrorColor,
+              'Masked'),
         ],
       ),
     );

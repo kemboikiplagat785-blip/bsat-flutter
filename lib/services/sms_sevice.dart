@@ -252,22 +252,26 @@ bool messageIsReceived(String messageBody) {
   return regex.hasMatch(messageBody);
 }
 
+// ...existing code...
 int extract9DigitNumber(String messageBody) {
-  RegExp numberRegex = RegExp(r'\d{9,12}');
+  final RegExp numberRegex = RegExp(r'\d{9,12}');
+  final List<Match> matches = numberRegex.allMatches(messageBody).toList();
 
-  Match? numberMatch = numberRegex.firstMatch(messageBody);
-  int? number =
-      numberMatch?.group(0) != null ? int.parse(numberMatch!.group(0)!) : null;
+  if (matches.isEmpty) return 0;
 
+  // If at least 2 matches exist, use the second one; otherwise use the first.
+  final Match selectedMatch = matches.length >= 2 ? matches[1] : matches[0];
+
+  int? number = int.tryParse(selectedMatch.group(0) ?? '');
   if (number == null) return 0;
+
   if (number > 799999999) {
     number = number - 254000000000;
   }
 
-  // debugPrint("Number: $number");
-
   return number;
 }
+// ...existing code...
 
 String getMpesaCode(String messageBody) {
   RegExp strictMpesaRegex =

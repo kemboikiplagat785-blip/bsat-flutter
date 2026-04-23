@@ -573,6 +573,13 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 'label': 'blacklisted',
                                 'accentColor': kErrorColor,
                               },
+                              {
+                                'count': vm.maskedCount,
+                                'icon': const Icon(Icons.masks, color: kDullColor, size: 14),
+                                'query': TransactionStatuses.masked,
+                                'label': 'masked',
+                                'accentColor': kErrorColor,
+                              },
                             ]
                                 // ..sort(
                                 //         (a, b) => (b['count'] as int)

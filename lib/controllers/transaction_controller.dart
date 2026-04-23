@@ -124,7 +124,7 @@ class TransactionController {
             number,
             name,
             autoSaveContacts,
-            status: TransactionStatuses.paused,
+            status: TransactionStatuses.forwarded,
           );
         } else {
           dontProcess(
@@ -134,7 +134,7 @@ class TransactionController {
             '',
             amount,
             -1,
-            status: TransactionStatuses.paused,
+            status: TransactionStatuses.masked,
             reply: 'Could not extract a valid phone number from the message.',
             canRetry: false,
             source: name,
@@ -1766,11 +1766,34 @@ class TransactionController {
   Future<String> transactionStatus(List response) async {
     debugPrint("Response: ${response[0]}");
 
-    if (response[0] == "Success") {
+    final String responseText =
+        response.isNotEmpty ? response[0].toString() : '';
+
+    // 1) Check custom codes first
+    final List<Map<String, dynamic>> customCodes =
+        await _sqliteService.getCustomCodes();
+
+    for (final row in customCodes) {
+      final String pattern = (row['pattern'] ?? '').toString().trim();
+      final String mappedStatus = (row['transactionStatus'] ?? '').toString();
+      final bool isCaseSensitive = (row['isCaseSensitive'] ?? 0) == 1;
+
+      if (pattern.isEmpty || mappedStatus.isEmpty) continue;
+
+      final bool matches = isCaseSensitive
+          ? responseText.contains(pattern)
+          : responseText.toLowerCase().contains(pattern.toLowerCase());
+
+      if (matches) {
+        return mappedStatus;
+      }
+    }
+
+    if (responseText == "Success") {
       return TransactionStatuses.error;
     }
 
-    if (response[0]
+    if (responseText
         .contains(RegExp(r'successfully purchased', caseSensitive: false))) {
       return TransactionStatuses.doneConfirmed;
     }
@@ -1778,41 +1801,41 @@ class TransactionController {
     if (RegExp(
             r'bundle activation request has failed|okoa|pool state|Authentication failure',
             caseSensitive: false)
-        .hasMatch(response[0].toString())) {
+        .hasMatch(responseText)) {
       return TransactionStatuses.hasOkoa;
     }
 
     if (RegExp(
       r'USSD session already in progress',
       caseSensitive: false,
-    ).hasMatch(response[0].toString())) {
+    ).hasMatch(responseText)) {
       return TransactionStatuses.error;
     }
 
     if (RegExp(r'Invalid choice|max number of menu', caseSensitive: false)
-        .hasMatch(response[0].toString())) {
+        .hasMatch(responseText)) {
       return TransactionStatuses.error;
     }
 
     if (RegExp(r'connection code error|one minute', caseSensitive: false)
-        .hasMatch(response[0].toString())) {
+        .hasMatch(responseText)) {
       return TransactionStatuses.timedOut;
     }
 
     if (RegExp(r'queue', caseSensitive: false)
-        .hasMatch(response[0].toString())) {
+        .hasMatch(responseText)) {
       return TransactionStatuses.advancedQueue;
     }
 
     if (RegExp(
       r'error|duplicate|not available|unavailable|max number|try again|apologize|invalid|sorry|mmi complete|timed out',
       caseSensitive: false,
-    ).hasMatch(response[0].toString())) {
+    ).hasMatch(responseText)) {
       return TransactionStatuses.error;
     }
 
     if (RegExp(r'already', caseSensitive: false)
-        .hasMatch(response[0].toString())) {
+        .hasMatch(responseText)) {
       return TransactionStatuses.secondAttempt;
     }
 

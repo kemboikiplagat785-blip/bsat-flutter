@@ -53,6 +53,7 @@ class DashboardViewModel extends ChangeNotifier {
   int advancedCount = 0;
   int okoaCount = 0;
   int blacklistedCount = 0;
+  int maskedCount = 0;
 
   KillswitchConfig? killswitchConfig;
 
@@ -180,6 +181,12 @@ class DashboardViewModel extends ChangeNotifier {
       appendQuery:
           "WHERE status = '${TransactionStatuses.blacklisted}' AND date = '${getNormalDate(DateTime.now())}'",
     );
+
+      maskedCount = await _sqliteService.getCount(
+        'transactions',
+        appendQuery:
+            "WHERE status = '${TransactionStatuses.masked}' AND date = '${getNormalDate(DateTime.now())}'",
+      );
 
     final todays = await _sqliteService.queryDay(
       'transactions',

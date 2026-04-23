@@ -16,6 +16,7 @@ import 'package:bsat/utils/theme.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/kill_switch_service.dart';
 import '../../utils/constants.dart';
+import 'custom_statuses.dart';
 import 'kill_switch.dart';
 import 'updater.dart';
 
@@ -228,6 +229,20 @@ class _SettingsPageState extends State<SettingsPage> {
               onChanged: (val) async {
                 setState(() => autoScheduleFailed = val);
                 await sharedPreferencesService.setAutoScheduleFailed(val);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              title: const Text('Custom Statuses',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                  'Define custom patterns to match transaction statuses.'),
+              trailing: const Icon(CupertinoIcons.forward, size: 18),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => CustomStatusesPage()),
+                );
               },
             ),
             

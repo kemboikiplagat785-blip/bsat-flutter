@@ -196,28 +196,26 @@ class DashboardToolsSection extends StatelessWidget {
               children: [
                 toolButton(
                   () async {
-                    if (kDebugMode) {
-                      Navigator.of(context)
-                          .push(
-                            PageRouteBuilder(
-                              pageBuilder:
-                                  (context, animation, secondaryAnimation) =>
-                                      const ConfirmTransactionsPage(),
-                              transitionsBuilder: (context, animation,
-                                  secondaryAnimation, child) {
-                                return CupertinoPageTransition(
-                                  primaryRouteAnimation: animation,
-                                  secondaryRouteAnimation: secondaryAnimation,
-                                  linearTransition: true,
-                                  child: child,
-                                );
-                              },
-                            ),
-                          )
-                          .then(
-                            (value) => onReload(),
-                          );
-                    }
+                    Navigator.of(context)
+                        .push(
+                          PageRouteBuilder(
+                            pageBuilder:
+                                (context, animation, secondaryAnimation) =>
+                                    const ConfirmTransactionsPage(),
+                            transitionsBuilder: (context, animation,
+                                secondaryAnimation, child) {
+                              return CupertinoPageTransition(
+                                primaryRouteAnimation: animation,
+                                secondaryRouteAnimation: secondaryAnimation,
+                                linearTransition: true,
+                                child: child,
+                              );
+                            },
+                          ),
+                        )
+                        .then(
+                          (value) => onReload(),
+                        );
                   },
                   const Icon(CupertinoIcons.globe, color: kIndigoColor),
                   "Check transactions",

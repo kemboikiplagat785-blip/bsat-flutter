@@ -13,6 +13,8 @@ object UssdSession {
     var acceptedProcedure: List<Map<String, Any>> = listOf()
     var autoSwitch: Boolean = false
 
+    var isFullyAutonomous: Boolean = false
+
     // var wholeConversation, map of step entries to their responses
     var wholeConversation: MutableMap<String, String> = mutableMapOf()
 }

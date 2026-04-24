@@ -16,6 +16,7 @@ import 'package:bsat/screens/settings/settings.dart';
 import 'package:bsat/screens/stats/statistics.dart';
 import 'package:bsat/screens/settings/subscription.dart';
 import 'package:bsat/screens/tasks/tasks.dart';
+import 'package:bsat/screens/transactions/confirm_transactions.dart';
 import 'package:bsat/screens/transactions/transaction_history.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
@@ -193,6 +194,35 @@ class DashboardToolsSection extends StatelessWidget {
               // runAlignment: WrapAlignment.spaceBetween,
               spacing: kPagePadding / 4,
               children: [
+                toolButton(
+                  () async {
+                    if (kDebugMode) {
+                      Navigator.of(context)
+                          .push(
+                            PageRouteBuilder(
+                              pageBuilder:
+                                  (context, animation, secondaryAnimation) =>
+                                      const ConfirmTransactionsPage(),
+                              transitionsBuilder: (context, animation,
+                                  secondaryAnimation, child) {
+                                return CupertinoPageTransition(
+                                  primaryRouteAnimation: animation,
+                                  secondaryRouteAnimation: secondaryAnimation,
+                                  linearTransition: true,
+                                  child: child,
+                                );
+                              },
+                            ),
+                          )
+                          .then(
+                            (value) => onReload(),
+                          );
+                    }
+                  },
+                  const Icon(CupertinoIcons.globe, color: kIndigoColor),
+                  "Check transactions",
+                  context,
+                ),
                 toolButton(
                   () {
                     Navigator.of(context)
@@ -397,28 +427,28 @@ class DashboardToolsSection extends StatelessWidget {
                         // await AccessibilitySetupProcedure.turnOnAccessibility(
                         //     context);
 
-                        // Navigator.of(context)
-                        //     .push(
-                        //       PageRouteBuilder(
-                        //         pageBuilder:
-                        //             (context, animation, secondaryAnimation) =>
-                        //                 const WhatsappScreen(),
-                        //         transitionsBuilder: (context, animation,
-                        //             secondaryAnimation, child) {
-                        //           return CupertinoPageTransition(
-                        //             primaryRouteAnimation: animation,
-                        //             secondaryRouteAnimation: secondaryAnimation,
-                        //             linearTransition: true,
-                        //             child: child,
-                        //           );
-                        //         },
-                        //       ),
-                        //     )
-                        //     .then(
-                        //       (value) => onReload(),
-                        //     );
+                        Navigator.of(context)
+                            .push(
+                              PageRouteBuilder(
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) =>
+                                        const ConfirmTransactionsPage(),
+                                transitionsBuilder: (context, animation,
+                                    secondaryAnimation, child) {
+                                  return CupertinoPageTransition(
+                                    primaryRouteAnimation: animation,
+                                    secondaryRouteAnimation: secondaryAnimation,
+                                    linearTransition: true,
+                                    child: child,
+                                  );
+                                },
+                              ),
+                            )
+                            .then(
+                              (value) => onReload(),
+                            );
 
-                        whatsappService.sendMessage("254714951041", "dragon moto testing");
+                        // whatsappService.sendMessage("254714951041", "dragon moto testing");
                       }
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),

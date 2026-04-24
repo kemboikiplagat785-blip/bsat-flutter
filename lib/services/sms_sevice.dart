@@ -132,8 +132,13 @@ Future<List<SmsMessage>> getAllSms({int? limit}) async {
 
   // 2. Combine all target addresses
   final List<String> targetAddresses = [
-    "Safaricom", "MPESA", "SAF_OfaMOTO",
-    "334", "REVERSAL", "456", "ETOPUP"
+    "Safaricom",
+    "MPESA",
+    "SAF_OfaMOTO",
+    "334",
+    "REVERSAL",
+    "456",
+    "ETOPUP"
   ];
 
   // Add DB numbers (capped at 900 to avoid Android SQLite limits)
@@ -143,7 +148,8 @@ Future<List<SmsMessage>> getAllSms({int? limit}) async {
 
   // 3. DYNAMICALLY BUILD THE FILTER
   // Start with the first address
-  SmsFilter filter = SmsFilter.where(SmsColumn.ADDRESS).equals(targetAddresses.first);
+  SmsFilter filter =
+      SmsFilter.where(SmsColumn.ADDRESS).equals(targetAddresses.first);
 
   // Loop through the rest and chain .or() automatically
   for (int i = 1; i < targetAddresses.length; i++) {
@@ -371,13 +377,10 @@ String getName(String messageBody) {
   return name;
 }
 
-Future<String> sendEvenInBackground(
-  String address,
-  String message, {
-  bool sendFirstPartOnly = false,
-  int? simSlot,
-  bool checkIfSimilar = true,
-}) async {
+Future<String> sendEvenInBackground(String address, String message,
+    {bool sendFirstPartOnly = false,
+    int? simSlot,
+    bool checkIfSimilar = true}) async {
   if (checkIfSimilar) {
     List similar =
         await searchSentSms(address, message, getTodayMidnightMillis());
@@ -529,7 +532,8 @@ Future<Client?> getMaskedPhoneNumber(TransactionMessage sms) async {
 
 String? unmaskNumberInMessage(String number, String message) {
   // 1. Normalize the provided number (Remove +254 or 254, replace with 0)
-  String normNum = number.replaceAll(RegExp(r'[^\d+]'), ''); // Keep only digits and +
+  String normNum =
+      number.replaceAll(RegExp(r'[^\d+]'), ''); // Keep only digits and +
   if (normNum.startsWith('+254')) {
     normNum = '0${normNum.substring(4)}';
   } else if (normNum.startsWith('254')) {

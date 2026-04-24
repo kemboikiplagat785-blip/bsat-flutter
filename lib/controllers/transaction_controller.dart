@@ -151,6 +151,8 @@ class TransactionController {
       }
     }
 
+    await ClientService().insertClient(client);
+
     UssdCode ussdCodeItem = await getUssdCodeForAmount(amount);
 
     bool blacklistExists = await numberIsBlacklisted(number);

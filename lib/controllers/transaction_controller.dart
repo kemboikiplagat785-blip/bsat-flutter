@@ -593,7 +593,7 @@ class TransactionController {
           checkIfSimilar: false,
         );
         dontProcess(
-          "$smsMessageBody $interpunct TPN${toForward[0]["numberToReceive"]}",
+          smsMessageBody,
           transactionId,
           number,
           '',
@@ -760,7 +760,6 @@ class TransactionController {
           continue;
         }
 
-        message = "$message $interpunct TDN${device['device_name']}";
         await BackendService().post(
           '/api/fcm/send-secure',
           body: {

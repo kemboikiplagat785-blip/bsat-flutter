@@ -3,22 +3,23 @@ import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:bsat/controllers/transaction_controller.dart';
-
+import 'package:flutter/services.dart';
 
 class ConfirmTransactionsPage extends StatefulWidget {
   const ConfirmTransactionsPage({super.key});
 
   @override
-  State<ConfirmTransactionsPage> createState() => _ConfirmTransactionsPageState();
+  State<ConfirmTransactionsPage> createState() =>
+      _ConfirmTransactionsPageState();
 }
 
 class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
   DateTime _start = DateTime.now().subtract(const Duration(hours: 6));
   DateTime _end = DateTime.now();
   bool _retryingAll = false;
-
 
   bool _loading = true;
   List<_MappedItem> _items = [];
@@ -61,7 +62,7 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
       }
 
       SmsFilter smsFilter =
-      SmsFilter.where(SmsColumn.ADDRESS).equals(senderTargets.first);
+          SmsFilter.where(SmsColumn.ADDRESS).equals(senderTargets.first);
       final rest = senderTargets.skip(1).toList();
       for (final sender in rest) {
         smsFilter = smsFilter.or(SmsColumn.ADDRESS).equals(sender);
@@ -108,6 +109,8 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
 
       final mapped = <_MappedItem>[];
       for (final m in messagesInRange) {
+        if (!(m.body!.contains('received')))
+          continue; // only consider messages that contain 'received'
         final code = getMpesaCode(m.body ?? '').trim().toUpperCase();
         Map<String, dynamic>? matched;
         if (code.isNotEmpty && byTxId.containsKey(code)) {
@@ -173,7 +176,6 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
     }
   }
 
-
   Future<void> _pickDateTime({
     required bool isStart,
   }) async {
@@ -206,7 +208,8 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
         if (_start.isAfter(_end)) _end = _start.add(const Duration(minutes: 1));
       } else {
         _end = combined;
-        if (_end.isBefore(_start)) _start = _end.subtract(const Duration(minutes: 1));
+        if (_end.isBefore(_start))
+          _start = _end.subtract(const Duration(minutes: 1));
       }
     });
 
@@ -227,24 +230,29 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
               children: [
                 OutlinedButton(
                   onPressed: () => _pickDateTime(isStart: true),
-                  child: Text('From: ${getNormalDate(_start)} ${getNormalTime(_start)}'),
+                  child: Text(
+                      'From: ${getNormalDate(_start)} ${getNormalTime(_start)}'),
                 ),
                 OutlinedButton(
                   onPressed: () => _pickDateTime(isStart: false),
-                  child: Text('To: ${getNormalDate(_end)} ${getNormalTime(_end)}'),
+                  child:
+                      Text('To: ${getNormalDate(_end)} ${getNormalTime(_end)}'),
                 ),
                 FilledButton.icon(
-                  onPressed: (_loading || _retryingAll || _items.where((e) => e.unmatched).isEmpty)
+                  onPressed: (_loading ||
+                          _retryingAll ||
+                          _items.where((e) => e.unmatched).isEmpty)
                       ? null
                       : _retryAllUnprocessed,
                   icon: _retryingAll
                       ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Icon(Icons.refresh),
-                  label: Text('Retry all unprocessed (${_items.where((e) => e.unmatched).length})'),
+                  label: Text(
+                      'Retry all unprocessed (${_items.where((e) => e.unmatched).length})'),
                 ),
                 FilledButton(
                   onPressed: _reload,
@@ -263,7 +271,9 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final item = _items[i];
-                  final unmatched = item.transaction == null;
+                  // unmatched text must also have 'received' in body
+                  final unmatched = (item.transaction == null &&
+                      (item.sms.body ?? '').toLowerCase().contains('received'));
 
                   return Container(
                     decoration: BoxDecoration(
@@ -281,16 +291,41 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Code: ${item.code.isEmpty ? "N/A" : item.code}',
-                                style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text(
+                                'Code: ${item.code.isEmpty ? "N/A" : item.code}',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                            Row(
+                              children: [
+                                IconButton(
+                                  onPressed: () => _retryOne(item),
+                                  icon: Icon(CupertinoIcons.refresh),
+                                ),
+                                IconButton(
+                                  onPressed: () {
+                                    // copy mpesa message body to clipboard
+                                    final body = item.sms.body ?? '';
+                                    if (body.isNotEmpty) {
+                                      Clipboard.setData(
+                                          ClipboardData(text: body));
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        const SnackBar(
+                                            content: Text(
+                                                'Copied message body to clipboard')),
+                                      );
 
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: OutlinedButton.icon(
-                                onPressed: () => _retryOne(item),
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('Retry'),
-                              ),
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text('Copied sms'),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  icon: Icon(CupertinoIcons.doc),
+                                ),
+                              ],
                             ),
                           ],
                         ),

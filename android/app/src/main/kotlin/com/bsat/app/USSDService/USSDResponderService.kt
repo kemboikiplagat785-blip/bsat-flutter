@@ -237,14 +237,19 @@ class USSDResponderService : AccessibilityService() {
             var matchIndex = responseText.indexOf(expectedOption, ignoreCase = true)
 
             if (matchIndex == -1) {
-                val words = expectedOption.split(Regex("\\W+")).filter { it.length > 3 }
-                for (word in words) {
-                    val wordIndex = responseText.indexOf(word, ignoreCase = true)
-                    if (wordIndex != -1) {
-                        matchIndex = wordIndex
+//                val words = expectedOption.split(Regex("\\W+")).filter { it.length > 3 }
+//                for (word in words) {
+//                    // FIX: Use Regex word boundaries (\b) to prevent partial substring matches
+//                    // (e.g., this guarantees "Sh20" does NOT match inside "Sh200")
+//                    val escapedWord = Regex.escape(word)
+//                    val wordMatch = Regex("\\b$escapedWord\\b", RegexOption.IGNORE_CASE).find(responseText)
+                    val wordMatch = Regex("\\b$expectedOption\\b", RegexOption.IGNORE_CASE).find(responseText)
+
+                    if (wordMatch != null) {
+                        matchIndex = wordMatch.range.first
                         break
                     }
-                }
+//                }
             }
 
             if (matchIndex != -1) {

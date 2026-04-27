@@ -83,6 +83,19 @@ class USSDResponderService : AccessibilityService() {
 
             val responseText = extractAllTextNodes(root)
 
+            if (responseText.contains("connection code problem", ignoreCase = true)) {
+                val okBtn = findButtonByText(root, "OK")
+                if (okBtn != null) {
+                    okBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    NativeLogger.sendLog(
+                        "debug",
+                        "USSDResponderService",
+                        "Connection code problem dialog detected. Pressing OK button."
+                    )
+                    return
+                }
+            }
+
             if (UssdSession.currentStepIndex < UssdSession.ussdSteps.size) {
                 var nextInput = UssdSession.ussdSteps[UssdSession.currentStepIndex++]
 

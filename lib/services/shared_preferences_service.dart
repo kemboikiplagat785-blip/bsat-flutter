@@ -766,6 +766,36 @@ class SharedPreferencesService {
     return false;
   }
 
+  Future<Map<String, dynamic>> getAll() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    Set<String> keys = prefs.getKeys();
+    Map<String, dynamic> settings = {};
+    for (String key in keys) {
+      settings[key] = prefs.get(key);
+    }
+    return settings;
+  }
+
+  Future<void> setAll(Map<String, dynamic> settings) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    for (var entry in settings.entries) {
+      final value = entry.value;
+      if (value is bool) {
+        await prefs.setBool(entry.key, value);
+      } else if (value is int) {
+        await prefs.setInt(entry.key, value);
+      } else if (value is double) {
+        await prefs.setDouble(entry.key, value);
+      } else if (value is String) {
+        await prefs.setString(entry.key, value);
+      } else if (value is List<String>) {
+        await prefs.setStringList(entry.key, value);
+      }
+    }
+  }
+
   void printAll() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -775,6 +805,4 @@ class SharedPreferencesService {
       print('$key: $value');
     }
   }
-
-
 }

@@ -16,6 +16,7 @@ import '../../components/header.dart';
 import '../../models/client.dart';
 import '../../services/sms_sevice.dart';
 import 'share_data.dart';
+import './share_contacts_page.dart';
 
 class SyncDataPage extends StatefulWidget {
   const SyncDataPage({super.key});
@@ -366,19 +367,23 @@ class _SyncDataPageState extends State<SyncDataPage> {
               ),
               buttonDescriptive(
                 context,
-                title: "Import clients from another phone",
-                subtitle: "From another BSAT user/phone",
+                title: "Share contacts with another BSAT phone",
+                subtitle:
+                "Pair with another BSAT device, then send your saved contacts to it.",
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const ShareDataPage()),
+                    MaterialPageRoute(
+                      builder: (context) => const ShareContactsPage(),
+                    ),
                   );
                 },
                 icon: Icon(
-                  Icons.shape_line_rounded,
-                  color: kIndigoColor,
+                  CupertinoIcons.person_2_square_stack,
+                  color: kPrimaryColor,
                 ),
               ),
+
               // import from vcf file
               buttonDescriptive(
                 context,

@@ -5,6 +5,8 @@ import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/main.dart';
 import 'package:bsat/screens/online_management/paired_devices.dart';
 import 'package:bsat/services/backend_service.dart';
+import 'package:bsat/services/contacts_service.dart';
+import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:device_info_plus/device_info_plus.dart';
@@ -256,6 +258,54 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       await _handleGenericDataRequest(message);
       break;
 
+    case 'DEVICE_SETTINGS_REQUEST':
+      if (!(await subscribedToOnline("Online +"))) {
+        if (!(await PaymentOps().deductSingleToken())) {
+          String callbackUrl =
+              message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+          if (callbackUrl.isNotEmpty) {
+            final errorPayload = {
+              'type': 'SETTINGS_RESPONSE',
+              'requestId': message.data['requestId'],
+              'data': null,
+              'messageId': message.messageId,
+              'error': 'User not subscribed to Online + tier',
+            };
+
+            try {
+              if (callbackUrl.startsWith('http')) {
+                await http.post(
+                  Uri.parse(callbackUrl),
+                  headers: {'Content-Type': 'application/json'},
+                  body: jsonEncode(errorPayload),
+                );
+              } else {
+                final resp = await BackendService()
+                    .post(callbackUrl, body: errorPayload);
+                if (kDebugMode && resp['success'] == false) {}
+              }
+            } catch (e) {
+              if (kDebugMode)
+                print('Failed to send subscription error response: $e');
+            }
+          }
+          return;
+        }
+      }
+      await _handleSettingsRequest(message);
+      break;
+
+    case 'SETTINGS_RESPONSE':
+      await _handleSettingsResponse(message);
+      break;
+
+    case 'CONTACTS_TRANSFER_READY':
+      final transferId = message.data['transferId'];
+      if (transferId != null) {
+        await ContactsService().handleTransferReady(transferId);
+      }
+      break;
+
     case 'renew_subscription':
       int subId = await PhoneService().mostCommonDialSim();
       int planId = 6;
@@ -350,6 +400,42 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       }
       break;
   }
+}
+
+Future<void> _handleSettingsResponse(RemoteMessage message) async {
+  final rawData = message.data['data'];
+  Map<String, dynamic> settings = {};
+
+  if (rawData is String) {
+    try {
+      settings = jsonDecode(rawData);
+    } catch (e) {
+      if (kDebugMode) print('Failed to parse settings data: $e');
+    }
+  } else if (rawData is Map) {
+    settings = Map<String, dynamic>.from(rawData);
+  }
+
+  if (settings.isNotEmpty) {
+    await SharedPreferencesService().setAll(settings);
+    if (kDebugMode) print('Settings updated from SETTINGS_RESPONSE');
+  }
+}
+
+Future<void> _handleSettingsRequest(RemoteMessage message) async {
+  String? callbackUrl = message.data['callbackUrl'] ?? '/api/fcm/receive-data';
+  String? requestId = message.data['requestId'];
+
+  final settings = await SharedPreferencesService().getAll();
+
+  final payload = {
+    'type': 'SETTINGS_RESPONSE',
+    'requestId': requestId,
+    'data': settings,
+    'messageId': message.messageId
+  };
+
+  await BackendService().post(callbackUrl!, body: payload);
 }
 
 Future<void> _handleGetMyDBData(RemoteMessage message) async {

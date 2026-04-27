@@ -681,8 +681,8 @@ class TransactionController {
                   },
                 );
 
-                smsMessageBody =
-                    "$smsMessageBody $interpunct TDN$recipientDeviceName";
+                // smsMessageBody =
+                //     "$smsMessageBody $interpunct TDN$recipientDeviceName";
 
                 // retry after 5 seconds on error
                 if (result['success'] != true) {
@@ -1293,8 +1293,8 @@ class TransactionController {
               },
             );
 
-            initialMessage =
-                "$initialMessage $interpunct TDN$recipientDeviceName";
+            // initialMessage =
+            //     "$initialMessage $interpunct TDN$recipientDeviceName";
 
             if (res['success'] == true) {
               debugPrint(
@@ -2277,7 +2277,7 @@ class TransactionController {
     // for (var transaction in transactions) {
     String initialMessage = transaction['initialMessage'] ?? '';
     String? unmaskedReply = unmaskNumberInMessage('0$number', initialMessage);
-    //
+
     if (unmaskedReply != null) {
       await _sqliteService.deleteStuff(transaction['id'], 'transactions');
       // new client
@@ -2289,7 +2289,6 @@ class TransactionController {
       await makeTransactionGivenSmsBody(unmaskedReply);
       return unmaskedReply;
     }
-    // }
 
     return null;
   }

@@ -81,13 +81,11 @@ onMessageReceive(dynamic smsMessage) async {
         ),
       );
       //
-    }
-
-    if (addr == "334") {
+    } else if (addr == "334") {
       await TransactionController().sort334Reply(smsMessage);
+    } else {
+      await TransactionController().sortClientText(smsMessage);
     }
-
-    await TransactionController().sortPleaseCallMe(smsMessage);
 
     int numb = extract9DigitNumber(addr);
     if (await SQLiteService().getCount(

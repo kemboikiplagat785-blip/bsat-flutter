@@ -5,13 +5,16 @@ import 'dart:math';
 import 'package:another_telephony/telephony.dart';
 import 'package:bsat/services/auth_service.dart';
 import 'package:bsat/services/backend_service.dart';
+import 'package:call_log/call_log.dart';
 import 'package:bsat/services/contacts_service.dart';
 import 'package:bsat/services/payments.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/client.dart';
 import '../models/code_signature.dart';
@@ -32,6 +35,7 @@ import '../services/phone_service.dart';
 class TransactionController {
   final PhoneService _phoneService = PhoneService();
   final SQLiteService _sqliteService = SQLiteService();
+  static bool _isProcessingMaskedFromCallLogs = false;
 
   final _paymentOps = PaymentOps();
 
@@ -127,7 +131,7 @@ class TransactionController {
             status: TransactionStatuses.forwarded,
           );
         } else {
-          dontProcess(
+          await dontProcess(
             smsMessage.body ?? "",
             transactionId,
             number,
@@ -145,6 +149,8 @@ class TransactionController {
             sendEvenInBackground('334', smsMessage.body ?? "",
                 sendFirstPartOnly: true);
           }
+
+          await processMaskedTransactionsFromCallLogs();
         }
 
         return;
@@ -556,14 +562,15 @@ class TransactionController {
   }
 
   Future<bool> forwardIfNeeded(
-      int amount,
-      String trimmedBody,
-      String smsMessageBody,
-      String transactionId,
-      int number,
-      String name,
-      bool autoSaveContacts,
-      {String? status}) async {
+    int amount,
+    String trimmedBody,
+    String smsMessageBody,
+    String transactionId,
+    int number,
+    String sourceName,
+    bool autoSaveContacts, {
+    String? status,
+  }) async {
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
       "(amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)",
@@ -575,7 +582,7 @@ class TransactionController {
       ],
     );
 
-    String name = getName(smsMessageBody);
+    String name = sourceName.isEmpty ? getName(smsMessageBody) : sourceName;
 
     String message = (smsMessageBody).substring(
       0,
@@ -1222,7 +1229,6 @@ class TransactionController {
       // print(object)
 
       if (altUssdCode != null && altUssdCode.isNotEmpty) {
-
         altUssdCode = replaceNWithNumber(altUssdCode, number);
 
         if (runAltOn == null || runAltOn.isEmpty) {
@@ -1272,7 +1278,8 @@ class TransactionController {
                 await SharedPreferencesService().getDeviceName() ??
                     "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
 
-            print("Forwarding alternative USSD code request to $recipientDeviceName for transaction $id");
+            print(
+                "Forwarding alternative USSD code request to $recipientDeviceName for transaction $id");
 
             final res = await BackendService().post(
               '/api/fcm/send-secure',
@@ -1823,8 +1830,7 @@ class TransactionController {
       return TransactionStatuses.timedOut;
     }
 
-    if (RegExp(r'queue', caseSensitive: false)
-        .hasMatch(responseText)) {
+    if (RegExp(r'queue', caseSensitive: false).hasMatch(responseText)) {
       return TransactionStatuses.advancedQueue;
     }
 
@@ -1835,8 +1841,7 @@ class TransactionController {
       return TransactionStatuses.error;
     }
 
-    if (RegExp(r'already', caseSensitive: false)
-        .hasMatch(responseText)) {
+    if (RegExp(r'already', caseSensitive: false).hasMatch(responseText)) {
       return TransactionStatuses.secondAttempt;
     }
 
@@ -1844,13 +1849,8 @@ class TransactionController {
   }
 
   Future<void> transactGivenUssdAndDialSim(
-    String ussdCode,
-    int simSubId,
-    int amount,
-    bool isAdvanced,
-    int number,
-  {String? message}
-  ) async {
+      String ussdCode, int simSubId, int amount, bool isAdvanced, int number,
+      {String? message}) async {
     bool hasPaid = await _paymentOps.hasActiveSubscription();
 
     bool isUsingToken = false;
@@ -2227,7 +2227,7 @@ class TransactionController {
   // extract the number from the address and look for a transaction
   // that is TransactionStatuses.paused with that hashed number in the message
   // and unmask the message and return it
-  Future<String?> sortPleaseCallMe(SmsMessage message) async {
+  Future<String?> sortClientText(SmsMessage message) async {
     if (message.body != null &&
         RegExp(r'please call|tried to|tried calling', caseSensitive: false)
             .hasMatch(message.body!)) {
@@ -2239,8 +2239,8 @@ class TransactionController {
       }
 
       List<Map<String, dynamic>> pausedTransactions = await _sqliteService
-          .queryCustom(
-              'transactions', 'status = ? OR status = ?', [TransactionStatuses.masked, TransactionStatuses.paused]);
+          .queryCustom('transactions', 'status = ? OR status = ?',
+              [TransactionStatuses.masked, TransactionStatuses.paused]);
 
       if (pausedTransactions.isNotEmpty) {
         for (var transaction in pausedTransactions) {
@@ -2291,6 +2291,119 @@ class TransactionController {
     }
 
     return null;
+  }
+
+  Future<String?> processMaskedTransactionsFromCallLogs({
+    bool requestPermissionIfNeeded = true,
+    Duration lookBackWindow = const Duration(minutes: 5),
+  }) async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
+      return null;
+    }
+
+    if (_isProcessingMaskedFromCallLogs) {
+      return null;
+    }
+
+    _isProcessingMaskedFromCallLogs = true;
+
+    try {
+      final int maskedCount = await _sqliteService.getCount(
+        'transactions',
+        appendQuery: 'WHERE status = ?',
+        args: [TransactionStatuses.masked],
+      );
+
+      if (maskedCount == 0) {
+        return null;
+      }
+
+      final PermissionStatus permissionStatus = await Permission.phone.status;
+
+      if (!permissionStatus.isGranted) {
+        if (!requestPermissionIfNeeded) {
+          return null;
+        }
+
+        final PermissionStatus requested = await Permission.phone.request();
+        if (!requested.isGranted) {
+          return null;
+        }
+      }
+
+      final int minTimestamp =
+          DateTime.now().subtract(lookBackWindow).millisecondsSinceEpoch;
+      final Iterable<CallLogEntry> logs = (await CallLog.get()).where(
+        (entry) => (entry.timestamp ?? 0) >= minTimestamp,
+      );
+      final List<Map<String, dynamic>> maskedTransactions =
+          await _sqliteService.queryCustom(
+        'transactions',
+        'status = ?',
+        [TransactionStatuses.masked],
+        columns: ['id', 'initialMessage'],
+      );
+
+      if (maskedTransactions.isEmpty) {
+        return null;
+      }
+
+      String? firstMatchedMessage;
+
+      for (final transaction in maskedTransactions) {
+        final String initialMessage =
+            (transaction['initialMessage'] ?? '').toString();
+
+        if (initialMessage.isEmpty) {
+          continue;
+        }
+
+        for (final call in logs) {
+          final String normalizedNumber =
+              _normalizeCallLogNumber(call.number ?? '');
+
+          if (normalizedNumber.isEmpty) {
+            continue;
+          }
+
+          final String? unmaskedMessage =
+              unmaskNumberInMessage(normalizedNumber, initialMessage);
+
+          if (unmaskedMessage == null) {
+            continue;
+          }
+
+          await _sqliteService.deleteStuff(transaction['id'], 'transactions');
+          await makeTransactionGivenSmsBody(unmaskedMessage, address: 'MPESA');
+          firstMatchedMessage ??= unmaskedMessage;
+          break;
+        }
+      }
+
+      return firstMatchedMessage;
+    } catch (e) {
+      debugPrint('processMaskedTransactionsFromCallLogs error: $e');
+    } finally {
+      _isProcessingMaskedFromCallLogs = false;
+    }
+
+    return null;
+  }
+
+  String _normalizeCallLogNumber(String number) {
+    String normalized = number.replaceAll(RegExp(r'[^0-9+]'), '');
+
+    if (normalized.startsWith('+254')) {
+      normalized = '0${normalized.substring(4)}';
+    } else if (normalized.startsWith('254')) {
+      normalized = '0${normalized.substring(3)}';
+    }
+
+    if (normalized.length < 7) {
+      return '';
+    }
+
+    return normalized;
   }
 
   // autoScheduleFailedRecommendations

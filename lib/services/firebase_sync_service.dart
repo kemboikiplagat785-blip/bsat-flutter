@@ -6,12 +6,13 @@ import 'shared_preferences_service.dart';
 
 class FirebaseSyncService {
   final SQLiteService _sqliteService = SQLiteService();
-  final SharedPreferencesService _sharedPreferencesService = SharedPreferencesService();
+  final SharedPreferencesService _sharedPreferencesService =
+      SharedPreferencesService();
   final FirebaseDatabase _database = FirebaseDatabase.instance;
 
   // Get user-specific path
   String get _userPath => 'users/${_getUserId()}';
-  
+
   String _getUserId() {
     // You can use Firebase Auth user ID or device ID
     // For now, using a simple device identifier
@@ -23,15 +24,16 @@ class FirebaseSyncService {
     try {
       final transactions = await _sqliteService.queryAll('transactions');
       final ref = _database.ref('$_userPath/transactions');
-      
+
       // Convert to map with ID as key
       Map<String, dynamic> transactionsMap = {};
       for (var transaction in transactions) {
         transactionsMap[transaction['id'].toString()] = transaction;
       }
-      
+
       await ref.set(transactionsMap);
-      debugPrint('Transactions synced to Firebase: ${transactions.length} records');
+      debugPrint(
+          'Transactions synced to Firebase: ${transactions.length} records');
     } catch (e) {
       debugPrint('Error syncing transactions to Firebase: $e');
     }
@@ -42,12 +44,12 @@ class FirebaseSyncService {
     try {
       final ussdCodes = await _sqliteService.queryAll('ussdCodes');
       final ref = _database.ref('$_userPath/ussdCodes');
-      
+
       Map<String, dynamic> ussdCodesMap = {};
       for (var code in ussdCodes) {
         ussdCodesMap[code['id'].toString()] = code;
       }
-      
+
       await ref.set(ussdCodesMap);
       debugPrint('USSD codes synced to Firebase: ${ussdCodes.length} records');
     } catch (e) {
@@ -60,12 +62,12 @@ class FirebaseSyncService {
     try {
       final clients = await _sqliteService.queryAll('clients');
       final ref = _database.ref('$_userPath/clients');
-      
+
       Map<String, dynamic> clientsMap = {};
       for (var client in clients) {
         clientsMap[client['id'].toString()] = client;
       }
-      
+
       await ref.set(clientsMap);
       debugPrint('Clients synced to Firebase: ${clients.length} records');
     } catch (e) {
@@ -77,13 +79,18 @@ class FirebaseSyncService {
   Future<void> syncSettingsToFirebase() async {
     try {
       final settings = {
-        'autoSaveContacts': await _sharedPreferencesService.getAutoSaveContacts(),
-        'autoDeleteAfterNumberOfDays': await _sharedPreferencesService.getAutoDeleteAfterNumberOfDays(),
-        'offersMightHaveChanged': await _sharedPreferencesService.getOffersMightHaveChanged(),
+        'autoSaveContacts':
+            await _sharedPreferencesService.getAutoSaveContacts(),
+        'autoDeleteAfterNumberOfDays':
+            await _sharedPreferencesService.getAutoDeleteAfterNumberOfDays(),
+        'offersMightHaveChanged':
+            await _sharedPreferencesService.getOffersMightHaveChanged(),
+        'downloadOffers': await _sharedPreferencesService.getDownloadOffers(),
         'autoRenew': await _sharedPreferencesService.getAutoRenew(),
         'deliveryTokens': await _sharedPreferencesService.getDeliveryTokens(),
         'retryMinutes': await _sharedPreferencesService.getRetryMinutes(),
-        'appIsActiveState': await _sharedPreferencesService.getAppIsActiveState(),
+        'appIsActiveState':
+            await _sharedPreferencesService.getAppIsActiveState(),
         'smsRunning': await _sharedPreferencesService.isSmsRunning(),
         'dataRunning': await _sharedPreferencesService.isDataRunning(),
         'lastSyncTime': DateTime.now().millisecondsSinceEpoch,
@@ -102,28 +109,29 @@ class FirebaseSyncService {
     try {
       final ref = _database.ref('$_userPath/transactions');
       final snapshot = await ref.get();
-      
+
       if (snapshot.exists) {
         final data = Map<String, dynamic>.from(snapshot.value as Map);
-        
+
         for (var entry in data.entries) {
           final transaction = Map<String, dynamic>.from(entry.value);
-          
+
           // Check if transaction already exists
           final existing = await _sqliteService.queryCustom(
             'transactions',
             'id = ?',
             [int.tryParse(entry.key) ?? 0],
           );
-          
+
           if (existing.isEmpty) {
             // Remove ID to let SQLite auto-increment
             transaction.remove('id');
             await _sqliteService.insertStuff(transaction, 'transactions');
           }
         }
-        
-        debugPrint('Transactions downloaded from Firebase: ${data.length} records');
+
+        debugPrint(
+            'Transactions downloaded from Firebase: ${data.length} records');
       }
     } catch (e) {
       debugPrint('Error downloading transactions from Firebase: $e');
@@ -135,27 +143,28 @@ class FirebaseSyncService {
     try {
       final ref = _database.ref('$_userPath/ussdCodes');
       final snapshot = await ref.get();
-      
+
       if (snapshot.exists) {
         final data = Map<String, dynamic>.from(snapshot.value as Map);
-        
+
         for (var entry in data.entries) {
           final ussdCode = Map<String, dynamic>.from(entry.value);
-          
+
           // Check if USSD code already exists
           final existing = await _sqliteService.queryCustom(
             'ussdCodes',
             'id = ?',
             [int.tryParse(entry.key) ?? 0],
           );
-          
+
           if (existing.isEmpty) {
             ussdCode.remove('id');
             await _sqliteService.insertStuff(ussdCode, 'ussdCodes');
           }
         }
-        
-        debugPrint('USSD codes downloaded from Firebase: ${data.length} records');
+
+        debugPrint(
+            'USSD codes downloaded from Firebase: ${data.length} records');
       }
     } catch (e) {
       debugPrint('Error downloading USSD codes from Firebase: $e');
@@ -167,26 +176,26 @@ class FirebaseSyncService {
     try {
       final ref = _database.ref('$_userPath/clients');
       final snapshot = await ref.get();
-      
+
       if (snapshot.exists) {
         final data = Map<String, dynamic>.from(snapshot.value as Map);
-        
+
         for (var entry in data.entries) {
           final client = Map<String, dynamic>.from(entry.value);
-          
+
           // Check if client already exists by phone number
           final existing = await _sqliteService.queryCustom(
             'clients',
             'phoneNumber = ?',
             [client['phoneNumber']],
           );
-          
+
           if (existing.isEmpty) {
             client.remove('id');
             await _sqliteService.insertStuff(client, 'clients');
           }
         }
-        
+
         debugPrint('Clients downloaded from Firebase: ${data.length} records');
       }
     } catch (e) {
@@ -199,33 +208,43 @@ class FirebaseSyncService {
     try {
       final ref = _database.ref('$_userPath/settings');
       final snapshot = await ref.get();
-      
+
       if (snapshot.exists) {
         final settings = Map<String, dynamic>.from(snapshot.value as Map);
-        
+
         // Apply settings
         if (settings['autoSaveContacts'] != null) {
-          await _sharedPreferencesService.setAutoSaveContacts(settings['autoSaveContacts']);
+          await _sharedPreferencesService
+              .setAutoSaveContacts(settings['autoSaveContacts']);
         }
         if (settings['autoDeleteAfterNumberOfDays'] != null) {
-          await _sharedPreferencesService.setAutoDeleteAfterNumberOfDays(settings['autoDeleteAfterNumberOfDays']);
+          await _sharedPreferencesService.setAutoDeleteAfterNumberOfDays(
+              settings['autoDeleteAfterNumberOfDays']);
         }
         if (settings['offersMightHaveChanged'] != null) {
-          await _sharedPreferencesService.setOffersMightHaveChanged(settings['offersMightHaveChanged']);
+          await _sharedPreferencesService
+              .setOffersMightHaveChanged(settings['offersMightHaveChanged']);
+        }
+        if (settings['downloadOffers'] != null) {
+          await _sharedPreferencesService
+              .setDownloadOffers(settings['downloadOffers']);
         }
         if (settings['autoRenew'] != null) {
           await _sharedPreferencesService.setAutoRenew(settings['autoRenew']);
         }
         if (settings['deliveryTokens'] != null) {
-          await _sharedPreferencesService.setDeliveryTokens(settings['deliveryTokens']);
+          await _sharedPreferencesService
+              .setDeliveryTokens(settings['deliveryTokens']);
         }
         if (settings['retryMinutes'] != null) {
-          await _sharedPreferencesService.setRetryMinutes(settings['retryMinutes']);
+          await _sharedPreferencesService
+              .setRetryMinutes(settings['retryMinutes']);
         }
         if (settings['appIsActiveState'] != null) {
-          await _sharedPreferencesService.setAppIsActiveState(settings['appIsActiveState']);
+          await _sharedPreferencesService
+              .setAppIsActiveState(settings['appIsActiveState']);
         }
-        
+
         debugPrint('Settings downloaded from Firebase');
       }
     } catch (e) {
@@ -281,7 +300,7 @@ class FirebaseSyncService {
     try {
       if (snapshot.exists) {
         final transaction = Map<String, dynamic>.from(snapshot.value as Map);
-        
+
         // Check if transaction already exists
         final existing = await _sqliteService.queryCustom(
           'transactions',
@@ -292,7 +311,7 @@ class FirebaseSyncService {
             transaction['timeStamp'],
           ],
         );
-        
+
         if (existing.isEmpty) {
           transaction.remove('id');
           await _sqliteService.insertStuff(transaction, 'transactions');
@@ -308,14 +327,14 @@ class FirebaseSyncService {
     try {
       if (snapshot.exists) {
         final ussdCode = Map<String, dynamic>.from(snapshot.value as Map);
-        
+
         // Check if USSD code already exists
         final existing = await _sqliteService.queryCustom(
           'ussdCodes',
           'code = ? AND amount = ?',
           [ussdCode['code'], ussdCode['amount']],
         );
-        
+
         if (existing.isEmpty) {
           ussdCode.remove('id');
           await _sqliteService.insertStuff(ussdCode, 'ussdCodes');

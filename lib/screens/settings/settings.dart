@@ -16,6 +16,7 @@ import 'package:bsat/utils/theme.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/kill_switch_service.dart';
 import '../../utils/constants.dart';
+import '../offers/download_offers_page.dart';
 import 'custom_statuses.dart';
 import 'kill_switch.dart';
 import 'updater.dart';
@@ -46,6 +47,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool autoSwitch = false;
   bool forwardMaskedMessages = false;
   bool autoScheduleFailed = false;
+  bool downloadOffers = true;
 
   @override
   void initState() {
@@ -74,6 +76,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _forwardUnavailableLimitController.text = unavailableLimit.toString();
     autoScheduleFailed =
         await sharedPreferencesService.getAutoScheduleFailed() ?? false;
+    downloadOffers = await sharedPreferencesService.getDownloadOffers() ?? true;
 
     if (mounted) setState(() {});
   }
@@ -105,14 +108,14 @@ class _SettingsPageState extends State<SettingsPage> {
                 await sharedPreferencesService.setAutoSaveContacts(val);
               },
             ),
-            if(autoSaveContacts)
-            _buildInputTile(
-              label: 'Name Prefix',
-              controller: _postfixController,
-              hint: 'e.g. Customer',
-              onSave: () => _saveField('Prefix', _postfixController.text,
-                  sharedPreferencesService.setPostfixCOntactName),
-            ),
+            if (autoSaveContacts)
+              _buildInputTile(
+                label: 'Name Prefix',
+                controller: _postfixController,
+                hint: 'e.g. Customer',
+                onSave: () => _saveField('Prefix', _postfixController.text,
+                    sharedPreferencesService.setPostfixCOntactName),
+              ),
           ]),
           _buildSectionTitle('Forwarding'),
           _buildGroup([
@@ -154,7 +157,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
 
-              const Divider(),
+            const Divider(),
 
             _buildToggleTile(
               label: 'Forward Masked Messages',
@@ -245,12 +248,39 @@ class _SettingsPageState extends State<SettingsPage> {
                 );
               },
             ),
-            
           ]),
           _buildSectionTitle('Appearance'),
           _buildThemeSelector(),
           _buildSectionTitle('Data Management'),
           _buildGroup([
+            _buildToggleTile(
+              label: 'Download offers',
+              hint:
+                  'Allow this device to send and receive offer updates from paired BSAT phones.',
+              value: downloadOffers,
+              onChanged: (val) async {
+                setState(() => downloadOffers = val);
+                await sharedPreferencesService.setDownloadOffers(val);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              title: const Text('Get offers from another BSAT phone',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                  'Request offers from a paired device and replace local offers.'),
+              trailing: const Icon(CupertinoIcons.arrow_down_circle,
+                  color: kPrimaryColor, size: 20),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DownloadOffersPage(),
+                  ),
+                );
+              },
+            ),
+            Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
             ListTile(
               title: const Text('Send Logs to Developer',
                   style: TextStyle(
@@ -435,11 +465,12 @@ class _SettingsPageState extends State<SettingsPage> {
                   TextStyle(color: kPrimaryColor, fontWeight: FontWeight.bold),
               decoration: InputDecoration(
                 hintText: hint,
-                
+
                 contentPadding: EdgeInsets.zero,
                 // border
                 border: UnderlineInputBorder(
-                  borderSide: BorderSide(color: Theme.of(context).dividerColor)),
+                    borderSide:
+                        BorderSide(color: Theme.of(context).dividerColor)),
               ),
             ),
           ),

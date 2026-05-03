@@ -485,6 +485,7 @@ class SharedPreferencesService {
     }
     return false;
   }
+
   Future<int?> getAutoDeleteAfterNumberOfDays() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -506,6 +507,7 @@ class SharedPreferencesService {
     }
     return false;
   }
+
   Future<String?> getJwtToken() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -527,6 +529,7 @@ class SharedPreferencesService {
     }
     return false;
   }
+
   Future<String?> getUserId() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -548,6 +551,7 @@ class SharedPreferencesService {
     }
     return false;
   }
+
   Future<String?> getUserEmail() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -569,6 +573,7 @@ class SharedPreferencesService {
     }
     return false;
   }
+
   Future<String?> getUserName() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -590,6 +595,7 @@ class SharedPreferencesService {
     }
     return false;
   }
+
   Future<String?> getPhoneNumber() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -611,6 +617,7 @@ class SharedPreferencesService {
     }
     return false;
   }
+
   Future<String?> getDeviceId() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -630,7 +637,7 @@ class SharedPreferencesService {
       }
     }
     return false;
-  } 
+  }
 
   Future<String?> getDeviceName() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -653,6 +660,7 @@ class SharedPreferencesService {
     }
     return false;
   }
+
   Future<String?> getLinkExtension() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -757,6 +765,27 @@ class SharedPreferencesService {
     await prefs.reload();
     try {
       await prefs.setBool("auto_schedule_failed", autoScheduleFailed);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
+  Future<bool?> getDownloadOffers() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    bool? downloadOffers = prefs.getBool("download_offers");
+    return downloadOffers;
+  }
+
+  Future<bool> setDownloadOffers(bool downloadOffers) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setBool("download_offers", downloadOffers);
       return true;
     } catch (e) {
       if (kDebugMode) {

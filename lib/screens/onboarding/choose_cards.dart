@@ -136,8 +136,10 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
                                   setState(() {
                                     // _fromBothSims = false;
                                     // _fromSim = s.subscriptionId;
+                                _fromBothSims = true;
+                                _fromSim = -1;
                                   });
-                                  // mustUseBothSimsDialog(context);
+                                  mustUseBothSimsDialog(context);
                                 },
                                 child: Padding(
                                   padding: const EdgeInsets.only(

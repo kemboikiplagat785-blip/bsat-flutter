@@ -6,6 +6,7 @@ import 'package:bsat/main.dart';
 import 'package:bsat/screens/online_management/paired_devices.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/contacts_service.dart';
+import 'package:bsat/services/offers_transfer_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
@@ -304,6 +305,38 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       if (transferId != null) {
         await ContactsService().handleTransferReady(transferId);
       }
+      break;
+
+    case 'OFFERS_REQUEST':
+      final bool canDownloadOffers =
+          await SharedPreferencesService().getDownloadOffers() ?? true;
+      if (!canDownloadOffers) {
+        break;
+      }
+
+      final String requesterDeviceName =
+          message.data['requesterDeviceName']?.toString() ?? '';
+      final String? requestId = message.data['requestId']?.toString();
+
+      if (requesterDeviceName.isEmpty) {
+        break;
+      }
+
+      await OffersTransferService().sendOffersToDevice(
+        requesterDeviceName,
+        requestId: requestId,
+      );
+      break;
+
+    case 'OFFERS_RESPONSE':
+      final bool canDownloadOffers =
+          await SharedPreferencesService().getDownloadOffers() ?? true;
+      if (!canDownloadOffers) {
+        break;
+      }
+
+      final dynamic rawOffers = message.data['offers'];
+      await OffersTransferService().importOffersFromPayload(rawOffers);
       break;
 
     case 'renew_subscription':

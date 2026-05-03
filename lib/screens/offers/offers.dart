@@ -5,6 +5,7 @@ import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/dialogs/success_dialog.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/screens/offers/edit_offer.dart';
+import 'package:bsat/screens/offers/download_offers_page.dart';
 import 'package:bsat/services/file_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:flutter/cupertino.dart';
@@ -529,6 +530,13 @@ class _OffersPageState extends State<OffersPage> {
                 // getAllUSSDCodes();
               } else if (value == 'makeOfferTutorial') {
                 makeOfferTutorialDialog(context);
+              } else if (value == 'getOffersFromAnotherPhone') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const DownloadOffersPage(),
+                  ),
+                );
               }
             },
             itemBuilder: (BuildContext context) => [
@@ -547,6 +555,10 @@ class _OffersPageState extends State<OffersPage> {
               PopupMenuItem(
                 value: 'makeOfferTutorial',
                 child: Text('How to make an offer'),
+              ),
+              PopupMenuItem(
+                value: 'getOffersFromAnotherPhone',
+                child: Text('Download offers from another phone'),
               ),
             ],
           ),

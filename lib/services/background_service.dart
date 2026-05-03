@@ -33,6 +33,16 @@ Future<void> initializeBackgroundService() async {
 @pragma('vm:entry-point')
 void onStart(ServiceInstance serviceInstance) async {
   int retryAfter = 20;
+  const int maskedCallLogCheckIntervalSeconds = 5 * 60;
+  final int maskedCallLogEveryTicks =
+      (maskedCallLogCheckIntervalSeconds / retryAfter).ceil();
+  int tickCount = 0;
+  bool isTickRunning = false;
+
+  final TransactionController transactionController = TransactionController();
+  final SharedPreferencesService sharedPreferencesService =
+      SharedPreferencesService();
+
   DartPluginRegistrant.ensureInitialized();
 
   if (serviceInstance is AndroidServiceInstance) {
@@ -52,31 +62,48 @@ void onStart(ServiceInstance serviceInstance) async {
   initMessagesPlatformState();
 
   Timer.periodic(Duration(seconds: retryAfter), (timer) async {
-    if (serviceInstance is AndroidServiceInstance) {
-      initMessagesPlatformState();
+    if (isTickRunning) return;
+    isTickRunning = true;
 
-      if (await serviceInstance.isForegroundService()) {
+    try {
+      if (serviceInstance is AndroidServiceInstance) {
         initMessagesPlatformState();
 
-        // check if time between midnight and midnight + retryAfter (seconds)
+        if (await serviceInstance.isForegroundService()) {
+          tickCount++;
+          initMessagesPlatformState();
 
-        if (DateTime.now().hour == 0 && DateTime.now().minute == 0 && DateTime.now().second <= retryAfter) {
-          if ((await SharedPreferencesService().getAutoScheduleFailed() ?? false)) {
-            await TransactionController().autoScheduleFailedRecommendations();
+          // check if time between midnight and midnight + retryAfter (seconds)
+
+          if (DateTime.now().hour == 0 &&
+              DateTime.now().minute == 0 &&
+              DateTime.now().second <= retryAfter) {
+            if ((await sharedPreferencesService.getAutoScheduleFailed() ??
+                false)) {
+              await transactionController.autoScheduleFailedRecommendations();
+            }
           }
+
+          await transactionController.retryAll(true);
+          await transactionController.checkSkipped();
+          await transactionController.runScheduled();
+
+          if (tickCount % maskedCallLogEveryTicks == 0) {
+            await transactionController.processMaskedTransactionsFromCallLogs(
+              requestPermissionIfNeeded: false,
+            );
+          }
+
+          await Skills().large();
+
+          serviceInstance.setForegroundNotificationInfo(
+            title: 'BSAT Active',
+            content: 'Working in the background',
+          );
         }
-
-        await TransactionController().retryAll(true);
-        await TransactionController().checkSkipped();
-        await TransactionController().runScheduled();
-
-        await Skills().large();
-
-        serviceInstance.setForegroundNotificationInfo(
-          title: 'BSAT Active',
-          content: 'Working in the background',
-        );
       }
+    } finally {
+      isTickRunning = false;
     }
   });
 }

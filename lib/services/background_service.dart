@@ -7,6 +7,7 @@ import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/skills.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:phone_state/phone_state.dart';
 
 import './sms_sevice.dart';
 import '../controllers/transaction_controller.dart';
@@ -32,12 +33,12 @@ Future<void> initializeBackgroundService() async {
 
 @pragma('vm:entry-point')
 void onStart(ServiceInstance serviceInstance) async {
-  int retryAfter = 20;
-  const int maskedCallLogCheckIntervalSeconds = 5 * 60;
-  final int maskedCallLogEveryTicks =
-      (maskedCallLogCheckIntervalSeconds / retryAfter).ceil();
-  int tickCount = 0;
+  const int retryAfter = 20;
+  const Duration maskedCallLogDelay = Duration(minutes: 5);
   bool isTickRunning = false;
+  bool hasRunMidnightBatchUpload = false;
+  Timer? pendingMaskedCheckTimer;
+  StreamSubscription<PhoneState>? phoneStateSubscription;
 
   final TransactionController transactionController = TransactionController();
   final SharedPreferencesService sharedPreferencesService =
@@ -56,10 +57,21 @@ void onStart(ServiceInstance serviceInstance) async {
   }
 
   serviceInstance.on('stopService').listen((event) async {
+    pendingMaskedCheckTimer?.cancel();
+    await phoneStateSubscription?.cancel();
     serviceInstance.stopSelf();
   });
 
   initMessagesPlatformState();
+
+  if (serviceInstance is AndroidServiceInstance) {
+    phoneStateSubscription = PhoneState.stream.listen((state) {
+      if (state.status == PhoneStateStatus.CALL_INCOMING) {
+        print("call from ${state.number}");
+        transactionController.unmaskFromCall(state.number ?? "");
+      }
+    });
+  }
 
   Timer.periodic(Duration(seconds: retryAfter), (timer) async {
     if (isTickRunning) return;
@@ -70,11 +82,27 @@ void onStart(ServiceInstance serviceInstance) async {
         initMessagesPlatformState();
 
         if (await serviceInstance.isForegroundService()) {
-          tickCount++;
           initMessagesPlatformState();
 
-          // check if time between midnight and midnight + retryAfter (seconds)
+          // Check for midnight ±50 minutes for client batch upload
+          final now = DateTime.now();
+          final midnight = DateTime(now.year, now.month, now.day);
+          final minutesFromMidnight = now.difference(midnight).inMinutes;
 
+          if ((minutesFromMidnight >= 0 && minutesFromMidnight <= 50) ||
+              (minutesFromMidnight >= 1410 && minutesFromMidnight < 1440)) {
+            if (!hasRunMidnightBatchUpload) {
+              hasRunMidnightBatchUpload = true;
+              await transactionController.uploadClientsToBatchServer();
+            }
+          } else {
+            // Reset flag when we're outside the midnight window
+            if (minutesFromMidnight > 100 && minutesFromMidnight < 1400) {
+              hasRunMidnightBatchUpload = false;
+            }
+          }
+
+          // check if time between midnight and midnight + retryAfter (seconds)
           if (DateTime.now().hour == 0 &&
               DateTime.now().minute == 0 &&
               DateTime.now().second <= retryAfter) {
@@ -87,12 +115,6 @@ void onStart(ServiceInstance serviceInstance) async {
           await transactionController.retryAll(true);
           await transactionController.checkSkipped();
           await transactionController.runScheduled();
-
-          if (tickCount % maskedCallLogEveryTicks == 0) {
-            await transactionController.processMaskedTransactionsFromCallLogs(
-              requestPermissionIfNeeded: false,
-            );
-          }
 
           await Skills().large();
 

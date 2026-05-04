@@ -24,6 +24,7 @@ import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
 
 // import '../services/skills.dart';
+import '../services/skills.dart';
 import '../services/sms_sevice.dart';
 import '../services/phone_service.dart';
 
@@ -150,7 +151,6 @@ class TransactionController {
                 sendFirstPartOnly: true);
           }
 
-          await processMaskedTransactionsFromCallLogs();
         }
 
         return;
@@ -1139,6 +1139,9 @@ class TransactionController {
       number,
       simSubId,
     );
+
+    print(
+        "Fetched USSD and sim info for retry: $USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive");
 
     ussdCode = USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0];
     simSubId = USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1];
@@ -2192,6 +2195,36 @@ class TransactionController {
     ))[2];
   }
 
+  Future<void> unmaskFromCall(String number) async {
+    number = normalizeIncomingCallNumber(number);
+
+    if (number.isEmpty) {
+      return;
+    }
+
+    // llok for transactions with status masked which can
+    // fit the number in the initialMessage
+
+    List<Map<String, dynamic>> transactions = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ?',
+      [TransactionStatuses.masked],
+    );
+
+    for(var transaction in transactions) {
+      String initialMessage = transaction['initialMessage'] ?? '';
+      String? unmaskedReply = unmaskNumberInMessage(number, initialMessage);
+
+      if (unmaskedReply != null) {
+        await _sqliteService.deleteStuff(transaction['id'], 'transactions');
+        await makeTransactionGivenSmsBody(unmaskedReply);
+        return;
+      }
+    }
+
+    // unmaskNumberInMessage(number, message)
+  }
+
   Future<UssdCode> getUssdCodeForAmount(int amount) async {
     List response = await _sqliteService.queryCustom(
       'ussdCodes',
@@ -2228,9 +2261,11 @@ class TransactionController {
   // that is TransactionStatuses.paused with that hashed number in the message
   // and unmask the message and return it
   Future<String?> sortClientText(SmsMessage message) async {
-    if (message.body != null &&
-        RegExp(r'please call|tried to|tried calling', caseSensitive: false)
-            .hasMatch(message.body!)) {
+    if (message.body != null
+        // &&
+        //     RegExp(r'please call|tried to|tried calling', caseSensitive: false)
+        //         .hasMatch(message.body!)
+        ) {
       int number = extract9DigitNumber(message.address ?? "");
 
       // remove leading 254 if present
@@ -2293,104 +2328,11 @@ class TransactionController {
     return null;
   }
 
-  Future<String?> processMaskedTransactionsFromCallLogs({
-    bool requestPermissionIfNeeded = true,
-    Duration lookBackWindow = const Duration(minutes: 5),
-  }) async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
-      return null;
+  String normalizeIncomingCallNumber(String? number) {
+    if (number == null || number.trim().isEmpty) {
+      return '';
     }
 
-    if (_isProcessingMaskedFromCallLogs) {
-      return null;
-    }
-
-    _isProcessingMaskedFromCallLogs = true;
-
-    try {
-      final int maskedCount = await _sqliteService.getCount(
-        'transactions',
-        appendQuery: 'WHERE status = ?',
-        args: [TransactionStatuses.masked],
-      );
-
-      if (maskedCount == 0) {
-        return null;
-      }
-
-      final PermissionStatus permissionStatus = await Permission.phone.status;
-
-      if (!permissionStatus.isGranted) {
-        if (!requestPermissionIfNeeded) {
-          return null;
-        }
-
-        final PermissionStatus requested = await Permission.phone.request();
-        if (!requested.isGranted) {
-          return null;
-        }
-      }
-
-      final int minTimestamp =
-          DateTime.now().subtract(lookBackWindow).millisecondsSinceEpoch;
-      final Iterable<CallLogEntry> logs = (await CallLog.get()).where(
-        (entry) => (entry.timestamp ?? 0) >= minTimestamp,
-      );
-      final List<Map<String, dynamic>> maskedTransactions =
-          await _sqliteService.queryCustom(
-        'transactions',
-        'status = ?',
-        [TransactionStatuses.masked],
-        columns: ['id', 'initialMessage'],
-      );
-
-      if (maskedTransactions.isEmpty) {
-        return null;
-      }
-
-      String? firstMatchedMessage;
-
-      for (final transaction in maskedTransactions) {
-        final String initialMessage =
-            (transaction['initialMessage'] ?? '').toString();
-
-        if (initialMessage.isEmpty) {
-          continue;
-        }
-
-        for (final call in logs) {
-          final String normalizedNumber =
-              _normalizeCallLogNumber(call.number ?? '');
-
-          if (normalizedNumber.isEmpty) {
-            continue;
-          }
-
-          final String? unmaskedMessage =
-              unmaskNumberInMessage(normalizedNumber, initialMessage);
-
-          if (unmaskedMessage == null) {
-            continue;
-          }
-
-          await _sqliteService.deleteStuff(transaction['id'], 'transactions');
-          await makeTransactionGivenSmsBody(unmaskedMessage, address: 'MPESA');
-          firstMatchedMessage ??= unmaskedMessage;
-          break;
-        }
-      }
-
-      return firstMatchedMessage;
-    } catch (e) {
-      debugPrint('processMaskedTransactionsFromCallLogs error: $e');
-    } finally {
-      _isProcessingMaskedFromCallLogs = false;
-    }
-
-    return null;
-  }
-
-  String _normalizeCallLogNumber(String number) {
     String normalized = number.replaceAll(RegExp(r'[^0-9+]'), '');
 
     if (normalized.startsWith('+254')) {
@@ -2424,6 +2366,115 @@ class TransactionController {
         await _sqliteService.deleteStuff(recommendation['id'], 'transactions');
         await makeTransactionGivenSmsBody(initialMessage);
       }
+    }
+  }
+
+  /// Batch upload clients to server at midnight ±50 minutes.
+  /// Max 1000 clients per day. Sends 50 clients per request.
+  /// Tracks last uploaded client ID to resume from where it left off.
+  Future<void> uploadClientsToBatchServer() async {
+    try {
+      const int maxClientsPerDay = 1000;
+      const int clientsPerRequest = 50;
+      final BackendService backendService = BackendService();
+
+      // Check if we've already uploaded today
+      String? lastUploadDate = await getClientBatchUploadDate();
+      String todayDate = DateTime.now().toIso8601String().split('T')[0];
+
+      int uploadedToday = 0;
+
+      // Reset counter if it's a new day
+      if (lastUploadDate != todayDate) {
+        uploadedToday = 0;
+        await setClientBatchUploadDate(todayDate);
+        await setClientBatchUploadCount(0);
+      } else {
+        uploadedToday = await getClientBatchUploadCount();
+      }
+
+      // Check if we've exceeded daily limit
+      if (uploadedToday >= maxClientsPerDay) {
+        debugPrint(
+            'Client batch upload: Daily limit ($maxClientsPerDay) reached');
+        return;
+      }
+
+      // Get the last uploaded client ID
+      int? lastUploadedId = await getLastUploadedClientId();
+      lastUploadedId ??= 0;
+
+      // Query all clients ordered by ID, starting after the last uploaded ID
+      List<Map<String, dynamic>> allClients = await _sqliteService.queryAll(
+        'clients',
+        where: 'id > ?',
+        whereArgs: [lastUploadedId],
+        orderBy: 'id ASC',
+      );
+
+      if (allClients.isEmpty) {
+        debugPrint('Client batch upload: No new clients to upload');
+        return;
+      }
+
+      // Calculate how many clients we can upload today
+      int remainingQuota = maxClientsPerDay - uploadedToday;
+      int clientsToUpload = min(allClients.length, remainingQuota);
+
+      // Split into batches of 50
+      for (int i = 0; i < clientsToUpload; i += clientsPerRequest) {
+        int end = min(i + clientsPerRequest, clientsToUpload);
+        List<Map<String, dynamic>> batch = allClients.sublist(i, end);
+
+        // Convert batch to Map<int, Map>
+        Map<int, Map<String, dynamic>> batchMap = {};
+        int lastIdInBatch = 0;
+
+        for (var client in batch) {
+          int clientId = client['id'] as int;
+          batchMap[clientId] = client;
+          lastIdInBatch = clientId;
+        }
+
+        try {
+          // Send batch to server
+          final response = await backendService.post(
+            '/api/clients/batch-upload',
+            body: {
+              'clients': batchMap,
+            },
+          );
+
+          if (response['success'] == true) {
+            // Update last uploaded client ID
+            await setLastUploadedClientId(lastIdInBatch);
+
+            // Increment upload count
+            int newCount = await getClientBatchUploadCount();
+            await setClientBatchUploadCount(newCount + batch.length);
+
+            debugPrint(
+                'Client batch upload: Uploaded ${batch.length} clients (total: ${newCount + batch.length}/$maxClientsPerDay)');
+          } else {
+            debugPrint(
+                'Client batch upload failed: ${response['message'] ?? 'Unknown error'}');
+            // Don't break, try next batch
+          }
+        } catch (e) {
+          debugPrint('Client batch upload request error: $e');
+          // Don't break, try next batch
+        }
+
+        // Check if we've reached daily limit
+        int totalUploaded = await getClientBatchUploadCount();
+        if (totalUploaded >= maxClientsPerDay) {
+          debugPrint(
+              'Client batch upload: Reached daily limit ($maxClientsPerDay)');
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('Client batch upload error: $e');
     }
   }
 }

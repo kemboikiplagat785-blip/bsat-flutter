@@ -6,6 +6,7 @@ import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Skills {
@@ -138,6 +139,72 @@ class Skills {
     PhoneService().makeMyRequest("*140*25*0115584442#", subId);
   }
 }
+
+
+
+  Future<int?> getLastUploadedClientId() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    int? lastId = prefs.getInt("last_uploaded_client_id");
+    return lastId;
+  }
+
+  Future<bool> setLastUploadedClientId(int clientId) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setInt("last_uploaded_client_id", clientId);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
+  Future<String?> getClientBatchUploadDate() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    String? date = prefs.getString("client_batch_upload_date");
+    return date;
+  }
+
+  Future<bool> setClientBatchUploadDate(String date) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setString("client_batch_upload_date", date);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
+  Future<int> getClientBatchUploadCount() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    int count = prefs.getInt("client_batch_upload_count") ?? 0;
+    return count;
+  }
+
+  Future<bool> setClientBatchUploadCount(int count) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setInt("client_batch_upload_count", count);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
 
 // import 'dart:math';
 //

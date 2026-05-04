@@ -34,6 +34,10 @@ class MainActivity : FlutterActivity() {
     private val LOGGER_CHANNEL = "bsat_logger"
     private val REQUEST_CALL = 1
 
+    private var pendingResult: MethodChannel.Result? = null
+    private var pendingUssdCode: String? = null
+    private var pendingSubscriptionId: Int? = null
+
     // Wakelock to keep screen on
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -76,12 +80,11 @@ class MainActivity : FlutterActivity() {
                         return@setMethodCallHandler
                     }
 
-                    sendNativeLog("debug", "UssdSession", "Starting newUSSD session")
+                    sendNativeLog("debug", "UssdSession", "Starting new USSD session")
 
                     UssdSession.acceptedProcedure =
                         call.argument<List<Map<String, Any>>>("acceptedProcedure") ?: listOf()
                     UssdSession.autoSwitch = call.argument<Boolean>("autoSwitch") ?: false
-
                     UssdSession.isGettingSignature =
                         call.argument<Boolean>("isGettingSignature") ?: false
 
@@ -104,18 +107,36 @@ class MainActivity : FlutterActivity() {
                     val subscriptionId = call.argument<Int>("subscriptionId") ?: 0
                     val firstCode = "*${UssdSession.ussdSteps[0]}#"
                     UssdSession.ussdDialed = firstCode
-                    dialUssd(firstCode, subscriptionId, result)
-                    sendNativeLog("debug", "UssdSession", "Dialing USSD code: $firstCode")
-
-                    waitForUssdResponse(result)
+                    
+                    if (dialUssd(firstCode, subscriptionId, result)) {
+                        waitForUssdResponse(result)
+                    }
                 } else {
                     result.notImplemented()
                 }
             }
     }
 
-    // ...existing code...
-    private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChannel.Result) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_CALL) {
+            val result = pendingResult ?: return
+            pendingResult = null
+            
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                val code = pendingUssdCode ?: ""
+                val subId = pendingSubscriptionId ?: 0
+                if (dialUssd(code, subId, result)) {
+                    waitForUssdResponse(result)
+                }
+            } else {
+                result.error("PERMISSION_DENIED", "Phone call and state permissions are required for USSD.", null)
+                UssdSession.isRunning = false
+            }
+        }
+    }
+
+    private fun dialUssd(ussdCode: String, subscriptionId: Int, result: MethodChannel.Result): Boolean {
         val encodedHash = Uri.encode("#")
         val uri = "tel:" + ussdCode.replace("#", encodedHash)
         val intent = Intent(Intent.ACTION_CALL, Uri.parse(uri))
@@ -126,43 +147,31 @@ class MainActivity : FlutterActivity() {
             "Dialing USSD code: $ussdCode with subscriptionId: $subscriptionId"
         )
 
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.CALL_PHONE
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
+        val hasCallPermission = ActivityCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        val hasPhoneStatePermission = ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
+
+        if (!hasCallPermission || !hasPhoneStatePermission) {
+            pendingResult = result
+            pendingUssdCode = ussdCode
+            pendingSubscriptionId = subscriptionId
             ActivityCompat.requestPermissions(
                 this,
-                arrayOf(Manifest.permission.CALL_PHONE),
+                arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_PHONE_STATE),
                 REQUEST_CALL
             )
-            return
-        }
-        // Needed to read active subscriptions reliably on newer Android
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.READ_PHONE_STATE
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.READ_PHONE_STATE),
-                REQUEST_CALL
-            )
-            return
+            return false
         }
 
-        val subscriptionManager =
-            getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+        val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
         val telecomManager = getSystemService(Context.TELECOM_SERVICE) as TelecomManager
 
-        val subInfo =
-            subscriptionManager.activeSubscriptionInfoList?.find { it.subscriptionId == subscriptionId }
+        val subInfo = subscriptionManager.activeSubscriptionInfoList?.find { it.subscriptionId == subscriptionId }
         if (subInfo == null) {
-            Toast.makeText(this, "Invalid subscriptionId: $subscriptionId", Toast.LENGTH_SHORT)
-                .show()
-            return
+            Toast.makeText(this, "Invalid subscriptionId: $subscriptionId", Toast.LENGTH_SHORT).show()
+            result.error("INVALID_SUBSCRIPTION", "Invalid subscriptionId: $subscriptionId", null)
+            return false
         }
+        
         val slotIndex = subInfo.simSlotIndex
         sendNativeLog("debug", "UssdSession", "Found SubscriptionInfo: $subInfo (slot=$slotIndex)")
 
@@ -192,14 +201,10 @@ class MainActivity : FlutterActivity() {
         sendNativeLog("debug", "UssdSession", "Selected PhoneAccountHandle: $phoneAccountHandle")
 
         if (phoneAccountHandle == null) {
-            Toast.makeText(
-                this,
-                "Could not resolve SIM for subscriptionId: $subscriptionId",
-                Toast.LENGTH_SHORT
-            ).show()
-            return
+            Toast.makeText(this, "Could not resolve SIM for subscriptionId: $subscriptionId", Toast.LENGTH_SHORT).show()
+            result.error("SIM_RESOLUTION_FAILED", "Could not resolve SIM for subscriptionId: $subscriptionId", null)
+            return false
         }
-
 
         intent.putExtra("android.telephony.extra.SUBSCRIPTION_INDEX", subscriptionId)
 
@@ -215,19 +220,14 @@ class MainActivity : FlutterActivity() {
         if (!UssdSession.isRunning) {
             UssdSession.isRunning = true
         } else {
-            sendNativeLog(
-                "debug",
-                "UssdSession",
-                "USSD session already in progress. Adding to queue"
-            )
+            sendNativeLog("debug", "UssdSession", "USSD session already in progress.")
             result.success("USSD session already in progress. Added to queue")
-            return
+            return false
         }
 
         startActivity(intent)
+        return true
     }
-// ...existing code...
-
 
     fun sendNativeLog(level: String, tag: String, message: String) {
         NativeLogger.sendLog(level, tag, message)
@@ -244,11 +244,7 @@ class MainActivity : FlutterActivity() {
             val list = mutableListOf<Map<String, Any?>>()
             // Preserve insertion order if possible by iterating entries
             for ((key, value) in UssdSession.wholeConversation) {
-                val map = mapOf<String, Any?>(
-                    "options" to key,
-                    "choice" to value
-                )
-                list.add(map)
+                list.add(mapOf("options" to key, "choice" to value))
             }
             return list
         }
@@ -277,18 +273,8 @@ class MainActivity : FlutterActivity() {
         if (currentRetry >= maxRetries) {
             // Timeout: return whatever we have (possibly empty)
             val resList = buildResponseList()
-            result.success(
-                mapOf(
-                    "lastresponse" to UssdSession.finalResponse,
-                    "conversation" to resList,
-                    "timeout" to true
-                )
-            )
-            UssdSession.finalResponse = "" // Reset for future requests
-            UssdSession.ussdSteps.clear() // Clear the steps
-            UssdSession.currentStepIndex = 0 // Reset step index
-            UssdSession.isRunning = false // Reset running state
-            UssdSession.wholeConversation.clear()
+            result.success(mapOf("lastresponse" to UssdSession.finalResponse, "conversation" to resList, "timeout" to true))
+            resetUssdSession()
             return
         }
 
@@ -297,4 +283,12 @@ class MainActivity : FlutterActivity() {
             waitForUssdResponse(result, maxRetries, delayMillis, currentRetry + 1)
         }, delayMillis)
     }
-} 
+
+    private fun resetUssdSession() {
+        UssdSession.finalResponse = ""
+        UssdSession.ussdSteps.clear()
+        UssdSession.currentStepIndex = 0
+        UssdSession.isRunning = false
+        UssdSession.wholeConversation.clear()
+    }
+}

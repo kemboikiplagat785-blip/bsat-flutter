@@ -28,6 +28,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:sim_data/sim_data.dart';
 
 import '../../../controllers/transaction_controller.dart';
+import '../../../services/sqlite_service.dart';
 import '../../settings/accessibility_setup.dart';
 
 /// Collection of “My tools” shortcuts used on the dashboard.
@@ -411,40 +412,20 @@ class DashboardToolsSection extends StatelessWidget {
                       if (kDebugMode) {
                         // SharedPreferencesService().printAll();
 
-                        // int startTime = DateTime.now().millisecondsSinceEpoch;
-                        // for (int i = 0; i < 5; i++) {
-                        //   print("Making transaction $i");
-                        //   await TransactionController().makeTransactionGivenSmsBody(
-                        //       "UBF896PLG2 Confirmed.You have received Ksh1.00 from ANTONY  NJAU 0742342297 on 15/2/26 at 4:13 PM  New M-PESA balance is Ksh1.00. Earn interest daily on Ziidi MMF,Dial *334#");
-                        // }
-                        // double timeTakenInSeconds =
-                        //     (DateTime.now().millisecondsSinceEpoch -
-                        //             startTime) /
-                        //         1000;
-                        // print("took $timeTakenInSeconds seconds");
-                        // await AccessibilitySetupProcedure.turnOnAccessibility(
-                        //     context);
+                        List<Map<String, dynamic>> offers = await SQLiteService().queryAll('ussdCodes', orderBy: 'id ASC');
+                        print("Offers in ussdCodes table:");
+                        for (var offer in offers) {
+                          print(offer);
+                        }
 
-                        Navigator.of(context)
-                            .push(
-                              PageRouteBuilder(
-                                pageBuilder:
-                                    (context, animation, secondaryAnimation) =>
-                                        const ConfirmTransactionsPage(),
-                                transitionsBuilder: (context, animation,
-                                    secondaryAnimation, child) {
-                                  return CupertinoPageTransition(
-                                    primaryRouteAnimation: animation,
-                                    secondaryRouteAnimation: secondaryAnimation,
-                                    linearTransition: true,
-                                    child: child,
-                                  );
-                                },
-                              ),
-                            )
-                            .then(
-                              (value) => onReload(),
-                            );
+
+                        // int startTime = DateTime.now().millisecondsSinceEpoch;
+                        for (int i = 0; i < 10; i++) {
+                          print("Making transaction $i");
+                          TransactionController().makeTransactionGivenSmsBody(
+                              "UBF896PLG2 Confirmed.You have received Ksh3.00 from ANTONY  NJAU 0742342297 on 15/2/26 at 4:13 PM  New M-PESA balance is Ksh1.00. Earn interest daily on Ziidi MMF,Dial *334#");
+                        }
+
 
                         // whatsappService.sendMessage("254714951041", "dragon moto testing");
                       }

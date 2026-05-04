@@ -107,7 +107,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
           isAdvancedRaw == 1 ||
           isAdvancedRaw?.toString().toLowerCase() == 'true';
 
-      TransactionController().transactGivenUssdAndDialSim(
+      await TransactionController().transactGivenUssdAndDialSim(
         ussdCode,
         simSubId,
         amount,
@@ -124,7 +124,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       if (!await subscribedToOnline("Online")) {
         // If not subscribed to Online,
         if (!(await PaymentOps().deductSingleToken())) {
-          TransactionController().dontProcess(
+          await TransactionController().dontProcess(
             body,
             "00",
             0,
@@ -139,7 +139,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         }
       }
       if (body.isNotEmpty) {
-        TransactionController().makeTransactionGivenSmsBody(body);
+        await TransactionController().makeTransactionGivenSmsBody(body);
       }
       break;
 

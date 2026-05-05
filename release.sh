@@ -12,15 +12,40 @@ NC='\033[0m' # No Color
 # --- Default Variables ---
 COMMIT_MESSAGE=""
 VERSION_ARG=""
+DEFAULT_RELEASE_REPO="https://github.com/Bingwa-Sokoni-Automation-Toolkit/releases"
+RELEASE_REPO="${RELEASE_REPO:-$DEFAULT_RELEASE_REPO}"
 
 # --- Parse Arguments ---
-while getopts "c:v:" opt; do
+while getopts "c:v:r:" opt; do
   case $opt in
     c) COMMIT_MESSAGE="$OPTARG" ;;
     v) VERSION_ARG="$OPTARG" ;;
-    *) echo "Usage: $0 [-c commitMessage] [-v version]" >&2; exit 1 ;;
+    r) RELEASE_REPO="$OPTARG" ;;
+    *) echo "Usage: $0 [-c commitMessage] [-v version] [-r releaseRepo]" >&2; exit 1 ;;
   esac
 done
+
+normalize_release_repo() {
+    local repo_input="$1"
+
+    if [[ "$repo_input" =~ ^https://github.com/([^/]+)/([^/]+)/?$ ]]; then
+        echo "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+        return 0
+    fi
+
+    if [[ "$repo_input" =~ ^([^/]+)/([^/]+)$ ]]; then
+        echo "$repo_input"
+        return 0
+    fi
+
+    return 1
+}
+
+if ! GH_RELEASE_REPO="$(normalize_release_repo "$RELEASE_REPO")"; then
+    echo -e "${RED}Invalid release repo: $RELEASE_REPO${NC}"
+    echo -e "${RED}Use OWNER/REPO or https://github.com/OWNER/REPO${NC}"
+    exit 1
+fi
 
 # Step 1: Read current version
 if [ ! -f "pubspec.yaml" ]; then
@@ -93,7 +118,7 @@ for ABI in "${ABIS[@]}"; do
 done
 
 # --- Step 8: GitHub Release ---
-echo -e "${CYAN}Creating GitHub Release $RELEASE_TAG...${NC}"
+echo -e "${CYAN}Creating GitHub Release $RELEASE_TAG in $GH_RELEASE_REPO...${NC}"
 
 # Check if GH CLI is installed
 if ! command -v gh &> /dev/null; then
@@ -104,6 +129,7 @@ fi
 # Create the release and upload the binaries
 # --generate-notes automatically pulls the commit log into the release description
 gh release create "$RELEASE_TAG" "${UPLOAD_FILES[@]}" \
+    --repo "$GH_RELEASE_REPO" \
     --title "Version $RELEASE_TAG" \
     --notes "Automated release for version $RELEASE_TAG" \
     --latest

@@ -22,25 +22,21 @@ while getopts "c:v:" opt; do
   esac
 done
 
-# Step 1: Read current version from pubspec.yaml
+# Step 1: Read current version
 if [ ! -f "pubspec.yaml" ]; then
-    echo -e "${RED}Error: pubspec.yaml not found in current directory.${NC}"
+    echo -e "${RED}Error: pubspec.yaml not found.${NC}"
     exit 1
 fi
 
 CURRENT_VERSION_LINE=$(grep "^version:" pubspec.yaml)
-# Extract version string (e.g., 1.0.0+1)
 CURRENT_VERSION=$(echo "$CURRENT_VERSION_LINE" | cut -d ':' -f 2 | xargs)
 
-# Step 2: Split version and build number using Regex
-# Bash regex capture groups go into BASH_REMATCH
+# Step 2: Parse Version
 if [[ "$CURRENT_VERSION" =~ ^([0-9]+\.[0-9]+\.([0-9]+))\+?([0-9]+)?$ ]]; then
-    FULL_VER=${BASH_REMATCH[1]}  # x.y.z
-    PATCH=${BASH_REMATCH[2]}     # z
-    CURRENT_BUILD=${BASH_REMATCH[3]:-0} # build number or 0
-
-    # Split x.y.z for parts
-    IFS='.' read -r MAJOR MINOR PATCH_VAL <<< "$FULL_VER"
+    FULL_VER=${BASH_REMATCH[1]}
+    PATCH_VAL=${BASH_REMATCH[2]}
+    CURRENT_BUILD=${BASH_REMATCH[3]:-0}
+    IFS='.' read -r MAJOR MINOR PATCH_VAL_INTERNAL <<< "$FULL_VER"
 else
     echo -e "${RED}Could not parse version string: $CURRENT_VERSION${NC}"
     exit 1
@@ -52,55 +48,64 @@ if [ -n "$VERSION_ARG" ]; then
         TARGET_VER=${BASH_REMATCH[1]}
         TARGET_BUILD=${BASH_REMATCH[2]:-$CURRENT_BUILD}
         NEW_VERSION="$TARGET_VER+$TARGET_BUILD"
+        RELEASE_TAG="$TARGET_VER"
     else
-        echo -e "${RED}Invalid version value. Use x.y.z or x.y.z+build (e.g., 3.7.0 or 3.7.0+2).${NC}"
+        echo -e "${RED}Invalid version. Use x.y.z (e.g., 4.0.65).${NC}"
         exit 1
     fi
 else
-    # Auto-increment patch
     NEW_PATCH=$((PATCH_VAL + 1))
     NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH+$CURRENT_BUILD"
+    RELEASE_TAG="$MAJOR.$MINOR.$NEW_PATCH"
 fi
 
-# Uncomment the line below if you want to hardcode to 4.0.0 as in your ps1 logic
-# NEW_VERSION="4.0.0+$CURRENT_BUILD"
-
-# Step 4: Write new version to pubspec.yaml
-echo -e "Bumping version from $CURRENT_VERSION to $NEW_VERSION in pubspec.yaml..."
-
-# macOS sed requires an empty string argument for -i to work correctly without creating backups
+# Step 4: Write new version
+echo -e "Bumping version to $NEW_VERSION..."
 sed -i '' "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
 
 # Step 5: Git operations
 git add .
-if [ -n "$COMMIT_MESSAGE" ]; then
-    git commit -m "$COMMIT_MESSAGE"
-else
-    git commit -m "Bump version to $NEW_VERSION"
-fi
+MSG="${COMMIT_MESSAGE:-Bump version to $NEW_VERSION}"
+git commit -m "$MSG"
 
-git checkout -b "release/v$NEW_VERSION"
-git push -u origin "release/v$NEW_VERSION"
+# Create a release branch
+git checkout -b "release/v$RELEASE_TAG"
+git push -u origin "release/v$RELEASE_TAG"
 
-# Step 6: Build APKs (split by architecture)
-echo -e "${CYAN}Building APKs for all architectures...${NC}"
+# Step 6: Build APKs
+echo -e "${CYAN}Building APKs...${NC}"
 flutter build apk --split-per-abi
 
-# Step 7: Rename all generated APKs
-# Using relative pathing for macOS
+# Step 7: Rename APKs
 BASE_PATH="build/app/outputs/flutter-apk"
 ABIS=("arm64-v8a" "armeabi-v7a" "x86_64")
+UPLOAD_FILES=()
 
 for ABI in "${ABIS[@]}"; do
     SOURCE_APK="$BASE_PATH/app-$ABI-release.apk"
-    NEW_NAME="bsat-$ABI-$NEW_VERSION.apk"
+    NEW_NAME="bsat-$ABI-$RELEASE_TAG.apk"
 
     if [ -f "$SOURCE_APK" ]; then
         mv "$SOURCE_APK" "$BASE_PATH/$NEW_NAME"
-        echo -e "${CYAN}APK renamed to $NEW_NAME${NC}"
-    else
-        echo -e "${RED}APK not found at $SOURCE_APK${NC}"
+        UPLOAD_FILES+=("$BASE_PATH/$NEW_NAME")
+        echo -e "${CYAN}Renamed: $NEW_NAME${NC}"
     fi
 done
 
-echo -e "${GREEN}Version bumped to $NEW_VERSION, pushed to git, and all APKs built!${NC}"
+# --- Step 8: GitHub Release ---
+echo -e "${CYAN}Creating GitHub Release $RELEASE_TAG...${NC}"
+
+# Check if GH CLI is installed
+if ! command -v gh &> /dev/null; then
+    echo -e "${RED}GitHub CLI (gh) not found. Please install it to upload binaries.${NC}"
+    exit 1
+fi
+
+# Create the release and upload the binaries
+# --generate-notes automatically pulls the commit log into the release description
+gh release create "$RELEASE_TAG" "${UPLOAD_FILES[@]}" \
+    --title "Version $RELEASE_TAG" \
+    --notes "Automated release for version $RELEASE_TAG" \
+    --latest
+
+echo -e "${GREEN}Successfully released $RELEASE_TAG to GitHub!${NC}"

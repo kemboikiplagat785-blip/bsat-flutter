@@ -217,9 +217,8 @@ class PhoneService {
     }
 // You can make this configurable if needed
     try {
-      // print(
-      //     "UssdSession(fl): Sending USSD code: $fullCode on sim with subscriptionId: $subscriptionId, precedure:${CodeSignature.simpleProcedure(
-      //         codeSignature?.acceptedProcedure ?? [])}");
+      print(
+          "UssdSession(fl): Sending USSD code: $fullCode on sim with subscriptionId: $subscriptionId, precedure:${CodeSignature.simpleProcedure(codeSignature?.acceptedProcedure ?? [])}");
       final result = await platform.invokeMethod(
         'runUssdSequence',
         {
@@ -234,10 +233,10 @@ class PhoneService {
           "isGettingSignature": isGettingSignature,
         },
       );
-      // print(
-      //     "UssdSession(fl): Result: $result for code: $fullCode on sim with subscriptionId: $subscriptionId");
+      print(
+          "UssdSession(fl): Result: $result for code: $fullCode on sim with subscriptionId: $subscriptionId");
 
-      //     print("Result data type: ${result.runtimeType}");
+      print("Result data type: ${result.runtimeType}");
 
       if (result == null) return <Map<String, dynamic>>[];
 

@@ -1,4 +1,3 @@
-import 'package:bsat/utils/constants.dart';
 import 'package:flutter/material.dart';
 
 class SimCardIconWithNumber extends StatelessWidget {

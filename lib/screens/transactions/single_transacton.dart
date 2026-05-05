@@ -572,6 +572,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                             children: [
                               toolButton(
                                 () async {
+                                  print("Details before retrying: $_details");
                                   tillDoneDialogue(
                                     context,
                                     Padding(

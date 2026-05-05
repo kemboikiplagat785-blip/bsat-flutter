@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 
 Future<String?> showAskDeviceNameDialog(BuildContext context, String initialName) {
   TextEditingController _deviceNameController =

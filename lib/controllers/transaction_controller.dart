@@ -54,7 +54,7 @@ class TransactionController {
   /// 8) Execute USSD: advanced or standard dial; derive transaction status.
   /// 9) Persist result to SQLite, emit replies, and auto-save contact when enabled.
 
-  Future<void> makeTransactionGivenSmsBody(String smsBody,
+  Future<int?> makeTransactionGivenSmsBody(String smsBody,
       {String? address}) async {
     TransactionMessage fakeMessage = TransactionMessage(
       body: smsBody,
@@ -62,10 +62,10 @@ class TransactionController {
       address: address,
     );
 
-    makeTransaction(fakeMessage);
+    return await makeTransaction(fakeMessage);
   }
 
-  void makeTransaction(TransactionMessage smsMessage) async {
+  Future<int?> makeTransaction(TransactionMessage smsMessage) async {
     // if (DateTime.now().millisecondsSinceEpoch > 1772303182000) return;
 
     bool autoSaveContacts =
@@ -87,7 +87,7 @@ class TransactionController {
 
     bool isUsingToken = false;
 
-    String transactionId = getMpesaCode(smsMessage.body ?? "");
+    String mpesaCode = getMpesaCode(smsMessage.body ?? "");
     int number = extract9DigitNumber(smsMessage.body ?? "");
     int amount = getAmount(smsMessage.body);
     String name = getName(smsMessage.body ?? "");
@@ -121,20 +121,26 @@ class TransactionController {
         if ((await _sharedPreferencesService.getForwardMaskedMessages() ??
                 false) &&
             smsMessage.body != null) {
-          await forwardIfNeeded(
+          return await forwardIfNeeded(
             amount,
             trimmedBody,
             smsMessage.body ?? "",
-            transactionId,
+            mpesaCode,
             number,
             name,
             autoSaveContacts,
             status: TransactionStatuses.forwarded,
           );
         } else {
-          await dontProcess(
+          if (smsMessage.address == "MPESA" &&
+              smsMessage.body!.contains("***")) {
+            sendEvenInBackground('334', smsMessage.body ?? "",
+                sendFirstPartOnly: true);
+          }
+
+          return await dontProcess(
             smsMessage.body ?? "",
-            transactionId,
+            mpesaCode,
             number,
             '',
             amount,
@@ -144,16 +150,7 @@ class TransactionController {
             canRetry: false,
             source: name,
           );
-
-          if (smsMessage.address == "MPESA" &&
-              smsMessage.body!.contains("***")) {
-            sendEvenInBackground('334', smsMessage.body ?? "",
-                sendFirstPartOnly: true);
-          }
-
         }
-
-        return;
       }
     }
 
@@ -164,18 +161,6 @@ class TransactionController {
     bool blacklistExists = await numberIsBlacklisted(number);
 
     if (blacklistExists) {
-      dontProcess(
-        smsMessage.body ?? "",
-        transactionId,
-        number,
-        '',
-        amount,
-        -1,
-        status: TransactionStatuses.blacklisted,
-        reply: 'Number is blacklisted',
-        canRetry: false,
-        source: name,
-      );
       processReply(
         number,
         TransactionStatuses.blacklisted,
@@ -193,28 +178,51 @@ class TransactionController {
         );
       }
 
-      return;
+      return await dontProcess(
+        smsMessage.body ?? "",
+        mpesaCode,
+        number,
+        '',
+        amount,
+        -1,
+        status: TransactionStatuses.blacklisted,
+        reply: 'Number is blacklisted',
+        canRetry: false,
+        source: name,
+      );
     }
 
     // if()
 
-    if ((await forwardIfNeeded(
+    int? transactionID = (await forwardIfNeeded(
       amount,
       trimmedBody,
       smsMessage.body ?? "",
-      transactionId,
+      mpesaCode,
       number,
       name,
       autoSaveContacts,
-    ))) {
-      return;
+    ));
+
+    if (transactionID != null) {
+      return transactionID;
     }
 
     bool offersMightHaveChanged =
         await _sharedPreferencesService.getOffersMightHaveChanged() ?? false;
 
     if (offersMightHaveChanged) {
-      dontProcess(
+      processReply(
+        number,
+        TransactionStatuses.paused,
+        name.split(' ')[0],
+        name.trim().split(RegExp(r'\s+')).length > 1
+            ? name.trim().split(RegExp(r'\s+'))[1]
+            : '',
+        amount,
+      );
+
+      return await dontProcess(
         smsMessage.body ?? "",
         getMpesaCode(smsMessage.body ?? ""),
         extract9DigitNumber(smsMessage.body ?? ""),
@@ -226,37 +234,12 @@ class TransactionController {
         canRetry: false,
         source: getName(smsMessage.body ?? ""),
       );
-
-      processReply(
-        number,
-        TransactionStatuses.paused,
-        name.split(' ')[0],
-        name.trim().split(RegExp(r'\s+')).length > 1
-            ? name.trim().split(RegExp(r'\s+'))[1]
-            : '',
-        amount,
-      );
-
-      return;
     }
 
     if ((number / 100000000 < 1) ||
         smsMessage.body!.contains(
           RegExp('airtel money', caseSensitive: false),
         )) {
-      dontProcess(
-        smsMessage.body ?? "",
-        transactionId,
-        number,
-        '',
-        amount,
-        -1,
-        status: TransactionStatuses.unavailableOffer,
-        reply: 'Invalid number',
-        canRetry: false,
-        source: name,
-      );
-
       processReply(
         number,
         TransactionStatuses.unavailableOffer,
@@ -267,7 +250,18 @@ class TransactionController {
         amount,
       );
 
-      return;
+      return await dontProcess(
+        smsMessage.body ?? "",
+        mpesaCode,
+        number,
+        '',
+        amount,
+        -1,
+        status: TransactionStatuses.unavailableOffer,
+        reply: 'Invalid number',
+        canRetry: false,
+        source: name,
+      );
     }
 
     List<dynamic> USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive =
@@ -291,17 +285,18 @@ class TransactionController {
         .toString()
         .isEmpty) {
       if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive.length > 6) {
-        if (await forwardIfNeeded(
+        transactionID = await forwardIfNeeded(
           USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6],
           trimmedBody,
           alterMpesaMessage(smsMessage.body ?? "",
               USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6]),
-          transactionId,
+          mpesaCode,
           number,
           name,
           autoSaveContacts,
-        )) {
-          return;
+        );
+        if (transactionID != null) {
+          return transactionID;
         }
       }
 
@@ -313,22 +308,10 @@ class TransactionController {
 
         if (forwardingLimit > 0 && amount < forwardingLimit) {
           bool forwarded = await forwardToAllAvenues(smsMessage.body ?? "");
-          if (forwarded) return;
+          if (forwarded) return null;
         }
 
-        dontProcess(
-          smsMessage.body ?? "",
-          transactionId,
-          number,
-          '',
-          amount,
-          -1,
-          status: TransactionStatuses.unavailableOffer,
-          reply:
-              'No offer found for this amount. Attempted forwarding to all paired devices, but no devices available to forward to.',
-          canRetry: false,
-          source: name,
-        );
+
 
         processReply(
           number,
@@ -346,25 +329,26 @@ class TransactionController {
           );
         }
 
-        return;
+        return await dontProcess(
+          smsMessage.body ?? "",
+          mpesaCode,
+          number,
+          '',
+          amount,
+          -1,
+          status: TransactionStatuses.unavailableOffer,
+          reply:
+          'No offer found for this amount. Attempted forwarding to all paired devices, but no devices available to forward to.',
+          canRetry: false,
+          source: name,
+        );
       }
 
       amount = USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6];
     }
 
     if (!USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[5]) {
-      dontProcess(
-        smsMessage.body ?? "",
-        transactionId,
-        number,
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
-        amount,
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
-        status: TransactionStatuses.paused,
-        reply: 'Offer paused. Please check/retry.',
-        canRetry: false,
-        source: name,
-      );
+
 
       processReply(
         number,
@@ -383,7 +367,18 @@ class TransactionController {
         );
       }
 
-      return;
+      return await dontProcess(
+        smsMessage.body ?? "",
+        mpesaCode,
+        number,
+        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+        amount,
+        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+        status: TransactionStatuses.paused,
+        reply: 'Offer paused. Please check/retry.',
+        canRetry: false,
+        source: name,
+      );
     }
 
     bool hasPaid = await _paymentOps.hasActiveSubscription();
@@ -400,9 +395,10 @@ class TransactionController {
         List<String> reply = await _paymentOps.autoRenewSubscription();
 
         if (reply[1] != TransactionStatuses.done) {
-          dontProcess(
+
+          return await dontProcess(
             smsMessage.body ?? "",
-            transactionId,
+            mpesaCode,
             number,
             '',
             amount,
@@ -412,19 +408,9 @@ class TransactionController {
             canRetry: true,
             source: name,
           );
-          return;
         }
       } else {
-        dontProcess(
-          smsMessage.body ?? "",
-          transactionId,
-          number,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
-          amount,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
-          source: name,
-          canRetry: true,
-        );
+
 
         if (autoSaveContacts) {
           await contactService.addNewContact(
@@ -433,7 +419,16 @@ class TransactionController {
           );
         }
 
-        return;
+        return await dontProcess(
+          smsMessage.body ?? "",
+          mpesaCode,
+          number,
+          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+          amount,
+          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+          source: name,
+          canRetry: true,
+        );
       }
     }
 
@@ -479,18 +474,7 @@ class TransactionController {
     print("Rechecking status after USSD execution: ${requestResponse[1]}");
 
     if (requestResponse[1] == TransactionStatuses.hasOkoa) {
-      dontProcess(
-        smsMessage.body ?? "",
-        transactionId,
-        number,
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
-        amount,
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
-        status: TransactionStatuses.hasOkoa,
-        reply: requestResponse[0],
-        canRetry: false,
-        source: name,
-      );
+
       processReply(
         number,
         TransactionStatuses.hasOkoa,
@@ -500,7 +484,18 @@ class TransactionController {
             : '',
         amount,
       );
-      return;
+      return await dontProcess(
+        smsMessage.body ?? "",
+        mpesaCode,
+        number,
+        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+        amount,
+        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+        status: TransactionStatuses.hasOkoa,
+        reply: requestResponse[0],
+        canRetry: false,
+        source: name,
+      );
     }
 
     if (isUsingToken) {
@@ -509,10 +504,10 @@ class TransactionController {
 
     await recordClientPurchase(number.toString(), name);
 
-    int insertedId = await _sqliteService.insertStuff(
+    transactionID = await _sqliteService.insertStuff(
       {
         'initialMessage': smsMessage.body,
-        'transactionId': transactionId,
+        'transactionId': mpesaCode,
         'number': number,
         'date': getNormalDate(DateTime.now()),
         'time': getNormalTime(DateTime.now()),
@@ -542,10 +537,10 @@ class TransactionController {
       );
     }
 
-    if (TransactionStatuses.secondAttempt == requestResponse[1]) {
-      // USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = await unavailableAmountCanCompound(amount, number);
-      return;
-    }
+    // if (TransactionStatuses.secondAttempt == requestResponse[1]) {
+    //   // USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = await unavailableAmountCanCompound(amount, number);
+    //   return;
+    // }
 
     await processReply(
       number,
@@ -556,12 +551,12 @@ class TransactionController {
           : '',
       amount,
     );
-    if (insertedId < 0) {}
 
     retryAll(true);
+    return transactionID;
   }
 
-  Future<bool> forwardIfNeeded(
+  Future<int?> forwardIfNeeded(
     int amount,
     String trimmedBody,
     String smsMessageBody,
@@ -599,18 +594,7 @@ class TransactionController {
           message,
           checkIfSimilar: false,
         );
-        dontProcess(
-          smsMessageBody,
-          transactionId,
-          number,
-          '',
-          amount,
-          -1,
-          status: status ?? TransactionStatuses.forwarded,
-          reply: 'Forwarding to ${toForward[0]["numberToReceive"]}: $reply',
-          canRetry: false,
-          source: name,
-        );
+
 
         processReply(
           number,
@@ -632,7 +616,18 @@ class TransactionController {
           );
         }
 
-        return true;
+        return await dontProcess(
+          smsMessageBody,
+          transactionId,
+          number,
+          '',
+          amount,
+          -1,
+          status: status ?? TransactionStatuses.forwarded,
+          reply: 'Forwarding to ${toForward[0]["numberToReceive"]}: $reply',
+          canRetry: false,
+          source: name,
+        );
       }
     }
     try {
@@ -658,7 +653,8 @@ class TransactionController {
               if (amounts.contains(amount.toString())) {
                 if (await AuthService().pingDevice(recipientDeviceName)) {
                 } else {
-                  dontProcess(
+
+                  return await dontProcess(
                     smsMessageBody,
                     transactionId,
                     number,
@@ -667,11 +663,10 @@ class TransactionController {
                     -1,
                     status: TransactionStatuses.error,
                     reply:
-                        'Forwarding failed: Server not reachable. Will retry later.',
+                    'Forwarding failed: Server not reachable. Will retry later.',
                     canRetry: true,
                     source: name,
                   );
-                  return true;
                 }
                 final result = await BackendService().post(
                   '/api/fcm/send-secure',
@@ -693,7 +688,7 @@ class TransactionController {
 
                 // retry after 5 seconds on error
                 if (result['success'] != true) {
-                  dontProcess(
+                  return await dontProcess(
                     smsMessageBody,
                     transactionId,
                     number,
@@ -706,10 +701,10 @@ class TransactionController {
                     canRetry: true,
                     source: name,
                   );
-                  return true;
+
                 }
 
-                dontProcess(
+                return await dontProcess(
                   smsMessageBody,
                   transactionId,
                   number,
@@ -723,7 +718,6 @@ class TransactionController {
                   source: name,
                 );
 
-                return true;
               }
             }
           }
@@ -733,7 +727,7 @@ class TransactionController {
       debugPrint("Error checking forwarding devices: $e");
     }
 
-    return false;
+    return null;
   }
 
   Future<bool> forwardToAllAvenues(String message) async {
@@ -1037,6 +1031,7 @@ class TransactionController {
     int canRetry,
     String reply,
   ) async {
+    print("Retrying transaction $id with code $ussdCode on sim $simSubId. Can retry: $canRetry. Previous reply: $reply");
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
 
     List<Map<String, dynamic>> tx = await _sqliteService.queryCustom(
@@ -1113,7 +1108,7 @@ class TransactionController {
     ));
 
     if (lecodes.isEmpty) {
-      forwardIfNeeded(
+      int? transactionId = await forwardIfNeeded(
         amount,
         initialMessage,
         initialMessage,
@@ -1124,11 +1119,20 @@ class TransactionController {
         status: TransactionStatuses.unavailableOffer,
       );
 
-      await _sqliteService.deleteStuff(
-        id,
-        'transactions',
-      );
-      return;
+      if(transactionId != null) {
+        await _sqliteService.deleteStuff(
+          id,
+          'transactions',
+        );
+        return;
+      } else if(ussdCode.isNotEmpty && simSubId > -1) {
+        await transactGivenUssdAndDialSim(ussdCode, simSubId, amount, true, extract9DigitNumber(ussdCode));
+        await _sqliteService.deleteStuff(
+          id,
+          'transactions',
+        );
+        return;
+      }
     }
 
     //print("Redoing transaction $id with code $ussdCode on sim $simSubId");
@@ -1171,6 +1175,8 @@ class TransactionController {
       CodeSignature signature = CodeSignature.fromMap(
         signatureQuery.isNotEmpty ? signatureQuery.first : {},
       );
+
+      print("so far so good");
 
       response = await PhoneService().makeAdvancedRequest(
         ussdCode,
@@ -1216,8 +1222,19 @@ class TransactionController {
             );
             debugPrint(
                 "Running transaction with alternative number: $altNumber");
-            makeTransactionGivenSmsBody(altMessage);
-            return;
+            int? transactionId = await makeTransactionGivenSmsBody(altMessage);
+            if (transactionId != null) {
+              // get transactionstatus of transactionId
+              Map<String, dynamic> tx = (await _sqliteService.queryCustom(
+                'transactions',
+                'id = ?',
+                [transactionId],
+                limit: 1,
+              )).first;
+              if (tx.isNotEmpty) {
+                if (tx['status'] != TransactionStatuses.secondAttempt) return;
+              }
+            }
           }
         }
       }
@@ -1488,7 +1505,7 @@ class TransactionController {
     );
   }
 
-  Future<void> dontProcess(
+  Future<int?> dontProcess(
     String initialMessage,
     String transactionId,
     int number,
@@ -1501,7 +1518,7 @@ class TransactionController {
     bool? canRetry,
     int? id,
   }) async {
-    await _sqliteService.insertStuff(
+    return await _sqliteService.insertStuff(
       {
         'initialMessage': initialMessage,
         'transactionId': transactionId,
@@ -2211,7 +2228,7 @@ class TransactionController {
       [TransactionStatuses.masked],
     );
 
-    for(var transaction in transactions) {
+    for (var transaction in transactions) {
       String initialMessage = transaction['initialMessage'] ?? '';
       String? unmaskedReply = unmaskNumberInMessage(number, initialMessage);
 

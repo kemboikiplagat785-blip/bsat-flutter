@@ -311,8 +311,6 @@ class TransactionController {
           if (forwarded) return null;
         }
 
-
-
         processReply(
           number,
           TransactionStatuses.unavailableOffer,
@@ -338,7 +336,7 @@ class TransactionController {
           -1,
           status: TransactionStatuses.unavailableOffer,
           reply:
-          'No offer found for this amount. Attempted forwarding to all paired devices, but no devices available to forward to.',
+              'No offer found for this amount. Attempted forwarding to all paired devices, but no devices available to forward to.',
           canRetry: false,
           source: name,
         );
@@ -348,8 +346,6 @@ class TransactionController {
     }
 
     if (!USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[5]) {
-
-
       processReply(
         number,
         TransactionStatuses.paused,
@@ -395,7 +391,6 @@ class TransactionController {
         List<String> reply = await _paymentOps.autoRenewSubscription();
 
         if (reply[1] != TransactionStatuses.done) {
-
           return await dontProcess(
             smsMessage.body ?? "",
             mpesaCode,
@@ -410,8 +405,6 @@ class TransactionController {
           );
         }
       } else {
-
-
         if (autoSaveContacts) {
           await contactService.addNewContact(
             name,
@@ -474,7 +467,6 @@ class TransactionController {
     print("Rechecking status after USSD execution: ${requestResponse[1]}");
 
     if (requestResponse[1] == TransactionStatuses.hasOkoa) {
-
       processReply(
         number,
         TransactionStatuses.hasOkoa,
@@ -595,7 +587,6 @@ class TransactionController {
           checkIfSimilar: false,
         );
 
-
         processReply(
           number,
           TransactionStatuses.forwarded,
@@ -653,7 +644,6 @@ class TransactionController {
               if (amounts.contains(amount.toString())) {
                 if (await AuthService().pingDevice(recipientDeviceName)) {
                 } else {
-
                   return await dontProcess(
                     smsMessageBody,
                     transactionId,
@@ -663,7 +653,7 @@ class TransactionController {
                     -1,
                     status: TransactionStatuses.error,
                     reply:
-                    'Forwarding failed: Server not reachable. Will retry later.',
+                        'Forwarding failed: Server not reachable. Will retry later.',
                     canRetry: true,
                     source: name,
                   );
@@ -701,7 +691,6 @@ class TransactionController {
                     canRetry: true,
                     source: name,
                   );
-
                 }
 
                 return await dontProcess(
@@ -717,7 +706,6 @@ class TransactionController {
                   canRetry: false,
                   source: name,
                 );
-
               }
             }
           }
@@ -1030,8 +1018,10 @@ class TransactionController {
     int simSubId,
     int canRetry,
     String reply,
+  {String? mpesaMessage}
   ) async {
-    print("Retrying transaction $id with code $ussdCode on sim $simSubId. Can retry: $canRetry. Previous reply: $reply");
+    print(
+        "Retrying transaction $id with code $ussdCode on sim $simSubId. Can retry: $canRetry. Previous reply: $reply");
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
 
     List<Map<String, dynamic>> tx = await _sqliteService.queryCustom(
@@ -1119,17 +1109,24 @@ class TransactionController {
         status: TransactionStatuses.unavailableOffer,
       );
 
-      if(transactionId != null) {
+      if (transactionId != null) {
         await _sqliteService.deleteStuff(
           id,
           'transactions',
         );
         return;
-      } else if(ussdCode.isNotEmpty && simSubId > -1) {
-        await transactGivenUssdAndDialSim(ussdCode, simSubId, amount, true, extract9DigitNumber(ussdCode));
+      } else if (ussdCode.isNotEmpty && simSubId > -1) {
         await _sqliteService.deleteStuff(
           id,
           'transactions',
+        );
+        await transactGivenUssdAndDialSim(
+          ussdCode,
+          simSubId,
+          amount,
+          true,
+          extract9DigitNumber(ussdCode),
+          message: mpesaMessage,
         );
         return;
       }
@@ -1185,6 +1182,18 @@ class TransactionController {
       );
 
       response[1] = await transactionStatus(response);
+
+      if((response[0]).toString().contains("MissingPluginException")) {
+        print("MissingPluginException yoo");
+        await _sqliteService.deleteStuff(id, 'transactions');
+        await transactGivenUssdAndDialSim(
+          ussdCode,
+          simSubId,
+          amount,
+          true,
+          extract9DigitNumber(ussdCode),
+        );
+      }
     } else {
       response = await PhoneService().makeMyRequest(
         ussdCode,
@@ -1193,7 +1202,8 @@ class TransactionController {
       response[1] = await transactionStatus(response);
     }
 
-    if (response[1] == TransactionStatuses.done) {
+    if (response[1] == TransactionStatuses.done ||
+        response[1] == TransactionStatuses.advancedUssd) {
       if (isUsingToken) {
         await _paymentOps.deductSingleToken();
       }
@@ -1230,7 +1240,8 @@ class TransactionController {
                 'id = ?',
                 [transactionId],
                 limit: 1,
-              )).first;
+              ))
+                  .first;
               if (tx.isNotEmpty) {
                 if (tx['status'] != TransactionStatuses.secondAttempt) return;
               }
@@ -1953,7 +1964,8 @@ class TransactionController {
       );
     }
 
-    if (isUsingToken) {
+    if (isUsingToken && response[1] == TransactionStatuses.done ||
+        response[1] == TransactionStatuses.advancedUssd) {
       await _paymentOps.deductSingleToken();
     }
 

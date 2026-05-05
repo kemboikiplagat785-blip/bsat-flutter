@@ -130,7 +130,7 @@ class PhoneService {
     } catch (e) {
       debugPrint("UssdSession: Error sending code in makeAdvancedRequest: $e");
       return [
-        "Error sending code: Advanced Error ${TransactionStatuses.error}",
+        "Error sending code: Advanced Error ${TransactionStatuses.error} MissingPluginException",
         TransactionStatuses.error
       ];
     }

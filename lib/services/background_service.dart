@@ -31,6 +31,18 @@ Future<void> initializeBackgroundService() async {
   await flutterBackgroundService.startService();
 }
 
+class _TransactionControllerService {
+  static final _TransactionControllerService _instance = _TransactionControllerService._internal();
+  late TransactionController transactionController;
+
+  _TransactionControllerService._internal();
+
+  factory _TransactionControllerService() {
+    return _instance;
+  }
+}
+
+// Then update the onStart function:
 @pragma('vm:entry-point')
 void onStart(ServiceInstance serviceInstance) async {
   const int retryAfter = 20;
@@ -40,9 +52,13 @@ void onStart(ServiceInstance serviceInstance) async {
   Timer? pendingMaskedCheckTimer;
   StreamSubscription<PhoneState>? phoneStateSubscription;
 
-  final TransactionController transactionController = TransactionController();
+  // Initialize the singleton
+  final transactionService = _TransactionControllerService();
+  transactionService.transactionController = TransactionController();
+  final transactionController = transactionService.transactionController;
+
   final SharedPreferencesService sharedPreferencesService =
-      SharedPreferencesService();
+  SharedPreferencesService();
 
   DartPluginRegistrant.ensureInitialized();
 

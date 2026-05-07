@@ -72,8 +72,22 @@ class Skills {
       ],
     );
 
+    int transactions5Minutes = await SQLiteService().getCount(
+      'transactions',
+      appendQuery: 'WHERE timestamp > ? AND (status = ? OR status = ?)',
+      args: [
+        DateTime.now().millisecondsSinceEpoch - 5 * 60 * 1000,
+        TransactionStatuses.doneConfirmed,
+        TransactionStatuses.done,
+    ],
+    );
+
     if (transactions2Minutes < 5) {
-      return;
+      if (transactions5Minutes > 5) {
+        amt = 25;
+      } else {
+        return;
+      }
     }
 
     int airtimeBalance =

@@ -42,7 +42,16 @@ class ClientService {
       return existingClient.id!;
     }
 
-    return await _sqliteService.insertStuff(preparedClient.toMap(), 'clients');
+    int id = -1;
+
+    try {
+      id = await _sqliteService.insertStuff(preparedClient.toMap(), 'clients');
+    } catch(e) {
+      print(e);
+    }
+
+    return id;
+    // return await _sqliteService.insertStuff(preparedClient.toMap(), 'clients');
   }
 
   // Get all clients

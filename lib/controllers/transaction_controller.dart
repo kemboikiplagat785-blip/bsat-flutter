@@ -1841,7 +1841,7 @@ class TransactionController {
       return TransactionStatuses.error;
     }
 
-    if (RegExp(r'Invalid choice|max number of menu', caseSensitive: false)
+    if (RegExp(r'Invalid choice|max number of menu|error from application23', caseSensitive: false)
         .hasMatch(responseText)) {
       return TransactionStatuses.error;
     }
@@ -2286,6 +2286,7 @@ class TransactionController {
         //         .hasMatch(message.body!)
         ) {
       int number = extract9DigitNumber(message.address ?? "");
+      int numberInText = extract9DigitNumber(message.body ?? "");
 
       // remove leading 254 if present
       if (number.toString().startsWith('254')) {
@@ -2307,8 +2308,19 @@ class TransactionController {
             makeTransactionGivenSmsBody(unmaskedReply);
             return unmaskedReply;
           }
+
+          unmaskedReply = unmaskNumberInMessage('0$numberInText', initialMessage);
+          if (unmaskedReply != null) {
+            await _sqliteService.deleteStuff(transaction['id'], 'transactions');
+            makeTransactionGivenSmsBody(unmaskedReply);
+            return unmaskedReply;
+          }
         }
       }
+
+      // check message content for a valid phone number(s) using extract9DigitNumber
+      sort334Reply(message);
+
     }
     return null;
   }

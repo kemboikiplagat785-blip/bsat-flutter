@@ -82,9 +82,13 @@ void onStart(ServiceInstance serviceInstance) async {
   initMessagesPlatformState();
 
   if (serviceInstance is AndroidServiceInstance) {
-    phoneStateSubscription = PhoneState.stream.listen((state) {
+    phoneStateSubscription = PhoneState.stream.listen((state) async {
       if (state.status == PhoneStateStatus.CALL_INCOMING) {
         // ask permissions to access call logs
+
+        if (!(await Permission.phone.status).isGranted) {
+          Permission.phone.request();
+        }
 
         print("call from ${state.number}");
         transactionController.unmaskFromCall(state.number ?? "");

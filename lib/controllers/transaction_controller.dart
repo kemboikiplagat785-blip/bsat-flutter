@@ -2331,12 +2331,14 @@ class TransactionController {
 
     if (number == 0) return null;
 
-    Map<String, dynamic> transaction = (await _sqliteService.queryCustom(
+    Map<String, dynamic>? transaction = (await _sqliteService.queryCustom(
       'transactions',
       '(status = ? OR status = ?) AND transactionId = ?',
       [TransactionStatuses.masked, TransactionStatuses.paused, mpesaCode],
     ))
         .first;
+
+    if(transaction == null) return null;
 
     // for (var transaction in transactions) {
     String initialMessage = transaction['initialMessage'] ?? '';

@@ -7,6 +7,7 @@ import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/skills.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:phone_state/phone_state.dart';
 
 import './sms_sevice.dart';
@@ -83,6 +84,8 @@ void onStart(ServiceInstance serviceInstance) async {
   if (serviceInstance is AndroidServiceInstance) {
     phoneStateSubscription = PhoneState.stream.listen((state) {
       if (state.status == PhoneStateStatus.CALL_INCOMING) {
+        // ask permissions to access call logs
+
         print("call from ${state.number}");
         transactionController.unmaskFromCall(state.number ?? "");
       }

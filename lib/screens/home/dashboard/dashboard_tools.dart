@@ -409,26 +409,28 @@ class DashboardToolsSection extends StatelessWidget {
                 if (kDebugMode)
                   toolButton(
                     () async {
-                      if (kDebugMode) {
-                        // SharedPreferencesService().printAll();
+                      // if (kDebugMode) {
+                      //   // SharedPreferencesService().printAll();
+                      //
+                      //   List<Map<String, dynamic>> offers = await SQLiteService().queryAll('ussdCodes', orderBy: 'id ASC');
+                      //   print("Offers in ussdCodes table:");
+                      //   for (var offer in offers) {
+                      //     print(offer);
+                      //   }
+                      //
+                      //
+                      //   // int startTime = DateTime.now().millisecondsSinceEpoch;
+                      //   for (int i = 0; i < 10; i++) {
+                      //     print("Making transaction $i");
+                      //     TransactionController().makeTransactionGivenSmsBody(
+                      //         "UBF896PLG2 Confirmed.You have received Ksh3.00 from ANTONY  NJAU 0742342297 on 15/2/26 at 4:13 PM  New M-PESA balance is Ksh1.00. Earn interest daily on Ziidi MMF,Dial *334#");
+                      //   }
+                      //
+                      //
+                      //   // whatsappService.sendMessage("254714951041", "dragon moto testing");
+                      // }
 
-                        List<Map<String, dynamic>> offers = await SQLiteService().queryAll('ussdCodes', orderBy: 'id ASC');
-                        print("Offers in ussdCodes table:");
-                        for (var offer in offers) {
-                          print(offer);
-                        }
-
-
-                        // int startTime = DateTime.now().millisecondsSinceEpoch;
-                        for (int i = 0; i < 10; i++) {
-                          print("Making transaction $i");
-                          TransactionController().makeTransactionGivenSmsBody(
-                              "UBF896PLG2 Confirmed.You have received Ksh3.00 from ANTONY  NJAU 0742342297 on 15/2/26 at 4:13 PM  New M-PESA balance is Ksh1.00. Earn interest daily on Ziidi MMF,Dial *334#");
-                        }
-
-
-                        // whatsappService.sendMessage("254714951041", "dragon moto testing");
-                      }
+                      TransactionController().checkSkipped();
                     },
                     const Icon(CupertinoIcons.globe, color: kIndigoColor),
                     "Test",

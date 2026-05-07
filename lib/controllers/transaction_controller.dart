@@ -1470,28 +1470,20 @@ class TransactionController {
   }
 
   Future<void> checkSkipped() async {
+    // print("Checking skipped transactions");
+
     int lastCheckSkippedTime =
         await _sharedPreferencesService.getLastCheckSkippedTime() ?? 0;
-
+    //
     if (lastCheckSkippedTime == 0) {
+      // print("No last check skipped time found. Returning.");
       await _sharedPreferencesService.setLastCheckSkippedTime(
         DateTime.now().millisecondsSinceEpoch,
       );
       return;
     }
 
-    if (DateTime.now().millisecondsSinceEpoch <
-        (lastCheckSkippedTime + const Duration(minutes: 2).inMilliseconds)) {
-      return;
-    }
-
-    bool hasPaid = await _paymentOps.hasActiveSubscription();
-
-    if (!hasPaid) {
-      return;
-    }
-
-    List<SmsMessage> smss = await getAllSince(lastCheckSkippedTime);
+    List<SmsMessage> smss = await getAllSince(DateTime.now().millisecondsSinceEpoch + 24 * 60 * 60 * 1000);
 
     List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
       'transactions',
@@ -1508,8 +1500,6 @@ class TransactionController {
         onMessageReceive(sms);
       }
     }
-
-    // debugPrint("Done");
 
     await _sharedPreferencesService.setLastCheckSkippedTime(
       DateTime.now().millisecondsSinceEpoch,

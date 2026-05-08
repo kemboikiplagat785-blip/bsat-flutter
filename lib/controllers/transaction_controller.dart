@@ -669,9 +669,15 @@ class TransactionController {
                       'type': 'forwarded_sms',
                       'body': smsMessageBody,
                       'title': "Forwarded Message",
+                      'messageId': transactionId,
+                      'senderDeviceName': senderDeviceName,
                     }
                   },
                 );
+                
+                String messageId = result['messageId'] ?? "";
+                
+                print("MessageID: $messageId");
 
                 // smsMessageBody =
                 //     "$smsMessageBody $interpunct TDN$recipientDeviceName";

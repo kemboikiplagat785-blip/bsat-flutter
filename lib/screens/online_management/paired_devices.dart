@@ -56,6 +56,12 @@ class _PairedDevicesState extends State<PairedDevices> {
       if (mounted) showSuccessDialog(context, text: "Device unlinked");
     } else {
       if (mounted) {
+        if (response['body'] != null && response['body']['error'] == 'Pairing not found') {
+          // delete device from local db
+          await SQLiteService().deleteWhere('whitelistedDevices', 'device_name = ?', [targetDeviceName]);
+          await getData();
+          if (mounted) showSuccessDialog(context, text: "Device unlinked");
+        }
         showErrorDialog(context, "Error",
             response['message'] ?? "Failed to unlink device.");
       }

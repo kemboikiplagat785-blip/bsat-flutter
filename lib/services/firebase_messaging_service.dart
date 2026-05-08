@@ -87,8 +87,15 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     }
   }
 
+  if (await _processIncomingAcknowledgement(message, type)) {
+    return;
+  }
+
+  // return acknowledgement first
   print(
       "Received FCM message with type: $type, data: ${message.data}, notification: ${message.notification}");
+
+  await _sendImmediateAck(message, originalType: type);
 
   switch (type) {
     case 'process_alt_request':
@@ -433,6 +440,256 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       }
       break;
   }
+}
+
+Future<void> _sendImmediateAck(
+  RemoteMessage message, {
+  String? originalType,
+}) async {
+  // Build a safe acknowledgement payload and ensure required fields (title, body,
+  // senderDeviceName, recipientDeviceName) are provided to the backend.
+  String? callbackUrl = message.data['callbackUrl']?.toString();
+  if (callbackUrl == null || callbackUrl.isEmpty) {
+    callbackUrl = '/api/fcm/send-secure';
+  }
+
+  // Prefer the locally configured device name for the sender; fall back to any
+  // names included in the incoming message data.
+  String senderDeviceName = (await SharedPreferencesService().getDeviceName()) ?? '';
+  if (senderDeviceName.isEmpty) {
+    senderDeviceName = message.data['recipientDeviceName']?.toString() ?? '';
+  }
+
+  String recipientDeviceName = message.data['senderDeviceName']?.toString() ?? '';
+
+  final payload = {
+    'type': 'MESSAGE_ACK',
+    'ackKind': 'received',
+    'messageId': message.messageId ?? '',
+    'requestId': message.data['requestId'] ?? '',
+    'originalType': originalType ?? '',
+    'status': 'received',
+    'receivedAt': DateTime.now().millisecondsSinceEpoch,
+    'senderDeviceName': senderDeviceName,
+    'recipientDeviceName': recipientDeviceName,
+    'body': 'received',
+    'title': 'received',
+  };
+
+  // The backend expects 'title' and 'body' to be strings. Send the payload as
+  // a JSON string in 'body' and include the device names explicitly.
+  final postBody = {
+    'title': 'BSAT Online Forwarding',
+    'body': jsonEncode(payload),
+    'senderDeviceName': senderDeviceName,
+    'recipientDeviceName': recipientDeviceName,
+    'data': {
+      'type': 'MESSAGE_ACK',
+      'body': payload,
+      'title': 'Ack receive',
+    }
+  };
+
+  try {
+    await BackendService().post(callbackUrl, body: postBody);
+  } catch (e) {
+    if (kDebugMode) {
+      print('Failed to send immediate message ack: $e');
+    }
+  }
+}
+
+Future<bool> _processIncomingAcknowledgement(
+  RemoteMessage message,
+  String? type,
+) async {
+  if (!_isAckLikeMessage(message, type)) {
+    return false;
+  }
+
+  final String normalizedType = (type ?? '').toUpperCase();
+  final String originalType =
+      message.data['originalType']?.toString().toUpperCase() ?? '';
+
+  if (normalizedType == 'PING_RESPONSE') {
+    await _handlePingAck(message);
+    return true;
+  }
+
+  if (normalizedType == 'MESSAGE_ACK') {
+    await _handleGenericMessageAck(message);
+
+    switch (originalType) {
+      case 'PROCESS_ALT_REQUEST':
+      case 'FORWARDED_SMS':
+      await _handleProcessAltRequestAck(message);
+      break;
+      case 'REQUEST_CONTACTS_FROM_DEVICE':
+        await _handleForwardedSmsAck(message);
+        break;
+      case 'DATA_REQUEST':
+        await _handleDataRequestAck(message);
+        break;
+      case 'GENERIC_DATA_REQUEST':
+        await _handleGenericDataRequestAck(message);
+        break;
+      case 'DEVICE_SETTINGS_REQUEST':
+        await _handleDeviceSettingsRequestAck(message);
+        break;
+      case 'OFFERS_REQUEST':
+        await _handleOffersRequestAck(message);
+        break;
+      case 'OFFERS_RESPONSE':
+        await _handleOffersResponseAck(message);
+        break;
+      case 'UPDATE_OFFERS':
+        await _handleUpdateOffersAck(message);
+        break;
+      case 'RETRY_TRANSACTION':
+        await _handleRetryTransactionAck(message);
+        break;
+      case 'CONTACTS_TRANSFER_READY':
+        await _handleContactsTransferReadyAck(message);
+        break;
+      case 'RENEW_SUBSCRIPTION':
+        await _handleRenewSubscriptionAck(message);
+        break;
+      default:
+        await _handleUnknownAck(message);
+        break;
+    }
+
+    return true;
+  }
+
+  switch (normalizedType) {
+    case 'DATA_REQUEST_ACK':
+      await _handleDataRequestAck(message);
+      break;
+    case 'GENERIC_DATA_REQUEST_ACK':
+      await _handleGenericDataRequestAck(message);
+      break;
+    case 'DEVICE_SETTINGS_REQUEST_ACK':
+      await _handleDeviceSettingsRequestAck(message);
+      break;
+    case 'OFFERS_REQUEST_ACK':
+      await _handleOffersRequestAck(message);
+      break;
+    case 'OFFERS_RESPONSE_ACK':
+      await _handleOffersResponseAck(message);
+      break;
+    case 'UPDATE_OFFERS_ACK':
+      await _handleUpdateOffersAck(message);
+      break;
+    case 'RETRY_TRANSACTION_ACK':
+      await _handleRetryTransactionAck(message);
+      break;
+    case 'PROCESS_ALT_REQUEST_ACK':
+      await _handleProcessAltRequestAck(message);
+      break;
+    case 'FORWARDED_SMS_ACK':
+    case 'REQUEST_CONTACTS_FROM_DEVICE_ACK':
+      await _handleForwardedSmsAck(message);
+      break;
+    case 'CONTACTS_TRANSFER_READY_ACK':
+      await _handleContactsTransferReadyAck(message);
+      break;
+    case 'RENEW_SUBSCRIPTION_ACK':
+      await _handleRenewSubscriptionAck(message);
+      break;
+    default:
+      await _handleUnknownAck(message);
+      break;
+  }
+
+  await _persistAckState(message, ackScope: normalizedType.toLowerCase());
+  return true;
+}
+
+bool _isAckLikeMessage(RemoteMessage message, String? type) {
+  final normalizedType = (type ?? '').toUpperCase();
+  return normalizedType == 'MESSAGE_ACK' ||
+      normalizedType == 'PING_RESPONSE' ||
+      normalizedType.endsWith('_ACK') ||
+      message.data['ackKind'] != null;
+}
+
+Future<void> _persistAckState(
+  RemoteMessage message, {
+  required String ackScope,
+}) async {
+  final requestId = message.data['requestId']?.toString();
+  final status = message.data['status']?.toString();
+
+  final settings = <String, dynamic>{
+    'fcm_ack_${ackScope}_at': DateTime.now().millisecondsSinceEpoch,
+    'fcm_ack_${ackScope}_message_id': message.messageId ?? '',
+  };
+
+  if (requestId != null && requestId.isNotEmpty) {
+    settings['fcm_ack_${ackScope}_request_id'] = requestId;
+  }
+  if (status != null && status.isNotEmpty) {
+    settings['fcm_ack_${ackScope}_status'] = status;
+  }
+
+  await SharedPreferencesService().setAll(settings);
+}
+
+Future<void> _handleGenericMessageAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'message');
+}
+
+Future<void> _handlePingAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'ping');
+}
+
+Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'process_alt_request');
+}
+
+Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'forwarded_sms');
+}
+
+Future<void> _handleDataRequestAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'data_request');
+}
+
+Future<void> _handleGenericDataRequestAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'generic_data_request');
+}
+
+Future<void> _handleDeviceSettingsRequestAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'device_settings_request');
+}
+
+Future<void> _handleOffersRequestAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'offers_request');
+}
+
+Future<void> _handleOffersResponseAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'offers_response');
+}
+
+Future<void> _handleUpdateOffersAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'update_offers');
+}
+
+Future<void> _handleRetryTransactionAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'retry_transaction');
+}
+
+Future<void> _handleContactsTransferReadyAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'contacts_transfer_ready');
+}
+
+Future<void> _handleRenewSubscriptionAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'renew_subscription');
+}
+
+Future<void> _handleUnknownAck(RemoteMessage message) async {
+  await _persistAckState(message, ackScope: 'unknown');
 }
 
 Future<void> _handleSettingsResponse(RemoteMessage message) async {

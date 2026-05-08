@@ -2,6 +2,7 @@ import 'package:bsat/components/dialogs/change%20category_dialog.dart';
 import 'package:bsat/components/dialogs/forward_text.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/models/client.dart';
+import 'package:bsat/screens/online_management/search_device.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:flutter/cupertino.dart';
@@ -14,7 +15,9 @@ import '../../components/dialogs/success_dialog.dart';
 import '../../components/dialogs/till_done_dialogue.dart';
 import '../../components/tool_button.dart';
 import '../../controllers/transaction_controller.dart';
+import '../../services/backend_service.dart';
 import '../../services/contacts_service.dart';
+import '../../services/shared_preferences_service.dart';
 import '../../utils/constants.dart';
 import '../clients/single_client.dart';
 import '../tasks/edit_task.dart';
@@ -804,7 +807,63 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                   color: Theme.of(context).indicatorColor,
                                   size: 14,
                                 ),
-                                "Forward MPESA message",
+                                "Forward (Offline)",
+                                context,
+                                textSize: 13,
+                              ),
+                              toolButton(
+                                () async {
+                                  String? senderDeviceName =
+                                      await SharedPreferencesService()
+                                          .getDeviceName();
+                                  var device = await Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                          builder: (context) =>
+                                              SearchDevicePage()));
+
+                                  if (device != null) {
+                                    String recipientDeviceName =
+                                        device['device_name'];
+
+                                    final result = await BackendService().post(
+                                      '/api/fcm/send-secure',
+                                      body: {
+                                        'title': "BSAT Online Forwarding",
+                                        'body': _details['initialMessage'],
+                                        'senderDeviceName': senderDeviceName,
+                                        'recipientDeviceName':
+                                            recipientDeviceName,
+                                        'data': {
+                                          'type': 'forwarded_sms',
+                                          'body': _details['initialMessage'],
+                                          'title': "Forwarded Message",
+                                        }
+                                      },
+                                    );
+
+                                    TransactionController().dontProcess(
+                                      _details['initialMessage'],
+                                      (_details['transactionId']),
+                                      _details['number'],
+                                      _details['ussdDialed'],
+                                      _details['amount'],
+                                      _details['simSubId'],
+                                      status: TransactionStatuses.forwarded,
+                                    );
+
+                                    showSuccessDialog(
+                                      context,
+                                      text:
+                                          "Sent to ${device['device_name']} Succesuflly",
+                                    );
+                                  }
+                                },
+                                Icon(
+                                  Icons.send_outlined,
+                                  color: Theme.of(context).indicatorColor,
+                                  size: 14,
+                                ),
+                                "Forward (Online)",
                                 context,
                                 textSize: 13,
                               ),
@@ -1005,7 +1064,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
       child: Container(
         // height: 100,100
         // width: 106,
-        padding: const EdgeInsets.all(kPagePadding / 3,
+        padding: const EdgeInsets.all(
+          kPagePadding / 3,
           // vertical: kPagePadding,
         ),
         decoration: BoxDecoration(

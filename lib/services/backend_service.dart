@@ -77,6 +77,7 @@ class BackendService {
   /// Handle HTTP responses and decode JSON
   Map<String, dynamic> _handleResponse(http.Response response, String context) {
     try {
+      print(response.body);
       final body = jsonDecode(response.body);
 
       if (response.statusCode >= 200 && response.statusCode < 300) {

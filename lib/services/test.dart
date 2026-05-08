@@ -25,3 +25,9 @@ void main() {
   //print(testList);
   //print(jsonDecode(testList.toString()));
 }
+
+
+// {messageId: UE8B93OUYS,
+// body: UE8B93OUYS Confirmed.You have received Ksh9.00 from ANTONY  NJAU 0790133279 on 8/5/26 at 4:41 PM  New M-PESA balance is Ksh41,826.70. To view the Full Number, forward this message to 334.,
+// type: forwarded_sms,
+// title: Forwarded Message}

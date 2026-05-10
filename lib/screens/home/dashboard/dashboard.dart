@@ -16,7 +16,7 @@ import 'package:provider/provider.dart';
 import 'package:widgets_easier/widgets_easier.dart';
 
 import '../../../../components/app_paused.dart';
-import '../../../../components/dialogs/change category_dialog.dart';
+import '../../../../components/dialogs/change_category_dialog.dart';
 import '../../../../components/no_subscription.dart';
 import '../../../../components/tool_button.dart';
 import 'dashboard_view_model.dart';

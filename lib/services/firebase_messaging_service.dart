@@ -87,6 +87,11 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     }
   }
 
+  print("Hello fcm");
+
+  print(
+      "Received FCM message with type: $type, data: ${message.data}, notification: ${message.notification}");
+
   if (await _processIncomingAcknowledgement(message, type)) {
     return;
   }
@@ -465,33 +470,37 @@ Future<void> _sendImmediateAck(
   final payload = {
     'type': 'MESSAGE_ACK',
     'ackKind': 'received',
-    'messageId': message.messageId ?? '',
-    'requestId': message.data['requestId'] ?? '',
+    'messageId': message.messageId?.toString() ?? '',
+    'requestId': message.data['requestId']?.toString() ?? '',
+    'transactionId': message.data['transactionId']?.toString() ?? '',
     'originalType': originalType ?? '',
     'status': 'received',
-    'receivedAt': DateTime.now().millisecondsSinceEpoch,
+    'receivedAt': DateTime.now().millisecondsSinceEpoch.toString(),
     'senderDeviceName': senderDeviceName,
     'recipientDeviceName': recipientDeviceName,
     'body': 'received',
     'title': 'received',
   };
 
-  // The backend expects 'title' and 'body' to be strings. Send the payload as
-  // a JSON string in 'body' and include the device names explicitly.
+  // The backend expects 'title' and 'body' to be strings. Spread the payload
+  // into 'data' to ensure all fields are primitives (strings/numbers), avoiding
+  // the [object Object] serialization issue caused by nested maps.
   final postBody = {
     'title': 'BSAT Online Forwarding',
     'body': jsonEncode(payload),
     'senderDeviceName': senderDeviceName,
     'recipientDeviceName': recipientDeviceName,
     'data': {
+      ...payload,
       'type': 'MESSAGE_ACK',
-      'body': payload,
       'title': 'Ack receive',
+      'body': jsonEncode(payload),
     }
   };
 
   try {
     await BackendService().post(callbackUrl, body: postBody);
+    print("Ack sent ");
   } catch (e) {
     if (kDebugMode) {
       print('Failed to send immediate message ack: $e');
@@ -506,6 +515,12 @@ Future<bool> _processIncomingAcknowledgement(
   if (!_isAckLikeMessage(message, type)) {
     return false;
   }
+
+  var data = message.data;
+
+  print("${data['body']}");
+
+  print("Received ack from backend ${data['body']}");
 
   final String normalizedType = (type ?? '').toUpperCase();
   final String originalType =
@@ -645,6 +660,20 @@ Future<void> _handlePingAck(RemoteMessage message) async {
 }
 
 Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
+
+  String transactionId = message.data['transactionId'] ?? '';
+
+  print("TransactionId = $transactionId");
+
+  await SQLiteService().updateStuff(
+    {
+      'status': TransactionStatuses.forwarded,
+    },
+    'id = ?',
+    [transactionId],
+    'transactions',
+  );
+
   await _persistAckState(message, ackScope: 'process_alt_request');
 }
 

@@ -7,7 +7,7 @@ import 'package:bsat/utils/date_ops.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:infinite_scroll_pagination/infinite_scroll_pagination.dart';
-import 'package:bsat/components/dialogs/change category_dialog.dart';
+import 'package:bsat/components/dialogs/change_category_dialog.dart';
 import '../../components/dialogs/confirmation_dialog.dart';
 import '../../components/dialogs/loading_dialog.dart';
 import '../../components/tool_button.dart';

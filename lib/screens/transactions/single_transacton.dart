@@ -1,4 +1,4 @@
-import 'package:bsat/components/dialogs/change%20category_dialog.dart';
+import 'package:bsat/components/dialogs/change_category_dialog.dart';
 import 'package:bsat/components/dialogs/forward_text.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/models/client.dart';

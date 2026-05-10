@@ -552,7 +552,7 @@ class TransactionController {
     int amount,
     String trimmedBody,
     String smsMessageBody,
-    String transactionId,
+    String mpesaCode,
     int number,
     String sourceName,
     bool autoSaveContacts, {
@@ -609,7 +609,7 @@ class TransactionController {
 
         return await dontProcess(
           smsMessageBody,
-          transactionId,
+          mpesaCode,
           number,
           '',
           amount,
@@ -646,7 +646,7 @@ class TransactionController {
                 } else {
                   return await dontProcess(
                     smsMessageBody,
-                    transactionId,
+                    mpesaCode,
                     number,
                     '',
                     amount,
@@ -658,6 +658,23 @@ class TransactionController {
                     source: name,
                   );
                 }
+
+                int? transactionId = await dontProcess(
+                  smsMessageBody,
+                  mpesaCode,
+                  number,
+                  '',
+                  amount,
+                  -1,
+                  status: TransactionStatuses.done,
+                  reply:
+                  'Forwarding to device',
+                  canRetry: true,
+                  source: name,
+                );
+
+
+
                 final result = await BackendService().post(
                   '/api/fcm/send-secure',
                   body: {
@@ -669,7 +686,8 @@ class TransactionController {
                       'type': 'forwarded_sms',
                       'body': smsMessageBody,
                       'title': "Forwarded Message",
-                      'messageId': transactionId,
+                      'messageId': mpesaCode,
+                      'transactionId': transactionId,
                       'senderDeviceName': senderDeviceName,
                     }
                   },
@@ -679,39 +697,18 @@ class TransactionController {
                 
                 print("MessageID: $messageId");
 
-                // smsMessageBody =
-                //     "$smsMessageBody $interpunct TDN$recipientDeviceName";
-
-                // retry after 5 seconds on error
                 if (result['success'] != true) {
-                  return await dontProcess(
-                    smsMessageBody,
-                    transactionId,
-                    number,
-                    '',
-                    amount,
-                    -1,
-                    status: TransactionStatuses.error,
-                    reply:
-                        'Forwarding failed. Server not reachable. Will retry later.',
-                    canRetry: true,
-                    source: name,
-                  );
+
+                  await _sqliteService.updateStuff(
+                      {'status': TransactionStatuses.error, 'ussdReply' : 'Forwarding failed. Server not reachable. Will retry later.',}, 'id = ?', [transactionId], 'transactions');
+
+                  return transactionId;
                 }
 
-                return await dontProcess(
-                  smsMessageBody,
-                  transactionId,
-                  number,
-                  '',
-                  amount,
-                  -1,
-                  status: TransactionStatuses.forwarded,
-                  reply:
-                      'Forwarded to ${device['device_name']} (ID: ${device['device_id']})',
-                  canRetry: false,
-                  source: name,
-                );
+                await _sqliteService.updateStuff(
+                    {'status': TransactionStatuses.done, 'ussdReply' : 'Forwarded to ${device['device_name']} (ID: ${device['device_id']})',}, 'id = ?', [transactionId], 'transactions');
+
+                return transactionId;
               }
             }
           }
@@ -1240,6 +1237,7 @@ class TransactionController {
                 "Running transaction with alternative number: $altNumber");
             int? transactionId = await makeTransactionGivenSmsBody(altMessage);
             if (transactionId != null) {
+              id = transactionId;
               // get transactionstatus of transactionId
               Map<String, dynamic> tx = (await _sqliteService.queryCustom(
                 'transactions',

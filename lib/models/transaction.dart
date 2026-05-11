@@ -1,5 +1,5 @@
 class MyTransaction {
-  final int id;
+  late int id;
   final String initialMessage;
   final String transactionId;
   final int number;
@@ -10,7 +10,7 @@ class MyTransaction {
   final String status;
   final int simSubId;
   final String source;
-  final String timeStamp;
+  final int timeStamp;
   final int canRetry;
   final String smsDate;
   final String smsTime;
@@ -39,7 +39,7 @@ class MyTransaction {
       initialMessage: map['initialMessage'],
       transactionId: map['transactionId'],
       number: map['number'],
-      dateTime: DateTime.parse(map['date'] + ' ' + map['time']),
+      dateTime: DateTime.fromMillisecondsSinceEpoch(map['timeStamp']),
       ussdDialed: map['ussdDialed'],
       ussdReply: map['ussdReply'],
       amount: map['amount'],
@@ -51,5 +51,26 @@ class MyTransaction {
       smsDate: map['smsDate'],
       smsTime: map['smsTime'],
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'initialMessage': initialMessage,
+      'transactionId': transactionId,
+      'number': number,
+      'ussdDialed': ussdDialed,
+      'ussdReply': ussdReply,
+      'amount': amount,
+      'status': status,
+      'simSubId': simSubId,
+      'source': source,
+      'timeStamp': timeStamp,
+      'canRetry': canRetry,
+      'smsDate': smsDate,
+      'smsTime': smsTime,
+      'date': smsDate,
+      'time': smsTime,
+    };
   }
 }

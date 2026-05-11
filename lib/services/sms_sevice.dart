@@ -82,7 +82,7 @@ onMessageReceive(dynamic smsMessage) async {
       );
       //
     } else if (addr == "334") {
-      await TransactionController().sort334Reply(smsMessage);
+      await TransactionController().sortMessageContent(smsMessage);
     } else {
       await TransactionController().sortClientText(smsMessage);
     }

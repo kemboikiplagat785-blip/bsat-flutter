@@ -3,6 +3,7 @@ import 'package:bsat/screens/home/settings_page.dart';
 import 'package:bsat/screens/home/tools_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../utils/constants.dart';
 import '../transactions/transaction_history.dart';
 import '../settings/settings.dart';
@@ -27,6 +28,18 @@ class _HomePageState extends State<HomePage> {
     const ToolsPage(),
     const HomeSettingsPage(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _requestPermissions();
+  }
+
+  Future<void> _requestPermissions() async {
+    // Request Phone permission for call state monitoring in background service
+    // This must be requested in the foreground with an Activity context
+    await Permission.phone.request();
+  }
 
   @override
   Widget build(BuildContext context) {

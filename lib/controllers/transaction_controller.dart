@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:another_telephony/telephony.dart';
+import 'package:bsat/models/transaction.dart';
 import 'package:bsat/services/auth_service.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:call_log/call_log.dart';
@@ -557,6 +558,7 @@ class TransactionController {
     String sourceName,
     bool autoSaveContacts, {
     String? status,
+    int? txId,
   }) async {
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
@@ -618,6 +620,7 @@ class TransactionController {
           reply: 'Forwarding to ${toForward[0]["numberToReceive"]}: $reply',
           canRetry: false,
           source: name,
+          id: txId,
         );
       }
     }
@@ -659,7 +662,7 @@ class TransactionController {
                   );
                 }
 
-                int? transactionId = await dontProcess(
+                int? transactionId = txId ?? await dontProcess(
                   smsMessageBody,
                   mpesaCode,
                   number,
@@ -667,13 +670,10 @@ class TransactionController {
                   amount,
                   -1,
                   status: TransactionStatuses.done,
-                  reply:
-                  'Forwarding to device',
+                  reply: 'Forwarding to device',
                   canRetry: true,
                   source: name,
                 );
-
-
 
                 final result = await BackendService().post(
                   '/api/fcm/send-secure',
@@ -692,21 +692,34 @@ class TransactionController {
                     }
                   },
                 );
-                
+
                 String messageId = result['messageId'] ?? "";
-                
+
                 print("MessageID: $messageId");
 
                 if (result['success'] != true) {
-
                   await _sqliteService.updateStuff(
-                      {'status': TransactionStatuses.error, 'ussdReply' : 'Forwarding failed. Server not reachable. Will retry later.',}, 'id = ?', [transactionId], 'transactions');
+                      {
+                        'status': TransactionStatuses.error,
+                        'ussdReply':
+                            'Forwarding failed. Server not reachable. Will retry later.',
+                      },
+                      'id = ?',
+                      [transactionId],
+                      'transactions');
 
                   return transactionId;
                 }
 
                 await _sqliteService.updateStuff(
-                    {'status': TransactionStatuses.done, 'ussdReply' : 'Forwarded to ${device['device_name']} (ID: ${device['device_id']})',}, 'id = ?', [transactionId], 'transactions');
+                    {
+                      'status': TransactionStatuses.done,
+                      'ussdReply':
+                          'Forwarded to ${device['device_name']} (ID: ${device['device_id']})',
+                    },
+                    'id = ?',
+                    [transactionId],
+                    'transactions');
 
                 return transactionId;
               }
@@ -1016,13 +1029,8 @@ class TransactionController {
   }
 
   Future<void> redoTransaction(
-    int id,
-    String ussdCode,
-    int simSubId,
-    int canRetry,
-    String reply,
-  {String? mpesaMessage}
-  ) async {
+      int id, String ussdCode, int simSubId, int canRetry, String reply,
+      {String? mpesaMessage}) async {
     print(
         "Retrying transaction $id with code $ussdCode on sim $simSubId. Can retry: $canRetry. Previous reply: $reply");
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
@@ -1034,20 +1042,36 @@ class TransactionController {
       limit: 1,
     );
 
+    MyTransaction transaction = MyTransaction.fromMap(tx.first);
+
+    String trimmedBody = transaction.initialMessage.length > 160
+        ? transaction.initialMessage.substring(0, 160)
+        : transaction.initialMessage;
+
+    int? newTransactionId = await forwardIfNeeded(
+        transaction.amount,
+        trimmedBody,
+        transaction.initialMessage,
+        transaction.transactionId,
+        transaction.number,
+        transaction.source,
+        true, txId: id,);
+
+    if (newTransactionId != null) {
+      await purgeAndMerge(newTransactionId, id);
+      return;
+    }
+
     if (tx.isEmpty) {
       debugPrint("Transaction with id $id not found for retry.");
       return;
     }
 
-    Map<String, dynamic> transaction = tx.first;
+    // Map<String, dynamic> transaction = tx.first;
 
-    String initialMessage = transaction['initialMessage'] ?? '';
-
-    int compoundedAmount = transaction['amount'] ?? 0;
-
-    if (transaction.isEmpty) {
-      return;
-    }
+    // if (transaction.isEmpty) {
+    //   return;
+    // }
 
     bool hasPaid = await _paymentOps.hasActiveSubscription();
 
@@ -1074,23 +1098,23 @@ class TransactionController {
     }
 
     int number = getNumberFromCode(ussdCode);
-    int amount = getAmount(initialMessage);
+    int amount = getAmount(transaction.initialMessage);
 
     if (ussdCode.isEmpty) {
-      number = extract9DigitNumber(initialMessage);
+      number = extract9DigitNumber(transaction.initialMessage);
     }
 
     if (number == 0) {
-      number = transaction['number'] ?? 0;
+      number = transaction.number;
     }
 
     if (amount <= 0) {
-      amount = transaction['amount'] ?? 0;
+      amount = transaction.amount;
     }
 
-    if (compoundedAmount > 0) {
-      amount = compoundedAmount;
-    }
+    // if (compoundedAmount > 0) {
+    //   amount = compoundedAmount;
+    // }
 
     //print("New number: $number, amount: $amount, ussdCode: $ussdCode");
 
@@ -1103,27 +1127,21 @@ class TransactionController {
     if (lecodes.isEmpty) {
       int? transactionId = await forwardIfNeeded(
         amount,
-        initialMessage,
-        initialMessage,
-        transaction['transactionId'] ?? '',
+        trimmedBody,
+        transaction.initialMessage,
+        transaction.transactionId,
         number,
-        transaction['source'] ?? '',
+        transaction.source,
         false,
         status: TransactionStatuses.unavailableOffer,
+        txId: id,
       );
 
       if (transactionId != null) {
-        await _sqliteService.deleteStuff(
-          id,
-          'transactions',
-        );
+        await purgeAndMerge(transactionId, id);
         return;
       } else if (ussdCode.isNotEmpty && simSubId > -1) {
-        await _sqliteService.deleteStuff(
-          id,
-          'transactions',
-        );
-        await transactGivenUssdAndDialSim(
+        transactionId = await transactGivenUssdAndDialSim(
           ussdCode,
           simSubId,
           amount,
@@ -1131,6 +1149,8 @@ class TransactionController {
           extract9DigitNumber(ussdCode),
           message: mpesaMessage,
         );
+
+        await purgeAndMerge(transactionId ?? -1, id);
         return;
       }
     }
@@ -1186,16 +1206,19 @@ class TransactionController {
 
       response[1] = await transactionStatus(response);
 
-      if((response[0]).toString().contains("MissingPluginException")) {
+      if ((response[0]).toString().contains("MissingPluginException")) {
         print("MissingPluginException yoo");
-        await _sqliteService.deleteStuff(id, 'transactions');
-        await transactGivenUssdAndDialSim(
+        int? newTxId = await transactGivenUssdAndDialSim(
           ussdCode,
           simSubId,
           amount,
           true,
           extract9DigitNumber(ussdCode),
         );
+
+        if (newTxId != null) {
+          await purgeAndMerge(newTxId, id);
+        }
       }
     } else {
       response = await PhoneService().makeMyRequest(
@@ -1221,33 +1244,29 @@ class TransactionController {
           dbClient.alternativePhoneNumber != null &&
           dbClient.alternativePhoneNumber!.trim().isNotEmpty) {
         int altNumber = extract9DigitNumber(dbClient.alternativePhoneNumber!);
-        if (!initialMessage.contains(bsatMessage)) {
+        if (!transaction.initialMessage.contains(bsatMessage)) {
           String altMessage = replaceNumberInMessage(
             "0$number",
             dbClient.alternativePhoneNumber ?? "",
-            initialMessage,
+            transaction.initialMessage,
             bsatMessage,
           );
           if (altNumber != number && altNumber > 0) {
-            await _sqliteService.deleteStuff(
-              id,
-              'transactions',
-            );
-            debugPrint(
-                "Running transaction with alternative number: $altNumber");
-            int? transactionId = await makeTransactionGivenSmsBody(altMessage);
-            if (transactionId != null) {
-              id = transactionId;
+            int? newTransactionId =
+                await makeTransactionGivenSmsBody(altMessage);
+            if (newTransactionId != null) {
+              await purgeAndMerge(newTransactionId, id);
               // get transactionstatus of transactionId
-              Map<String, dynamic> tx = (await _sqliteService.queryCustom(
+              List<Map<String, dynamic>> txs =
+                  (await _sqliteService.queryCustom(
                 'transactions',
                 'id = ?',
-                [transactionId],
+                [newTransactionId],
                 limit: 1,
-              ))
-                  .first;
+              ));
               if (tx.isNotEmpty) {
-                if (tx['status'] != TransactionStatuses.secondAttempt) return;
+                if (tx.first['status'] != TransactionStatuses.secondAttempt)
+                  return;
               }
             }
           }
@@ -1328,7 +1347,7 @@ class TransactionController {
                   'type': 'process_alt_request',
                   'ussdCode': altUssdCode,
                   'isAdvanced': altIsAdvanced.toString(),
-                  'smsMessage': initialMessage,
+                  'smsMessage': transaction.initialMessage,
                   'body': 'Forwarded alternative USSD request',
                   'title': "Forwarded Code",
                 }
@@ -1369,7 +1388,7 @@ class TransactionController {
         response[1] == "" ? "No reply" : response[1],
         DateTime.now().millisecondsSinceEpoch,
         canRetry,
-        initialMessage,
+        transaction.initialMessage,
         id,
       ],
     );
@@ -1391,17 +1410,20 @@ class TransactionController {
                 .first['amount'] ??
             '';
 
-    number = number < 100000000 ? extract9DigitNumber(initialMessage) : number;
-    debugPrint(getName(initialMessage));
+    number = number < 100000000
+        ? extract9DigitNumber(transaction.initialMessage)
+        : number;
+    debugPrint(getName(transaction.initialMessage));
     debugPrint(amount.toString());
     debugPrint(number.toString());
 
     await processReply(
       number,
       response[1],
-      getName(initialMessage).split(' ')[0],
-      getName(initialMessage).trim().split(RegExp(r'\s+')).length > 1
-          ? getName(initialMessage).trim().split(RegExp(r'\s+'))[1]
+      getName(transaction.initialMessage).split(' ')[0],
+      getName(transaction.initialMessage).trim().split(RegExp(r'\s+')).length >
+              1
+          ? getName(transaction.initialMessage).trim().split(RegExp(r'\s+'))[1]
           : '',
       amount,
     );
@@ -1487,7 +1509,8 @@ class TransactionController {
       return;
     }
 
-    List<SmsMessage> smss = await getAllSince(DateTime.now().millisecondsSinceEpoch + 24 * 60 * 60 * 1000);
+    List<SmsMessage> smss = await getAllSince(
+        DateTime.now().millisecondsSinceEpoch + 24 * 60 * 60 * 1000);
 
     List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
       'transactions',
@@ -1523,8 +1546,18 @@ class TransactionController {
     bool? canRetry,
     int? id,
   }) async {
+    List<Map<String, dynamic>> transactions = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [id ?? -1],
+    );
+    if (transactions.isNotEmpty && id != null) {
+      await _sqliteService.deleteStuff(id, 'transactions');
+    }
+
     return await _sqliteService.insertStuff(
       {
+        'id': id,
         'initialMessage': initialMessage,
         'transactionId': transactionId,
         'number': number,
@@ -1583,7 +1616,15 @@ class TransactionController {
       'transactions',
       query,
       args,
-      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
+      columns: [
+        'id',
+        'ussdDialed',
+        'simSubId',
+        'canRetry',
+        'ussdReply',
+        'amount',
+        'initialMessage'
+      ],
     );
 
     //print('Retrying all: ${rawStuff.length}');
@@ -1591,6 +1632,23 @@ class TransactionController {
     // debugPrint('Retrying all transactions: ${rawStuff}');
 
     for (var stuff in rawStuff) {
+      List<Map<String, dynamic>> codeMap = await _sqliteService.queryCustom(
+        'ussdCodes',
+        'amount = ?',
+        [rawStuff.first['amount']],
+        limit: 1,
+      );
+
+      if (codeMap.isNotEmpty) {
+        Map<String, dynamic> code = codeMap.first;
+
+        if (code.isNotEmpty) {
+          if (code['enabled'] != 1) {
+            continue;
+          }
+        }
+      }
+
       debugPrint(' retrytimes $retryTimes, canRetry ${stuff['canRetry']}');
       await redoTransaction(
         stuff['id'],
@@ -1845,7 +1903,8 @@ class TransactionController {
       return TransactionStatuses.error;
     }
 
-    if (RegExp(r'Invalid choice|max number of menu|error from application23', caseSensitive: false)
+    if (RegExp(r'Invalid choice|max number of menu|error from application23',
+            caseSensitive: false)
         .hasMatch(responseText)) {
       return TransactionStatuses.error;
     }
@@ -1873,7 +1932,7 @@ class TransactionController {
     return response[1];
   }
 
-  Future<void> transactGivenUssdAndDialSim(
+  Future<int?> transactGivenUssdAndDialSim(
       String ussdCode, int simSubId, int amount, bool isAdvanced, int number,
       {String? message}) async {
     bool hasPaid = await _paymentOps.hasActiveSubscription();
@@ -1894,7 +1953,7 @@ class TransactionController {
         List<String> reply = await _paymentOps.autoRenewSubscription();
 
         if (reply[1] != TransactionStatuses.done) {
-          dontProcess(
+          return await dontProcess(
             message ?? "",
             "00",
             number,
@@ -1904,10 +1963,9 @@ class TransactionController {
             source: "manual",
             reply: 'No subscription found. Please renew.',
           );
-          return;
         }
       } else {
-        dontProcess(
+        return dontProcess(
           message ?? "",
           "00",
           number,
@@ -1916,7 +1974,6 @@ class TransactionController {
           simSubId,
           source: "manual",
         );
-        return;
       }
     }
 
@@ -1931,7 +1988,7 @@ class TransactionController {
       if (anotherRunning) {
         transStatus = TransactionStatuses.error;
         msg = "Waiting for turn ...";
-        dontProcess(
+        return await dontProcess(
           message ?? "",
           "00",
           number,
@@ -1943,8 +2000,6 @@ class TransactionController {
           canRetry: true,
           source: "manual",
         );
-
-        return;
       }
 
       response = await _phoneService.makeAdvancedRequest(
@@ -1965,7 +2020,7 @@ class TransactionController {
 
     response[1] = await transactionStatus(response);
 
-    await _sqliteService.insertStuff(
+    return await _sqliteService.insertStuff(
       {
         'initialMessage': 'Manual',
         'transactionId': '',
@@ -2239,8 +2294,10 @@ class TransactionController {
       String? unmaskedReply = unmaskNumberInMessage(number, initialMessage);
 
       if (unmaskedReply != null) {
-        await _sqliteService.deleteStuff(transaction['id'], 'transactions');
-        await makeTransactionGivenSmsBody(unmaskedReply);
+        int? newTxId = await makeTransactionGivenSmsBody(unmaskedReply);
+        if (newTxId != null) {
+          await purgeAndMerge(newTxId, transaction['id']);
+        }
         return;
       }
     }
@@ -2308,28 +2365,32 @@ class TransactionController {
               unmaskNumberInMessage('0$number', initialMessage);
 
           if (unmaskedReply != null) {
-            await _sqliteService.deleteStuff(transaction['id'], 'transactions');
-            makeTransactionGivenSmsBody(unmaskedReply);
+            int? newTxId = await makeTransactionGivenSmsBody(unmaskedReply);
+            if (newTxId != null) {
+              await purgeAndMerge(newTxId, transaction['id']);
+            }
             return unmaskedReply;
           }
 
-          unmaskedReply = unmaskNumberInMessage('0$numberInText', initialMessage);
+          unmaskedReply =
+              unmaskNumberInMessage('0$numberInText', initialMessage);
           if (unmaskedReply != null) {
-            await _sqliteService.deleteStuff(transaction['id'], 'transactions');
-            makeTransactionGivenSmsBody(unmaskedReply);
+            int? newTxId = await makeTransactionGivenSmsBody(unmaskedReply);
+            if (newTxId != null) {
+              await purgeAndMerge(newTxId, transaction['id']);
+            }
             return unmaskedReply;
           }
         }
       }
 
       // check message content for a valid phone number(s) using extract9DigitNumber
-      sort334Reply(message);
-
+      sortMessageContent(message);
     }
     return null;
   }
 
-  Future<String?> sort334Reply(SmsMessage smsMessage) async {
+  Future<String?> sortMessageContent(SmsMessage smsMessage) async {
     // reply might contain phone number.
     int number = extract9DigitNumber(smsMessage.body ?? "");
 
@@ -2344,21 +2405,23 @@ class TransactionController {
     ))
         .first;
 
-    if(transaction == null) return null;
+    if (transaction == null) return null;
 
     // for (var transaction in transactions) {
     String initialMessage = transaction['initialMessage'] ?? '';
     String? unmaskedReply = unmaskNumberInMessage('0$number', initialMessage);
 
     if (unmaskedReply != null) {
-      await _sqliteService.deleteStuff(transaction['id'], 'transactions');
       // new client
       Client client = Client.fromMpesaMessage(unmaskedReply);
 
       await recordClientPurchase(
           client.phoneNumber, "${client.firstName} ${client.lastName}");
 
-      await makeTransactionGivenSmsBody(unmaskedReply);
+      int? newTxId = await makeTransactionGivenSmsBody(unmaskedReply);
+      if (newTxId != null) {
+        await purgeAndMerge(newTxId, transaction['id']);
+      }
       return unmaskedReply;
     }
 
@@ -2400,8 +2463,10 @@ class TransactionController {
       if (initialMessage != null) {
         initialMessage = "Yesterday's transaction redone: $initialMessage";
 
-        await _sqliteService.deleteStuff(recommendation['id'], 'transactions');
-        await makeTransactionGivenSmsBody(initialMessage);
+        int? newTxId = await makeTransactionGivenSmsBody(initialMessage);
+        if (newTxId != null) {
+          await purgeAndMerge(newTxId, recommendation['id']);
+        }
       }
     }
   }
@@ -2513,5 +2578,18 @@ class TransactionController {
     } catch (e) {
       debugPrint('Client batch upload error: $e');
     }
+  }
+
+  Future<void> purgeAndMerge(int toPurgeId, int toMergeId) async {
+    print("PUEREGGEGEGEG");
+    MyTransaction purgeTransaction = MyTransaction.fromMap(
+        (await _sqliteService.queryOne('transactions', toPurgeId)));
+
+    await _sqliteService.deleteStuff(toMergeId, 'transactions');
+    await _sqliteService.deleteStuff(toPurgeId, 'transactions');
+
+    purgeTransaction.id = toMergeId;
+
+    await _sqliteService.insertStuff(purgeTransaction.toMap(), 'transactions');
   }
 }

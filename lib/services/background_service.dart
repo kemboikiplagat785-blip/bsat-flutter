@@ -84,14 +84,15 @@ void onStart(ServiceInstance serviceInstance) async {
   if (serviceInstance is AndroidServiceInstance) {
     phoneStateSubscription = PhoneState.stream.listen((state) async {
       if (state.status == PhoneStateStatus.CALL_INCOMING) {
-        // ask permissions to access call logs
-
-        if (!(await Permission.phone.status).isGranted) {
-          Permission.phone.request();
+        // Check if permission is already granted
+        // Note: Permission requests cannot be made from background service (no Activity context)
+        // Permission must be requested in the main app when in foreground
+        if ((await Permission.phone.status).isGranted) {
+          print("call from ${state.number}");
+          transactionController.unmaskFromCall(state.number ?? "");
+        } else {
+          print("call from ${state.number} - Permission.phone not granted, skipping unmask");
         }
-
-        print("call from ${state.number}");
-        transactionController.unmaskFromCall(state.number ?? "");
       }
     });
   }

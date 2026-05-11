@@ -187,7 +187,7 @@ Widget transactionListItem(
                                       ? CupertinoIcons.checkmark_seal_fill
                                       : CupertinoIcons.checkmark,
                                   color: status ==
-                                          TransactionStatuses.secondAttempt
+                                          TransactionStatuses.secondAttempt || status == TransactionStatuses.done
                                       ? kWarningColor
                                       : kPrimaryColor,
                                 ),

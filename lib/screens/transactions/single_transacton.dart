@@ -1,5 +1,6 @@
 import 'package:bsat/components/dialogs/change_category_dialog.dart';
 import 'package:bsat/components/dialogs/forward_text.dart';
+import 'package:bsat/components/dialogs/show_confirm_dialog.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/models/client.dart';
 import 'package:bsat/screens/online_management/search_device.dart';
@@ -796,11 +797,53 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                   int numb = toForward.isNotEmpty
                                       ? toForward[0]['numberToReceive']
                                       : 0;
-                                  await showForwardTextDialog(
+                                  String? number = (await showForwardTextDialog(
                                     context,
-                                    _details['initialMessage'],
                                     numb,
-                                  );
+                                  ));
+
+                                  if (number != null) {
+                                    if (number.length < 10) return;
+                                    if (number.length == 12) {
+                                      number =
+                                          number.substring(2, number.length);
+                                    }
+
+                                    sendEvenInBackground(
+                                      '254${int.parse(number)}',
+                                      _details['initialMessage'],
+                                    );
+                                    Navigator.of(context).pop(number);
+                                  }
+
+                                  await TransactionController().dontProcess(
+                                      _details['initialMessage'],
+                                      (_details['transactionId']),
+                                      _details['number'],
+                                      _details['ussdDialed'],
+                                      _details['amount'],
+                                      _details['simSubId'],
+                                      status: TransactionStatuses.forwarded,
+                                      source: _details['source'],
+                                      canRetry: _details['canRetry'] == 1,
+                                      reply: 'Forwarded to ${numb}');
+
+                                  await showConfirmDeleteDialog(context,
+                                          title: 'Delete Transaction?',
+                                          message:
+                                              'Do you want to delete this transaction? This cannot be undone.',
+                                          btnText: 'Delete')
+                                      .then((value) async {
+                                    if (value ?? false) {
+                                      showLoadingDialog(context);
+                                      await _sqliteService.deleteStuff(
+                                        _details["id"],
+                                        "transactions",
+                                      );
+                                      Navigator.pop(context);
+                                      Navigator.pop(context);
+                                    }
+                                  });
                                 },
                                 Icon(
                                   Icons.send_outlined,
@@ -822,8 +865,35 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                               SearchDevicePage()));
 
                                   if (device != null) {
+                                    await showConfirmDialog(context,
+                                            title: 'Confirm Forwarding',
+                                            message:
+                                                'Do you want to forward this transaction to ${device['device_name']} ?')
+                                        .then((confirmed) async {
+                                      if (confirmed ?? false) {
+                                        showLoadingDialog(context);
+                                      } else {
+                                        return;
+                                      }
+                                    });
+
                                     String recipientDeviceName =
                                         device['device_name'];
+
+                                    int? txId = await TransactionController()
+                                        .dontProcess(
+                                      _details['initialMessage'],
+                                      (_details['transactionId']),
+                                      _details['number'],
+                                      _details['ussdDialed'],
+                                      _details['amount'],
+                                      _details['simSubId'],
+                                      status: TransactionStatuses.done,
+                                      source: _details['source'],
+                                      canRetry: _details['canRetry'] == 1,
+                                      reply:
+                                          'Forwarding to ${device['device_name']}',
+                                    );
 
                                     final result = await BackendService().post(
                                       '/api/fcm/send-secure',
@@ -836,26 +906,38 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                         'data': {
                                           'type': 'forwarded_sms',
                                           'body': _details['initialMessage'],
+                                          'transactionId': txId,
                                           'title': "Forwarded Message",
+                                          'senderDeviceName': senderDeviceName,
                                         }
                                       },
                                     );
 
-                                    TransactionController().dontProcess(
-                                      _details['initialMessage'],
-                                      (_details['transactionId']),
-                                      _details['number'],
-                                      _details['ussdDialed'],
-                                      _details['amount'],
-                                      _details['simSubId'],
-                                      status: TransactionStatuses.forwarded,
-                                    );
-
-                                    showSuccessDialog(
+                                    await showSuccessDialog(
                                       context,
                                       text:
                                           "Sent to ${device['device_name']} Succesuflly",
                                     );
+
+                                    await showConfirmDeleteDialog(context,
+                                            title: 'Delete Transaction?',
+                                            message:
+                                                'Do you want to delete this transaction? This cannot be undone.',
+                                            btnText: 'Delete')
+                                        .then((value) async {
+                                      if (value ?? false) {
+                                        showLoadingDialog(context);
+                                        await _sqliteService.deleteStuff(
+                                          _details["id"],
+                                          "transactions",
+                                        );
+
+                                        Navigator.pop(context);
+                                        Navigator.pop(context);
+                                      }
+                                    });
+
+                                    Navigator.pop(context);
                                   }
                                 },
                                 Icon(

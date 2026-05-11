@@ -1,7 +1,12 @@
 import 'dart:async';
 import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
+import 'package:bsat/components/dialogs/forward_text.dart';
 import 'package:bsat/components/transaction_list_item.dart';
 import 'package:bsat/controllers/transaction_controller.dart';
+import 'package:bsat/screens/online_management/search_device.dart';
+import 'package:bsat/services/backend_service.dart';
+import 'package:bsat/services/shared_preferences_service.dart';
+import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:flutter/cupertino.dart';
@@ -21,6 +26,8 @@ enum _SelectionMenuAction {
   changeCategory,
   range,
   toggleSelectAll,
+  forwardAllOnline,
+  forwardAllOffline,
 }
 
 class TransactionHistoryPage extends StatefulWidget {
@@ -467,6 +474,12 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           case _SelectionMenuAction.changeCategory:
             await _handleChangeCategorySelected();
             break;
+          case _SelectionMenuAction.forwardAllOnline:
+            await _handleForwardAllOnlineSelected();
+            break;
+          case _SelectionMenuAction.forwardAllOffline:
+            await _handleForwardAllOfflineSelected();
+            break;
           case _SelectionMenuAction.range:
             setState(() {
               _isRangeSelectMode = true;
@@ -503,6 +516,14 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           value: _SelectionMenuAction.changeCategory,
           child: Text('Change category'),
         ),
+        const PopupMenuItem(
+          value: _SelectionMenuAction.forwardAllOnline,
+          child: Text('Forward all online'),
+        ),
+        const PopupMenuItem(
+          value: _SelectionMenuAction.forwardAllOffline,
+          child: Text('Forward all offline'),
+        ),
         PopupMenuItem(
           value: _SelectionMenuAction.toggleSelectAll,
           child: Text(allVisibleSelected
@@ -510,6 +531,206 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               : 'Select all visible'),
         ),
       ],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _getSelectedTransactions() async {
+    final selectedIds = _selectedTransactionIds.toList()..sort();
+    if (selectedIds.isEmpty) return [];
+
+    final placeholders = List.filled(selectedIds.length, '?').join(', ');
+    return databaseHelper.queryCustom(
+      'transactions',
+      'id IN ($placeholders)',
+      selectedIds,
+      orderBy: 'id ASC',
+    );
+  }
+
+  int? _toInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    return int.tryParse(value.toString());
+  }
+
+  // Future<int?> _resolveOfflineForwardNumber(int amount) async {
+  //   final matches = await databaseHelper.queryCustom(
+  //     'forwarded',
+  //     '(amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)',
+  //     [
+  //       '[$amount,%',
+  //       '%,$amount,%',
+  //       '%,$amount]',
+  //       '[$amount]',
+  //     ],
+  //     limit: 1,
+  //   );
+  //
+  //   if (matches.isEmpty) return null;
+  //   return _toInt(matches.first['numberToReceive']);
+  // }
+
+  Future<void> _handleForwardAllOfflineSelected() async {
+    if (_selectedTransactionIds.isEmpty) return;
+
+    final confirm = await confirmationDialog(
+      context,
+      'Forward ${_selectedTransactionIds.length} selected transaction(s) offline?',
+    );
+    if (confirm != true) return;
+
+    showLoadingDialog(context, text: 'Forwarding offline...');
+
+    int forwarded = 0;
+    int skipped = 0;
+
+    String? number = await showForwardTextDialog(context, 0);
+
+
+
+    try {
+      final transactions = await _getSelectedTransactions();
+
+      for (final transaction in transactions) {
+        final message = (transaction['initialMessage'] ?? '').toString().trim();
+        if (message.isEmpty) {
+          skipped++;
+          continue;
+        }
+
+        final amount = _toInt(transaction['amount']) ?? 0;
+        final recipientNumber = number;
+        if (recipientNumber == null) {
+          skipped++;
+          continue;
+        }
+
+        final trimmedMessage = message.substring(
+          0,
+          message.length > 160 ? 160 : message.length,
+        );
+
+        await sendEvenInBackground('254$recipientNumber', trimmedMessage);
+
+        await TransactionController().dontProcess(
+          message,
+          (transaction['transactionId'] ?? '').toString(),
+          _toInt(transaction['number']) ?? 0,
+          (transaction['ussdDialed'] ?? '').toString(),
+          amount,
+          _toInt(transaction['simSubId']) ?? 0,
+          status: TransactionStatuses.forwarded,
+          source: (transaction['source'] ?? 'bingwa').toString(),
+          canRetry: (transaction['canRetry'] ?? 0) == 1,
+          id: _toInt(transaction['id']),
+          reply: 'Forwarded to $recipientNumber',
+        );
+
+        forwarded++;
+      }
+    } finally {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
+
+    if (!mounted) return;
+    _resetSelectionState();
+    reloadForNewDate();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Forwarded $forwarded transaction(s). Skipped $skipped.')),
+    );
+  }
+
+  Future<void> _handleForwardAllOnlineSelected() async {
+    if (_selectedTransactionIds.isEmpty) return;
+
+    final device = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(builder: (context) => const SearchDevicePage()),
+    );
+    if (device == null) return;
+
+    final recipientDeviceName = (device['device_name'] ?? '').toString().trim();
+    if (recipientDeviceName.isEmpty) return;
+
+    final confirmed = await confirmationDialog(
+      context,
+      'Forward ${_selectedTransactionIds.length} selected transaction(s) to $recipientDeviceName?',
+    );
+    if (confirmed != true) return;
+
+    final senderDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
+
+    showLoadingDialog(context, text: 'Forwarding online...');
+
+    int forwarded = 0;
+    int failed = 0;
+
+    try {
+      final transactions = await _getSelectedTransactions();
+
+      for (final transaction in transactions) {
+        final message = (transaction['initialMessage'] ?? '').toString().trim();
+        if (message.isEmpty) {
+          failed++;
+          continue;
+        }
+
+        try {
+
+          int? txId = await TransactionController().dontProcess(
+            message,
+            (transaction['transactionId'] ?? '').toString(),
+            _toInt(transaction['number']) ?? 0,
+            (transaction['ussdDialed'] ?? '').toString(),
+            _toInt(transaction['amount']) ?? 0,
+            _toInt(transaction['simSubId']) ?? 0,
+            status: TransactionStatuses.done,
+            source: (transaction['source'] ?? 'bingwa').toString(),
+            canRetry: (transaction['canRetry'] ?? 0) == 1,
+            id: _toInt(transaction['id']),
+            reply: 'Forwarded to $recipientDeviceName',
+          );
+
+          final result = await BackendService().post(
+            '/api/fcm/send-secure',
+            body: {
+              'title': 'BSAT Online Forwarding',
+              'body': message,
+              'senderDeviceName': senderDeviceName,
+              'recipientDeviceName': recipientDeviceName,
+              'data': {
+                'type': 'forwarded_sms',
+                'body': message,
+                'title': 'Forwarded Message',
+                'transactionId': txId,
+                'senderDeviceName': senderDeviceName,
+              },
+            },
+          );
+
+          if (result['success'] != true) {
+            failed++;
+            continue;
+          }
+
+          forwarded++;
+        } catch (_) {
+          failed++;
+        }
+      }
+    } finally {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
+
+    if (!mounted) return;
+    _resetSelectionState();
+    reloadForNewDate();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Forwarded $forwarded transaction(s). Failed $failed.')),
     );
   }
 

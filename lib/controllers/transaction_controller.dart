@@ -1030,7 +1030,7 @@ class TransactionController {
 
   Future<void> redoTransaction(
       int id, String ussdCode, int simSubId, int canRetry, String reply,
-      {String? mpesaMessage}) async {
+      {String? mpesaMessage, CodeSignature? codeSignature}) async {
     print(
         "Retrying transaction $id with code $ussdCode on sim $simSubId. Can retry: $canRetry. Previous reply: $reply");
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
@@ -1192,7 +1192,7 @@ class TransactionController {
         [thisCOde['id'] ?? -1],
       );
 
-      CodeSignature signature = CodeSignature.fromMap(
+      codeSignature = codeSignature ?? CodeSignature.fromMap(
         signatureQuery.isNotEmpty ? signatureQuery.first : {},
       );
 
@@ -1201,7 +1201,7 @@ class TransactionController {
       response = await PhoneService().makeAdvancedRequest(
         ussdCode,
         simSubId,
-        codeSignature: signature,
+        codeSignature: codeSignature,
       );
 
       response[1] = await transactionStatus(response);
@@ -1264,8 +1264,8 @@ class TransactionController {
                 [newTransactionId],
                 limit: 1,
               ));
-              if (tx.isNotEmpty) {
-                if (tx.first['status'] != TransactionStatuses.secondAttempt)
+              if (txs.isNotEmpty) {
+                if (txs.first['status'] != TransactionStatuses.secondAttempt)
                   return;
               }
             }
@@ -1302,7 +1302,7 @@ class TransactionController {
             altResponse = await PhoneService().makeAdvancedRequest(
               processedAltUssdCode,
               simSubId,
-              codeSignature: altSignature,
+              // codeSignature: altSignature,
             );
             altResponse[1] = await transactionStatus(altResponse);
           } else {
@@ -1639,6 +1639,18 @@ class TransactionController {
         limit: 1,
       );
 
+      CodeSignature? signature = CodeSignature.fromMap(
+        (await _sqliteService.queryCustom(
+          'codeSignature',
+          'ussdCodeId = ?',
+          [codeMap.first['id'] ?? -1],
+        ))
+            .firstOrNull ?? {},
+      );
+
+
+
+
       if (codeMap.isNotEmpty) {
         Map<String, dynamic> code = codeMap.first;
 
@@ -1656,6 +1668,7 @@ class TransactionController {
         stuff['simSubId'],
         stuff['canRetry'] ?? 0,
         stuff["ussdReply"],
+          codeSignature: signature,
       );
     }
   }

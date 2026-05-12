@@ -1254,6 +1254,7 @@ class TransactionController {
           if (altNumber != number && altNumber > 0) {
             int? newTransactionId =
                 await makeTransactionGivenSmsBody(altMessage);
+            print("new transaction id: $newTransactionId");
             if (newTransactionId != null) {
               await purgeAndMerge(newTransactionId, id);
               // get transactionstatus of transactionId
@@ -1261,9 +1262,10 @@ class TransactionController {
                   (await _sqliteService.queryCustom(
                 'transactions',
                 'id = ?',
-                [newTransactionId],
+                [id],
                 limit: 1,
               ));
+
               if (txs.isNotEmpty) {
                 if (txs.first['status'] != TransactionStatuses.secondAttempt)
                   return;

@@ -1266,6 +1266,8 @@ class TransactionController {
                 limit: 1,
               ));
 
+              print(txs);
+
               if (txs.isNotEmpty) {
                 if (txs.first['status'] != TransactionStatuses.secondAttempt)
                   return;

@@ -114,6 +114,16 @@ class _InboxPageState extends State<InboxPage> {
     return match?.group(0) ?? '';
   }
 
+  double _amountSortValue(String amount) {
+    final normalized = amount
+        .toUpperCase()
+        .replaceAll('KSH', '')
+        .replaceAll(',', '')
+        .trim();
+
+    return double.tryParse(normalized) ?? double.infinity;
+  }
+
   void _applyFilters({bool resetPagination = false}) {
     _filteredSmsList
       ..clear()
@@ -433,6 +443,9 @@ class _InboxPageState extends State<InboxPage> {
   }
 
   Widget _buildHeader(BuildContext context, TextTheme textTheme) {
+    final sortedAmounts = _uniqueAmounts.toList()
+      ..sort((a, b) => _amountSortValue(a).compareTo(_amountSortValue(b)));
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.only(
@@ -552,7 +565,7 @@ class _InboxPageState extends State<InboxPage> {
                         },
                       ),
                       const SizedBox(width: 8),
-                      ..._uniqueAmounts.map((amount) {
+                      ...sortedAmounts.map((amount) {
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: FilterChip(

@@ -662,18 +662,19 @@ class TransactionController {
                   );
                 }
 
-                int? transactionId = txId ?? await dontProcess(
-                  smsMessageBody,
-                  mpesaCode,
-                  number,
-                  '',
-                  amount,
-                  -1,
-                  status: TransactionStatuses.done,
-                  reply: 'Forwarding to device',
-                  canRetry: true,
-                  source: name,
-                );
+                int? transactionId = txId ??
+                    await dontProcess(
+                      smsMessageBody,
+                      mpesaCode,
+                      number,
+                      '',
+                      amount,
+                      -1,
+                      status: TransactionStatuses.done,
+                      reply: 'Forwarding to device',
+                      canRetry: true,
+                      source: name,
+                    );
 
                 final result = await BackendService().post(
                   '/api/fcm/send-secure',
@@ -1049,13 +1050,15 @@ class TransactionController {
         : transaction.initialMessage;
 
     int? newTransactionId = await forwardIfNeeded(
-        transaction.amount,
-        trimmedBody,
-        transaction.initialMessage,
-        transaction.transactionId,
-        transaction.number,
-        transaction.source,
-        true, txId: id,);
+      transaction.amount,
+      trimmedBody,
+      transaction.initialMessage,
+      transaction.transactionId,
+      transaction.number,
+      transaction.source,
+      true,
+      txId: id,
+    );
 
     if (newTransactionId != null) {
       await purgeAndMerge(newTransactionId, id);
@@ -1192,9 +1195,10 @@ class TransactionController {
         [thisCOde['id'] ?? -1],
       );
 
-      codeSignature = codeSignature ?? CodeSignature.fromMap(
-        signatureQuery.isNotEmpty ? signatureQuery.first : {},
-      );
+      codeSignature = codeSignature ??
+          CodeSignature.fromMap(
+            signatureQuery.isNotEmpty ? signatureQuery.first : {},
+          );
 
       print("so far so good");
 
@@ -1643,19 +1647,18 @@ class TransactionController {
         limit: 1,
       );
 
-      CodeSignature? signature = CodeSignature.fromMap(
-        (await _sqliteService.queryCustom(
-          'codeSignature',
-          'ussdCodeId = ?',
-          [codeMap.first['id'] ?? -1],
-        ))
-            .firstOrNull ?? {},
-      );
-
-
-
-
+      CodeSignature? signature;
       if (codeMap.isNotEmpty) {
+        signature = CodeSignature.fromMap(
+          (await _sqliteService.queryCustom(
+                'codeSignature',
+                'ussdCodeId = ?',
+                [codeMap!.first['id'] ?? -1],
+              ))
+                  .firstOrNull ??
+              {},
+        );
+
         Map<String, dynamic> code = codeMap.first;
 
         if (code.isNotEmpty) {
@@ -1672,7 +1675,7 @@ class TransactionController {
         stuff['simSubId'],
         stuff['canRetry'] ?? 0,
         stuff["ussdReply"],
-          codeSignature: signature,
+        codeSignature: signature,
       );
     }
   }
@@ -1897,6 +1900,11 @@ class TransactionController {
       }
     }
 
+    if (responseText
+        .contains(RegExp(r'Invalid choice', caseSensitive: false))) {
+      return TransactionStatuses.paused;
+    }
+
     if (responseText == "Success") {
       return TransactionStatuses.error;
     }
@@ -1920,7 +1928,7 @@ class TransactionController {
       return TransactionStatuses.error;
     }
 
-    if (RegExp(r'Invalid choice|max number of menu|error from application23',
+    if (RegExp(r'max number of menu|error from application23',
             caseSensitive: false)
         .hasMatch(responseText)) {
       return TransactionStatuses.error;

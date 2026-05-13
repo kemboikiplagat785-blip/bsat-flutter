@@ -136,7 +136,7 @@ void onStart(ServiceInstance serviceInstance) async {
             }
           }
 
-          await transactionController.retryAll(true);
+          await TransactionController().retryAll(true);
           await transactionController.checkSkipped();
           await transactionController.runScheduled();
 

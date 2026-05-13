@@ -87,18 +87,18 @@ class PhoneService {
       print("Advanced USSD response: $res");
 
       if (!isGettingSignature) {
-        if (res!.contains(RegExp(
+        if (res.contains(RegExp(
             r'USSD session already in progress|duplicate sessions. rejecting new one',
             caseSensitive: false))) {
           return [res, TransactionStatuses.error];
         }
 
-        if (res!.contains(
-            RegExp(r'Offer might have changed', caseSensitive: false))) {
+        if (res.contains(
+            RegExp(r'Offer might have changed|Invalid choice|Try again', caseSensitive: false))) {
           return [res, TransactionStatuses.paused];
         }
 
-        if (res!.contains(RegExp(
+        if (res.contains(RegExp(
             r'Your bundle activation request has failed as the Mobile Number is not active|Pool state',
             caseSensitive: false))) {
           return [res, TransactionStatuses.hasOkoa];
@@ -235,8 +235,6 @@ class PhoneService {
       );
       print(
           "UssdSession(fl): Result: $result for code: $fullCode on sim with subscriptionId: $subscriptionId");
-
-      print("Result data type: ${result.runtimeType}");
 
       if (result == null) return <Map<String, dynamic>>[];
 

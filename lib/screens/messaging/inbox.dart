@@ -733,6 +733,11 @@ class _SmsTile extends StatelessWidget {
                               onMessageReceive(item);
                             },
                           );
+
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Retrying message from MPESA')));
+
+                          // vibrate
+
                         },
                       ),
                     const SizedBox(width: 8),

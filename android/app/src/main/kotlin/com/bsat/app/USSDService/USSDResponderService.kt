@@ -83,7 +83,7 @@ class USSDResponderService : AccessibilityService() {
 
             val responseText = extractAllTextNodes(root)
 
-            if (responseText.contains("connection problem", ignoreCase = true) || responseText.contains("invalid mmi code", ignoreCase = true)) {
+            if (responseText.contains("connection problem", ignoreCase = true)  || responseText.contains("connection code", ignoreCase = true) || responseText.contains("technical difficulties", ignoreCase = true) || responseText.contains("application23", ignoreCase = true) ||responseText.contains("Error from application", ignoreCase = true) || responseText.contains("invalid mmi code", ignoreCase = true)) {
                 val okBtn = findButtonByText(root, "OK")
                 if (okBtn != null) {
                     okBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)

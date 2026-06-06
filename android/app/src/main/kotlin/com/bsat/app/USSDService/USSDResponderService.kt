@@ -118,6 +118,21 @@ class USSDResponderService : AccessibilityService() {
                             )
                             nextInput = upcomingPhoneNumber
 
+
+                            // if response text contains "Invalid choice. Try again."
+                            if (responseText.contains("Invalid choice. Try again.")) {
+
+                                val splitNumb = splitNumber(upcomingPhoneNumber)
+                                nextInput = splitNumb
+                                UssdSession.currentStepIndex = UssdSession.currentStepIndex - 1
+                                NativeLogger.sendLog(
+                                    "debug",
+                                    "UssdSession",
+                                    "Sending split number $splitNumb"
+                                )
+
+                            }
+
                             // Re-sync the index so we stay aligned on the next loops
                             val phoneIndex = UssdSession.ussdSteps.indexOf(upcomingPhoneNumber)
                             if (phoneIndex >= UssdSession.currentStepIndex - 1) {
@@ -184,6 +199,8 @@ class USSDResponderService : AccessibilityService() {
                                     return
                                 }
                             }
+                        } else {
+
                         }
                     }
                 }
@@ -395,5 +412,11 @@ class USSDResponderService : AccessibilityService() {
         )
 
         return null
+    }
+
+    private fun splitNumber(number: String): String {
+        // add a space after the 4th character
+
+        return "${number.substring(0, 4)} ${number.substring(4)}"
     }
 }

@@ -82,6 +82,8 @@ class MainActivity : FlutterActivity() {
 
                     sendNativeLog("debug", "UssdSession", "Starting new USSD session")
 
+                    UssdSession.acceptedProcedure = listOf()
+
                     UssdSession.acceptedProcedure =
                         call.argument<List<Map<String, Any>>>("acceptedProcedure") ?: listOf()
                     UssdSession.autoSwitch = call.argument<Boolean>("autoSwitch") ?: false

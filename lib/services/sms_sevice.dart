@@ -258,7 +258,8 @@ bool messageIsReceived(String messageBody) {
 
 // ...existing code...
 int extract9DigitNumber(String messageBody) {
-  final RegExp numberRegex = RegExp(r'\d{9,12}');
+  // Matches 9 to 13 digits, allowing optional leading '+' or '(' and common separators (spaces, dashes, dots, parentheses) between digits.
+  final RegExp numberRegex = RegExp(r'\+?\(?\d(?:[\s.()-]*\d){8,12}');
   final List<Match> matches = numberRegex.allMatches(messageBody).toList();
 
   if (matches.isEmpty) return 0;
@@ -266,7 +267,9 @@ int extract9DigitNumber(String messageBody) {
   // If at least 2 matches exist, use the second one; otherwise use the first.
   final Match selectedMatch = matches.length >= 2 ? matches[1] : matches[0];
 
-  int? number = int.tryParse(selectedMatch.group(0) ?? '');
+  // Clean non-digit characters before parsing
+  final String cleanedMatch = (selectedMatch.group(0) ?? '').replaceAll(RegExp(r'\D'), '');
+  int? number = int.tryParse(cleanedMatch);
   if (number == null) return 0;
 
   if (number > 799999999) {

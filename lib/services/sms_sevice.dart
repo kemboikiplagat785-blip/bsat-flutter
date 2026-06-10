@@ -290,7 +290,7 @@ String getMpesaCode(String messageBody) {
   if (strictMatch != null) {
     return strictMatch.group(0)!;
   }
-
+ 
   Match? fallbackMatch = fallbackRegex.firstMatch(messageBody);
   return fallbackMatch?.group(0) ?? "";
 }

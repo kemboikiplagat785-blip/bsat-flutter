@@ -30,40 +30,40 @@ Future<void> main() async {
   // whatsappService.initWhatsapp();
 
   // BsatLogger.runZonedWithLogs(() async {
-    await BsatLogger.initFileLogging();
+  await BsatLogger.initFileLogging();
 
-    var databasesPath = await getDatabasesPath();
-    String path = join(databasesPath, 'bsat_app.db');
+  var databasesPath = await getDatabasesPath();
+  String path = join(databasesPath, 'bsat_app.db');
 
-    SQLiteService sqLiteService = SQLiteService();
+  SQLiteService sqLiteService = SQLiteService();
 
-    await openDatabase(
-      path,
-      version: 1,
-      onCreate: sqLiteService.onCreate,
-    );
+  await openDatabase(
+    path,
+    version: 1,
+    onCreate: sqLiteService.onCreate,
+  );
 
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    
-    // Initialize Firebase Messaging (Don't await to prevent blocking startup)
-    FirebaseMessagingService().initNotifications();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-    // Firebase crashlytics is already partly integrated via captureLogs, but we can keep these 
-    // or let logger.dart handle it if we want to forward it there instead. 
-    // We'll leave them as is for now.
-    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+  // Initialize Firebase Messaging (Don't await to prevent blocking startup)
+  FirebaseMessagingService().initNotifications();
 
-    PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
+  // Firebase crashlytics is already partly integrated via captureLogs, but we can keep these
+  // or let logger.dart handle it if we want to forward it there instead.
+  // We'll leave them as is for now.
+  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-    runApp(
-      ChangeNotifierProvider(
-        create: (_) => ThemeProvider(),
-        child: MyApp(),
-      ),
-    );
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    return true;
+  };
+
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: MyApp(),
+    ),
+  );
   // });
 }
 
@@ -86,7 +86,7 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> _checkKillswitch() async {
     setState(() => _config = null); // Shows loading spinner
-    final config = await KillswitchService.evaluateKillswitch();
+    final config = await AdminManagementService.evaluateKillswitch();
     setState(() => _config = config);
   }
 
@@ -103,21 +103,21 @@ class _MyAppState extends State<MyApp> {
       switch (_config!.enforcement) {
         case KillswitchEnforcement.hardKill:
           return KillswitchScreen(config: _config!, isDismissible: false);
-          
+
         case KillswitchEnforcement.softKill:
           return KillswitchScreen(
             config: _config!,
             isDismissible: true,
             onSkip: () => setState(() => _skippedKillswitch = true),
           );
-          
+
         case KillswitchEnforcement.offlineLockout:
           return KillswitchScreen(
             config: _config!,
             isDismissible: false,
             onRetry: _checkKillswitch,
           );
-          
+
         case KillswitchEnforcement.safe:
           break; // App is safe, proceed to main flow
       }
@@ -128,14 +128,13 @@ class _MyAppState extends State<MyApp> {
       future: SharedPreferencesService().getRunningStatus(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
         } else if (snapshot.hasError) {
           return const Scaffold(body: Center(child: Text('Error loading app')));
         } else {
           bool? isRunning = snapshot.data;
-          return isRunning ?? false
-              ? const HomePage()
-              : const OnboardingPage();
+          return isRunning ?? false ? const HomePage() : const OnboardingPage();
         }
       },
     );
@@ -149,7 +148,8 @@ class _MyAppState extends State<MyApp> {
           navigatorKey: navigatorKey,
           title: 'BSAT',
           theme: themeProvider.currentTheme,
-          home: _getAppRoot(), // Routes intelligently based on killswitch & auth
+          home:
+              _getAppRoot(), // Routes intelligently based on killswitch & auth
         );
       },
     );

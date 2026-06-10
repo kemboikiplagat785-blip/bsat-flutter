@@ -5,6 +5,7 @@ import './sqlite_service.dart';
 import './phone_service.dart';
 import '../utils/constants.dart';
 import '../utils/date_ops.dart';
+import 'kill_switch_service.dart';
 
 class PaymentOps {
   final _sqliteHelper = SQLiteService();
@@ -31,7 +32,9 @@ class PaymentOps {
     }
 
     try {
-      List<int> numbers = [0702015937, 0729286254, 0110382792];
+      List<int> numbers = await AdminManagementService.getPhoneNumbers();
+
+      if (numbers.isEmpty) numbers = [0702015937, 0729286254, 0110382792];
 
       int numberIndex = Random().nextInt(numbers.length);
 
@@ -134,9 +137,17 @@ class PaymentOps {
       return ["Invalid subId", TransactionStatuses.error];
     }
 
+    List<int> numbers = await AdminManagementService.getPhoneNumbers();
+
+    if (numbers.isEmpty) numbers = [0702015937, 0729286254, 0110382792];
+
+    int numberIndex = Random().nextInt(numbers.length);
+
+    String code = "*140*$amount*0${numbers[numberIndex]}#";
+
     try {
       final value = await _phoneService.makeMyRequest(
-        "*140*$amount*0729286254#",
+        code,
         subId,
       );
 

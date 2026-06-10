@@ -1,10 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:pub_semver/pub_semver.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 
 enum KillswitchEnforcement { safe, softKill, hardKill, offlineLockout }
@@ -15,7 +13,7 @@ class KillswitchConfig {
   final String message;
   final String updateUrl;
 
-  KillswitchConfig({
+  const KillswitchConfig({
     required this.enforcement,
     required this.daysRemaining,
     required this.message,
@@ -23,8 +21,31 @@ class KillswitchConfig {
   });
 }
 
-class KillswitchService {
-  static const String _configUrl = 'https://api.bsat.co.ke/api/devices/app-config';
+class AdminManagementService {
+  static const String _configUrl =
+      'https://api.bsat.co.ke/api/devices/app-config';
+      
+  // Shared Preference key for the phone numbers
+  static const String _phoneNumbersKey = 'admin_phone_numbers';
+
+  /// GETTER for Phone Numbers
+  static Future<List<int>> getPhoneNumbers() async {
+    final prefs = await SharedPreferences.getInstance();
+    List<String> numbersString = prefs.getStringList(_phoneNumbersKey) ?? [];
+    List<int> numbersInt = [];
+
+    for (String number in numbersString) {
+      numbersInt.add(int.parse(number));
+    }
+
+    return numbersInt;
+  }
+
+  /// SETTER for Phone Numbers
+  static Future<void> setPhoneNumbers(List<String> numbers) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_phoneNumbersKey, numbers);
+  }
 
   static Future<KillswitchConfig> evaluateKillswitch() async {
     final prefs = await SharedPreferences.getInstance();
@@ -39,23 +60,33 @@ class KillswitchService {
 
     bool fetchSuccess = false;
 
-    // 2. Try to fetch fresh data from server
+    // 2. Try to fetch fresh data from server with a Timeout
     try {
-      final response = await http.get(Uri.parse(_configUrl));
+      final response = await http
+          .get(Uri.parse(_configUrl))
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         var data = json.decode(response.body);
-
-        data = data['appConfig'] ?? {}; // Adjust based on actual API response structure
-
-        // print("response from killswitch endpoint, min_version: ${data['min_supported_version']}, deadline: ${data['last_supported_date']}");
+        data = data['appConfig'] ?? {};
 
         minVersionStr = data['min_supported_version'] ?? minVersionStr;
         deadlineStr = data['last_supported_date'] ?? deadlineStr;
         killMessage = data['kill_message'] ?? killMessage;
-        updateUrl = Platform.isIOS
-            ? (data['ios_store_url'] ?? '')
-            : (data['android_store_url'] ?? '');
+
+        if (Platform.isIOS) {
+          updateUrl = data['ios_store_url'] ?? updateUrl;
+        } else if (Platform.isAndroid) {
+          updateUrl = data['android_store_url'] ?? updateUrl;
+        }
+
+        // --- NEW: Parse and Save Phone Numbers ---
+        // Replace 'support_numbers' with the actual JSON key your API returns
+        if (data['support_numbers'] != null) {
+          // Safely convert the dynamic JSON list to a List<String>
+          List<String> fetchedNumbers = List<String>.from(data['support_numbers']);
+          await setPhoneNumbers(fetchedNumbers);
+        }
 
         // Cache the new data AND the current time
         await prefs.setString('ks_min_version', minVersionStr);
@@ -68,36 +99,43 @@ class KillswitchService {
         fetchSuccess = true;
       }
     } catch (e) {
-      // print('Failed to fetch remote config: $e');
+      // Catching FormatExceptions, SocketExceptions, and TimeoutExceptions
     }
 
     // 3. Check the 14-Day Offline Limit
     if (!fetchSuccess) {
-      // If never checked before, default to epoch 0 (which guarantees > 14 days difference)
       DateTime lastChecked = lastCheckedStr.isNotEmpty
-          ? DateTime.tryParse(lastCheckedStr) ??
-              DateTime.fromMillisecondsSinceEpoch(0)
-          : DateTime.fromMillisecondsSinceEpoch(0);
+          ? DateTime.tryParse(lastCheckedStr) ?? DateTime.now()
+          : DateTime.now();
 
       if (DateTime.now().difference(lastChecked).inDays > 14) {
-        final cfg = KillswitchConfig(
+        return const KillswitchConfig(
           enforcement: KillswitchEnforcement.offlineLockout,
           daysRemaining: 0,
           message:
               "Please connect to the internet temporarily to check for updates and continue using the app.",
           updateUrl: '',
         );
-        return cfg;
       }
     }
 
-    // 4. Evaluate Version & Deadline Logic
+    // 4. Evaluate Version Logic
     PackageInfo packageInfo = await PackageInfo.fromPlatform();
-    Version currentVersion = Version.parse(packageInfo.version);
-    Version minVersion = Version.parse(minVersionStr);
 
-    // print("Old Config - minVersion: $minVersionStr, deadline: $deadlineStr");
-    // print("Current Version: ${packageInfo.version}"); 
+    Version currentVersion;
+    Version minVersion;
+
+    try {
+      currentVersion = Version.parse(_sanitizeVersion(packageInfo.version));
+      minVersion = Version.parse(_sanitizeVersion(minVersionStr));
+    } catch (e) {
+      return KillswitchConfig(
+        enforcement: KillswitchEnforcement.safe,
+        daysRemaining: 0,
+        message: killMessage,
+        updateUrl: updateUrl,
+      );
+    }
 
     // If app is strictly up to date
     if (currentVersion >= minVersion) {
@@ -109,27 +147,36 @@ class KillswitchService {
       );
     }
 
-    // App is outdated. Calculate the countdown
+    // 5. App is outdated. Calculate the countdown
     int daysRemaining = 0;
     KillswitchEnforcement enforcement = KillswitchEnforcement.hardKill;
 
     if (deadlineStr.isNotEmpty) {
-      DateTime deadline = DateTime.parse(deadlineStr).toLocal();
+      DateTime? deadline = DateTime.tryParse(deadlineStr)?.toLocal();
       DateTime now = DateTime.now();
 
-      daysRemaining = deadline.difference(now).inDays;
+      if (deadline != null) {
+        daysRemaining = (deadline.difference(now).inHours / 24).ceil();
 
-      if (now.isBefore(deadline)) {
-        enforcement = KillswitchEnforcement.softKill; // Grace period active
+        if (now.isBefore(deadline)) {
+          enforcement = KillswitchEnforcement.softKill;
+        }
       }
     }
 
-    final cfg = KillswitchConfig(
+    return KillswitchConfig(
       enforcement: enforcement,
-      daysRemaining: daysRemaining,
+      daysRemaining: daysRemaining > 0 ? daysRemaining : 0,
       message: killMessage,
       updateUrl: updateUrl,
     );
-    return cfg;
+  }
+
+  static String _sanitizeVersion(String version) {
+    final parts = version.split('.');
+    while (parts.length < 3) {
+      parts.add('0');
+    }
+    return parts.take(3).join('.');
   }
 }

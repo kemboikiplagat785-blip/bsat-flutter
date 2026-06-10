@@ -80,16 +80,16 @@ class DashboardViewModel extends ChangeNotifier {
   }
 
   void setPrefs() async {
-    if(await _sharedPreferencesService.getCanAutoSwitch() == null){
+    if (await _sharedPreferencesService.getCanAutoSwitch() == null) {
       await _sharedPreferencesService.setCanAutoSwitch(true);
     }
-     if(await _sharedPreferencesService.getUseSignature() == null){
+    if (await _sharedPreferencesService.getUseSignature() == null) {
       await _sharedPreferencesService.setUseSignature(true);
     }
   }
 
   Future<void> reload() async {
-    killswitchConfig = await KillswitchService.evaluateKillswitch();
+    killswitchConfig = await AdminManagementService.evaluateKillswitch();
 
     userName = await _sharedPreferencesService.getUserName() ?? 'Bingwa';
 
@@ -182,11 +182,11 @@ class DashboardViewModel extends ChangeNotifier {
           "WHERE status = '${TransactionStatuses.blacklisted}' AND date = '${getNormalDate(DateTime.now())}'",
     );
 
-      maskedCount = await _sqliteService.getCount(
-        'transactions',
-        appendQuery:
-            "WHERE status = '${TransactionStatuses.masked}' AND date = '${getNormalDate(DateTime.now())}'",
-      );
+    maskedCount = await _sqliteService.getCount(
+      'transactions',
+      appendQuery:
+          "WHERE status = '${TransactionStatuses.masked}' AND date = '${getNormalDate(DateTime.now())}'",
+    );
 
     final todays = await _sqliteService.queryDay(
       'transactions',

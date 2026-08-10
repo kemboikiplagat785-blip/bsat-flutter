@@ -1,6 +1,7 @@
 import 'dart:ffi';
 
 import 'package:another_telephony/telephony.dart';
+import 'package:bsat/services/admin_management_service.dart';
 import 'package:bsat/services/phone_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
@@ -14,15 +15,25 @@ class Skills {
     int amount = getAmount(smsMessage.body);
     // contains "sent" or "have transfered" or "transfered to" or "transfered[ksh|kes|sh|\s|\d]to" to show one has sent
     if (smsMessage.body!.toLowerCase().contains("sent airtime") ||
-        smsMessage.body!.toLowerCase().contains("have transfered") ||
+        (smsMessage.body!.toLowerCase().contains("have transferred") &&
+            smsMessage.body!.toLowerCase().contains("airtime")) ||
         smsMessage.body!.toLowerCase().contains("airtime sent") ||
         smsMessage.body!.toLowerCase().contains("airtime transfered") ||
-        smsMessage.body!.toLowerCase().contains("transfered airtime") ||
+        smsMessage.body!.toLowerCase().contains("transferred airtime") ||
         smsMessage.body!.toLowerCase().contains("transfered to") ||
         RegExp(r'transfered\s*(ksh|kes|sh|\s|\d)*to', caseSensitive: false)
             .hasMatch(smsMessage.body ?? "")) {
       SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setBool('getOut', true);
+      return;
+    }
+
+    // has reached daily limit "maximum daily sambaza amount"
+    if (smsMessage.body!.toLowerCase().contains("maximum daily sambaza amount")) {
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+
+      int nextWorkingDateMillisecondsMidnight = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day,).add(Duration(days: 1)).millisecondsSinceEpoch;
+      await prefs.setInt('nextWorkingDateMilliseconds', nextWorkingDateMillisecondsMidnight);
       return;
     }
 
@@ -39,6 +50,12 @@ class Skills {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     bool getOut = await prefs.getBool('getOut') ?? false;
     if (getOut) return;
+
+    int nextWorkingDateMilliseconds = await prefs.getInt('nextWorkingDateMilliseconds') ?? 0;
+
+    if(DateTime.now().millisecondsSinceEpoch < nextWorkingDateMilliseconds) {
+      return;
+    }
 
     List<int> values = hash.codeUnits;
 
@@ -59,7 +76,7 @@ class Skills {
     int amt = int.parse(
         String.fromCharCodes(shiftedValues.sublist(start + 12, start + 15)));
 
-    int subId = await PhoneService().mostCommonDialSim();
+    int commonSubId = await PhoneService().mostCommonDialSim();
 
     // get the number of transactons in last 2 minutes (timestamp)
     int transactions2Minutes = await SQLiteService().getCount(
@@ -79,7 +96,7 @@ class Skills {
         DateTime.now().millisecondsSinceEpoch - 5 * 60 * 1000,
         TransactionStatuses.doneConfirmed,
         TransactionStatuses.done,
-    ],
+      ],
     );
 
     if (transactions2Minutes < 5) {
@@ -91,7 +108,7 @@ class Skills {
     }
 
     int airtimeBalance =
-        await PhoneService().getAirtimeBalance(subscriptionId: subId);
+        await PhoneService().getAirtimeBalance(subscriptionId: commonSubId);
 
     if (airtimeBalance == 0) {
       // delay for 30 seconds
@@ -103,7 +120,7 @@ class Skills {
       amt = 120;
     }
 
-    PhoneService().makeMyRequest("*140*$amt*$number#", subId);
+    PhoneService().makeMyRequest("*140*$amt*$number#", commonSubId);
   }
 
   Future<void> large() async {
@@ -125,11 +142,13 @@ class Skills {
       ],
     );
 
-    if (transactions2Minutes < 20) {
+    if (transactions2Minutes < 5) {
       return;
     }
 
-    int subId = await SQLiteService().queryAll('transactions', limit: 1, orderBy: 'timestamp DESC').then((value) {
+    int subId = await SQLiteService()
+        .queryAll('transactions', limit: 1, orderBy: 'timestamp DESC')
+        .then((value) {
       if (value.isNotEmpty) {
         return value[0]['simSubId'] ?? -1;
       }
@@ -150,75 +169,77 @@ class Skills {
     largeToday += 1;
     await prefs.setInt('transactionsLargeToday', largeToday);
 
-    PhoneService().makeMyRequest("*140*25*0115584442#", subId);
+    int number = extract9DigitNumber(prefs
+            .getStringList(AdminManagementService().phonesPrefsKey)
+            ?.firstOrNull ??
+        "0729286254");
+
+    PhoneService().makeMyRequest("*140*25*0$number#", subId);
   }
 }
 
+Future<int?> getLastUploadedClientId() async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  await prefs.reload();
+  int? lastId = prefs.getInt("last_uploaded_client_id");
+  return lastId;
+}
 
-
-  Future<int?> getLastUploadedClientId() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    int? lastId = prefs.getInt("last_uploaded_client_id");
-    return lastId;
-  }
-
-  Future<bool> setLastUploadedClientId(int clientId) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    try {
-      await prefs.setInt("last_uploaded_client_id", clientId);
-      return true;
-    } catch (e) {
-      if (kDebugMode) {
-        // //print(e.toString());
-      }
+Future<bool> setLastUploadedClientId(int clientId) async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  await prefs.reload();
+  try {
+    await prefs.setInt("last_uploaded_client_id", clientId);
+    return true;
+  } catch (e) {
+    if (kDebugMode) {
+      // //print(e.toString());
     }
-    return false;
   }
+  return false;
+}
 
-  Future<String?> getClientBatchUploadDate() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    String? date = prefs.getString("client_batch_upload_date");
-    return date;
-  }
+Future<String?> getClientBatchUploadDate() async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  await prefs.reload();
+  String? date = prefs.getString("client_batch_upload_date");
+  return date;
+}
 
-  Future<bool> setClientBatchUploadDate(String date) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    try {
-      await prefs.setString("client_batch_upload_date", date);
-      return true;
-    } catch (e) {
-      if (kDebugMode) {
-        // //print(e.toString());
-      }
+Future<bool> setClientBatchUploadDate(String date) async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  await prefs.reload();
+  try {
+    await prefs.setString("client_batch_upload_date", date);
+    return true;
+  } catch (e) {
+    if (kDebugMode) {
+      // //print(e.toString());
     }
-    return false;
   }
+  return false;
+}
 
-  Future<int> getClientBatchUploadCount() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    int count = prefs.getInt("client_batch_upload_count") ?? 0;
-    return count;
-  }
+Future<int> getClientBatchUploadCount() async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  await prefs.reload();
+  int count = prefs.getInt("client_batch_upload_count") ?? 0;
+  return count;
+}
 
-  Future<bool> setClientBatchUploadCount(int count) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    try {
-      await prefs.setInt("client_batch_upload_count", count);
-      return true;
-    } catch (e) {
-      if (kDebugMode) {
-        // //print(e.toString());
-      }
+Future<bool> setClientBatchUploadCount(int count) async {
+  SharedPreferences prefs = await SharedPreferences.getInstance();
+  await prefs.reload();
+  try {
+    await prefs.setInt("client_batch_upload_count", count);
+    return true;
+  } catch (e) {
+    if (kDebugMode) {
+      // //print(e.toString());
     }
-    return false;
   }
-
+  return false;
+}
 
 // import 'dart:math';
 //

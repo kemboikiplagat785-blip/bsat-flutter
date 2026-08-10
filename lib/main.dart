@@ -19,7 +19,7 @@ import 'package:bsat/utils/logger.dart';
 import 'providers/theme_provider.dart';
 import 'screens/messaging/whatsapp.dart';
 import 'screens/settings/kill_switch.dart';
-import 'services/kill_switch_service.dart';
+import 'services/admin_management_service.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 

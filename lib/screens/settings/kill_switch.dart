@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:ota_update/ota_update.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../services/kill_switch_service.dart';
+import '../../services/admin_management_service.dart';
 import 'updater.dart';
 
 class KillswitchScreen extends StatefulWidget {

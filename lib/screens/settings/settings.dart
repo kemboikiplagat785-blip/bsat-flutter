@@ -14,7 +14,7 @@ import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/theme.dart';
 import '../../providers/theme_provider.dart';
-import '../../services/kill_switch_service.dart';
+import '../../services/admin_management_service.dart';
 import '../../utils/constants.dart';
 import '../offers/download_offers_page.dart';
 import 'custom_statuses.dart';

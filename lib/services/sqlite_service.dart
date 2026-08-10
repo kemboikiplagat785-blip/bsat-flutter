@@ -1,6 +1,4 @@
 import 'package:bsat/models/transaction.dart';
-import 'package:bsat/utils/date_ops.dart';
-import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -35,10 +33,10 @@ class SQLiteService {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'bsat_app.db');
     return await openDatabase(path,
-        version: 11,
-        onCreate: onCreate,
-        onUpgrade: onUpgrade,
-        singleInstance: true);
+      version: 13,
+      onCreate: onCreate,
+      onUpgrade: onUpgrade,
+      singleInstance: true);
   }
 
   void onCreate(Database db, int version) async {
@@ -68,7 +66,6 @@ class SQLiteService {
     await db.execute(
       '''CREATE TABLE ussdCodes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        code TEXT,
         amount INTEGER,
         fromSim INTEGER,
         dialSim INTEGER,
@@ -81,8 +78,21 @@ class SQLiteService {
         bongaPointsPerTransaction INTEGER DEFAULT 0,
         alternativeUssdCode TEXT,
         runAltOn TEXT,
-        altIsAdvanced INTEGER DEFAULT 0
+        altIsAdvanced INTEGER DEFAULT 0,
+        offerName TEXT,
+        startTime TEXT,
+        endTime TEXT
       )''',
+    );
+
+    await db.execute(
+      '''CREATE TABLE IF NOT EXISTS ussdCodeVariants (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ussdCodeId INTEGER,
+          code TEXT,
+          startTime TEXT,
+          endTime TEXT
+        )''',
     );
 
     await db.execute(
@@ -334,6 +344,54 @@ class SQLiteService {
             'ALTER TABLE ussdCodes ADD COLUMN alternativeUssdCode TEXT');
       } catch (e) {
         // column may already exist
+      }
+
+      try {
+        await db.execute('ALTER TABLE ussdCodes ADD COLUMN offerName TEXT');
+      } catch (e) {
+        // column may already exist
+      }
+
+      try {
+        await db.execute('ALTER TABLE ussdCodes ADD COLUMN startTime TEXT');
+      } catch (e) {
+        // column may already exist
+      }
+
+      try {
+        await db.execute('ALTER TABLE ussdCodes ADD COLUMN endTime TEXT');
+      } catch (e) {
+        // column may already exist
+      }
+
+      try {
+        // backfill offerName for existing rows to the requested default
+        await db.execute(
+            "UPDATE ussdCodes SET offerName = 'Ksh ' || amount WHERE offerName IS NULL OR offerName = ''");
+      } catch (e) {
+        // ignore
+      }
+
+      try {
+        await db.execute(
+          '''CREATE TABLE IF NOT EXISTS ussdCodeVariants (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ussdCodeId INTEGER,
+              code TEXT,
+              startTime TEXT,
+              endTime TEXT
+            )''',
+        );
+
+        // Migrate existing codes into variants table
+        try {
+          await db.execute(
+              'INSERT INTO ussdCodeVariants(ussdCodeId, code, startTime, endTime) SELECT id, code, startTime, endTime FROM ussdCodes WHERE code IS NOT NULL AND code != ""');
+        } catch (e) {
+          // ignore migration errors
+        }
+      } catch (e) {
+        // ignore
       }
 
       try {

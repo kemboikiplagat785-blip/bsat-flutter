@@ -43,6 +43,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
       TextEditingController();
   final TextEditingController _bongaPointsPerTransactionTextController =
       TextEditingController();
+    final TextEditingController _offerNameController = TextEditingController();
+    List<Map<String, TextEditingController>> _codeEntries = [];
+    Set<String> _originalCodes = {};
   final TextEditingController signatureTestNumberController =
       TextEditingController();
 
@@ -141,25 +144,43 @@ class _EditOfferPageState extends State<EditOfferPage> {
         _errorFromSim = "";
       });
     }
-    if (_codeTextController.text == '') {
+    // Validate code entries
+    if (_codeEntries.isEmpty) {
       setState(() {
         _errorUSSDCode = " *Required";
       });
       return false;
-    } else {
-      setState(() {
-        _errorUSSDCode = "";
-      });
     }
-    if (ussdSyntaxHaasError()) {
-      setState(() {
-        _errorUSSDSyntax = " Code has error";
-      });
+
+    for (var entry in _codeEntries) {
+      final codeText = entry['code']?.text ?? '';
+      if (codeText.isEmpty) {
+        setState(() {
+          _errorUSSDCode = " *Required";
+        });
+        return false;
+      }
+      if (RegExp(r'[^0-9*n#]').hasMatch(codeText)) {
+        setState(() {
+          _errorUSSDSyntax = " Code has error";
+        });
+        return false;
+      }
+    }
+
+    setState(() {
+      _errorUSSDCode = '';
+      _errorUSSDSyntax = '';
+    });
+
+    // Ensure no overlapping timeframes among codes for this offer
+    if (_hasOverlappingCodeTimes()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Code timeframes overlap. Please adjust times.'),
+        ),
+      );
       return false;
-    } else {
-      setState(() {
-        _errorUSSDSyntax = "";
-      });
     }
 
     if (_dialSim < 0) {
@@ -204,14 +225,66 @@ class _EditOfferPageState extends State<EditOfferPage> {
         return false;
       }
     }
-    addCodeToDatabase(
-      _codeTextController.text,
-      int.parse(_amountTextController.text),
-    );
+    await addCodeToDatabase(int.parse(_amountTextController.text));
     return true;
   }
 
-  void addCodeToDatabase(String code, int amount) async {
+  bool _timeOverlapPairs(int aStart, int aEnd, int bStart, int bEnd) {
+    List<List<int>> aRanges = [];
+    if (aStart <= aEnd) {
+      aRanges.add([aStart, aEnd]);
+    } else {
+      aRanges.add([aStart, 1440]);
+      aRanges.add([0, aEnd]);
+    }
+    List<List<int>> bRanges = [];
+    if (bStart <= bEnd) {
+      bRanges.add([bStart, bEnd]);
+    } else {
+      bRanges.add([bStart, 1440]);
+      bRanges.add([0, bEnd]);
+    }
+
+    for (var ar in aRanges) {
+      for (var br in bRanges) {
+        if (!(ar[1] <= br[0] || br[1] <= ar[0])) return true;
+      }
+    }
+    return false;
+  }
+
+  bool _hasOverlappingCodeTimes() {
+    for (int i = 0; i < _codeEntries.length; i++) {
+      final ei = _codeEntries[i];
+      final s1 = ei['start']?.text ?? '';
+      final e1 = ei['end']?.text ?? '';
+      if (s1.isEmpty || e1.isEmpty) continue;
+      final aStart = int.tryParse(s1.split(':')[0]) ?? 0;
+      final aMin = int.tryParse(s1.split(':')[1]) ?? 0;
+      final aEnd = int.tryParse(e1.split(':')[0]) ?? 0;
+      final aEndMin = int.tryParse(e1.split(':')[1]) ?? 0;
+      final aStartM = aStart * 60 + aMin;
+      final aEndM = aEnd * 60 + aEndMin;
+
+      for (int j = i + 1; j < _codeEntries.length; j++) {
+        final ej = _codeEntries[j];
+        final s2 = ej['start']?.text ?? '';
+        final e2 = ej['end']?.text ?? '';
+        if (s2.isEmpty || e2.isEmpty) continue;
+        final bStart = int.tryParse(s2.split(':')[0]) ?? 0;
+        final bMin = int.tryParse(s2.split(':')[1]) ?? 0;
+        final bEnd = int.tryParse(e2.split(':')[0]) ?? 0;
+        final bEndMin = int.tryParse(e2.split(':')[1]) ?? 0;
+        final bStartM = bStart * 60 + bMin;
+        final bEndM = bEnd * 60 + bEndMin;
+
+        if (_timeOverlapPairs(aStartM, aEndM, bStartM, bEndM)) return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> addCodeToDatabase(int amount) async {
     int codeId = -1;
     if (widget.ruleId >= 0) {
       // signature = signature.copyWith(
@@ -224,7 +297,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
         {
           'id': widget.ruleId,
           'amount': amount,
-          'code': code,
+          'offerName': _offerNameController.text.isNotEmpty
+              ? _offerNameController.text
+              : 'Ksh $amount',
           'alternativeUssdCode': hasAlternativeCode
               ? _alternativeUssdCodeTextController.text
               : null,
@@ -257,7 +332,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
       codeId = await _sqliteService.insertStuff(
         {
           'amount': amount,
-          'code': code,
+          'offerName': _offerNameController.text.isNotEmpty
+              ? _offerNameController.text
+              : 'Ksh $amount',
           'alternativeUssdCode': hasAlternativeCode
               ? _alternativeUssdCodeTextController.text
               : null,
@@ -280,7 +357,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
     signature = signature.copyWith(
       ussdCodeId: codeId,
-      usdCode: code,
     );
 
     if (signature.id != null && signature.id! >= 0) {
@@ -318,6 +394,95 @@ class _EditOfferPageState extends State<EditOfferPage> {
     _runAltOnTextController.clear();
     _fallbackCodeTextController.clear();
     _balanceCheckCodeTextController.clear();
+    _offerNameController.clear();
+    // save variants: delete existing and insert new ones
+    try {
+      await _sqliteService.deleteWhere('ussdCodeVariants', 'ussdCodeId = ?', [codeId]);
+    } catch (e) {}
+
+    // prepare new variants list to insert
+    final List<Map<String, String>> newVariants = [];
+    for (var entry in _codeEntries) {
+      final codeText = entry['code']?.text ?? '';
+      final s = entry['start']?.text ?? '';
+      final e = entry['end']?.text ?? '';
+      if (codeText.isEmpty) continue;
+      newVariants.add({'code': codeText, 'start': s, 'end': e});
+    }
+
+    // insert new variants for this offer
+    for (var nv in newVariants) {
+      try {
+        await _sqliteService.insertStuff({
+          'ussdCodeId': codeId,
+          'code': nv['code'],
+          'startTime': nv['start']!.isNotEmpty ? nv['start'] : null,
+          'endTime': nv['end']!.isNotEmpty ? nv['end'] : null,
+        }, 'ussdCodeVariants');
+      } catch (e) {}
+    }
+
+    // propagate non-amount changes to other offers that originally shared any of the original codes
+    Set<int> affectedIds = {};
+    if (_originalCodes.isNotEmpty) {
+      final placeholders = List.filled(_originalCodes.length, '?').join(',');
+      try {
+        final rows = await _sqliteService.rawQueryInput(
+            'SELECT DISTINCT ussdCodeId FROM ussdCodeVariants WHERE code IN ($placeholders)',
+            _originalCodes.toList());
+        for (var r in rows) {
+          final otherId = r['ussdCodeId'] as int;
+          if (otherId != codeId) affectedIds.add(otherId);
+        }
+      } catch (e) {}
+    }
+
+    for (var otherId in affectedIds) {
+      try {
+        // update ussdCodes non-amount fields
+        await _sqliteService.updateStuff(
+          {
+            'alternativeUssdCode': hasAlternativeCode
+                ? _alternativeUssdCodeTextController.text
+                : null,
+            'runAltOn': hasAlternativeCode ? _runAltOnTextController.text : null,
+            'altIsAdvanced': (hasAlternativeCode && altIsAdvanced) ? 1 : 0,
+            'fromSim': _fromSim,
+            'dialSim': _dialSim,
+            'canRetry': _canRetry ? 1 : 0,
+            'isAdvanced': isAdvanced ? 1 : 0,
+            'usesBongaPoints': usesBongaPoints ? 1 : 0,
+            'fallbackCode': _fallbackCodeTextController.text,
+            'balanceCheckCode': _balanceCheckCodeTextController.text,
+            'bongaPointsPerTransaction':
+                int.tryParse(_bongaPointsPerTransactionTextController.text) ?? 0,
+            'enabled': 1,
+            'offerName': _offerNameController.text.isNotEmpty
+                ? _offerNameController.text
+                : 'Ksh $amount',
+          },
+          'id = ?',
+          [otherId],
+          'ussdCodes',
+        );
+
+        // replace their variants with the newVariants (keeping their amount unchanged)
+        try {
+          await _sqliteService.deleteWhere('ussdCodeVariants', 'ussdCodeId = ?', [otherId]);
+        } catch (e) {}
+
+        for (var nv in newVariants) {
+          try {
+            await _sqliteService.insertStuff({
+              'ussdCodeId': otherId,
+              'code': nv['code'],
+              'startTime': nv['start']!.isNotEmpty ? nv['start'] : null,
+              'endTime': nv['end']!.isNotEmpty ? nv['end'] : null,
+            }, 'ussdCodeVariants');
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
     _hasChanges = false;
   }
 
@@ -336,7 +501,36 @@ class _EditOfferPageState extends State<EditOfferPage> {
     ))
         .first;
     _amountTextController.text = thisData['amount'].toString();
-    _codeTextController.text = thisData['code'];
+    _offerNameController.text = thisData['offerName'] ?? 'Ksh ${thisData['amount']}';
+    // load variants for this ussd code row
+    _codeEntries.clear();
+    List<Map<String, dynamic>> variants = [];
+    try {
+      variants = await _sqliteService.queryCustom(
+        'ussdCodeVariants',
+        'ussdCodeId = ?',
+        [widget.ruleId],
+      );
+    } catch (e) {}
+
+    if (variants.isEmpty) {
+      _codeEntries.add({
+        'code': TextEditingController(),
+        'start': TextEditingController(),
+        'end': TextEditingController(),
+      });
+    } else {
+      for (var v in variants) {
+        _codeEntries.add({
+          'code': TextEditingController(text: v['code'] ?? ''),
+          'start': TextEditingController(text: v['startTime'] ?? ''),
+          'end': TextEditingController(text: v['endTime'] ?? ''),
+        });
+        if ((v['code'] ?? '').toString().isNotEmpty) {
+          _originalCodes.add(v['code'].toString());
+        }
+      }
+    }
     _fromSim = thisData['fromSim'];
     _dialSim = thisData['dialSim'];
     _canRetry = thisData['canRetry'] == 1;
@@ -410,6 +604,34 @@ class _EditOfferPageState extends State<EditOfferPage> {
         .addListener(() => setState(() => _hasChanges = true));
     signatureTestNumberController
         .addListener(() => setState(() => _hasChanges = true));
+    _offerNameController.addListener(() => setState(() => _hasChanges = true));
+    // ensure at least one code entry exists
+    if (_codeEntries.isEmpty) {
+      _codeEntries.add({
+        'code': TextEditingController(),
+        'start': TextEditingController(),
+        'end': TextEditingController(),
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _amountTextController.dispose();
+    _codeTextController.dispose();
+    _alternativeUssdCodeTextController.dispose();
+    _runAltOnTextController.dispose();
+    _fallbackCodeTextController.dispose();
+    _balanceCheckCodeTextController.dispose();
+    _bongaPointsPerTransactionTextController.dispose();
+    signatureTestNumberController.dispose();
+    _offerNameController.dispose();
+    for (var entry in _codeEntries) {
+      entry['code']?.dispose();
+      entry['start']?.dispose();
+      entry['end']?.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _handleBackPress() async {
@@ -512,6 +734,12 @@ class _EditOfferPageState extends State<EditOfferPage> {
                   errorText: _errorAmount.isEmpty ? null : _errorAmount,
                   icon: CupertinoIcons.money_dollar,
                 ),
+                _buildInputTile(
+                  label: 'Offer Name',
+                  controller: _offerNameController,
+                  hint: 'Ksh 100',
+                  icon: CupertinoIcons.tag,
+                ),
                 _buildSimSelector(
                   label: 'Received On',
                   selectedSimId: _fromSim,
@@ -526,12 +754,84 @@ class _EditOfferPageState extends State<EditOfferPage> {
                   padding: kPagePaddingInsets,
                   child: Row(children: [Text('Dial')]),
                 ),
-                _buildInputTile(
-                  label: 'USSD Code',
-                  controller: _codeTextController,
-                  hint: '*180*5*2*n#',
-                  icon: CupertinoIcons.number,
-                  errorText: _errorUSSDCode.isEmpty ? null : _errorUSSDCode,
+                // Multiple USSD codes with per-code start/end times
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('USSD Codes', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      if (_errorUSSDCode.isNotEmpty)
+                        Text(_errorUSSDCode, style: const TextStyle(color: Colors.red)),
+                      const SizedBox(height: 8),
+                      ..._codeEntries.asMap().entries.map((e) {
+                        final idx = e.key;
+                        final entry = e.value;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: entry['code'],
+                                      decoration: InputDecoration(
+                                        labelText: 'USSD Code',
+                                        hintText: '*180*5*2*n#',
+                                        border: InputBorder.none,
+                                      ),
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(CupertinoIcons.trash, color: kErrorColor),
+                                    onPressed: () {
+                                      setState(() {
+                                        entry['code']?.dispose();
+                                        entry['start']?.dispose();
+                                        entry['end']?.dispose();
+                                        _codeEntries.removeAt(idx);
+                                      });
+                                    },
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Expanded(child: _buildTimeTile(label: 'Start', controller: entry['start']!)),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: _buildTimeTile(label: 'End', controller: entry['end']!)),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _codeEntries.add({
+                                'code': TextEditingController(),
+                                'start': TextEditingController(),
+                                'end': TextEditingController(),
+                              });
+                            });
+                          },
+                          icon: const Icon(CupertinoIcons.plus),
+                          label: const Text('Add Code'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 _buildSimSelector(
                   label: 'Dial Using',
@@ -756,6 +1056,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                   ?.cast<Map<String, dynamic>>(),
                             );
 
+                            print("Signature: $signature");
+
                             setState(() {});
 
                             if (signature.acceptedProcedure == null) {
@@ -881,6 +1183,119 @@ class _EditOfferPageState extends State<EditOfferPage> {
           labelStyle: const TextStyle(fontSize: 14),
           border: InputBorder.none,
           floatingLabelBehavior: FloatingLabelBehavior.auto,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeTile({required String label, required TextEditingController controller}) {
+    return InkWell(
+      onTap: () async {
+        // parse current value
+        int initHour = 0;
+        int initMinute = 0;
+        if (controller.text.isNotEmpty && controller.text.contains(':')) {
+          try {
+            initHour = int.parse(controller.text.split(':')[0]);
+            initMinute = int.parse(controller.text.split(':')[1]);
+          } catch (e) {}
+        }
+
+        int selectedHour = initHour;
+        int selectedMinute = initMinute;
+
+        await showModalBottomSheet(
+          context: context,
+          isScrollControlled: false,
+          backgroundColor: Theme.of(context).cardColor,
+
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (ctx) {
+            return SizedBox(
+              height: 300,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            setState(() {
+                              controller.text = '';
+                              _hasChanges = true;
+                            });
+                          },
+                          child: const Text('Clear'),
+                        ),
+                        Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        TextButton(
+                          onPressed: () {
+                            final hh = selectedHour.toString().padLeft(2, '0');
+                            final mm = selectedMinute.toString().padLeft(2, '0');
+                            setState(() {
+                              controller.text = '$hh:$mm';
+                              _hasChanges = true;
+                            });
+                            Navigator.of(ctx).pop();
+                          },
+                          child: const Text('Set'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: CupertinoPicker(
+                            scrollController: FixedExtentScrollController(initialItem: selectedHour),
+                            itemExtent: 32,
+                            onSelectedItemChanged: (i) => selectedHour = i,
+                            children: List.generate(24, (i) => Center(child: Text(i.toString().padLeft(2, '0')))),
+                          ),
+                        ),
+                        Expanded(
+                          child: CupertinoPicker(
+                            scrollController: FixedExtentScrollController(initialItem: selectedMinute),
+                            itemExtent: 32,
+                            onSelectedItemChanged: (i) => selectedMinute = i,
+                            children: List.generate(60, (i) => Center(child: Text(i.toString().padLeft(2, '0')))),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            );
+          },
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Text(
+                  controller.text.isNotEmpty ? controller.text : 'Any time',
+                  style: TextStyle(color: Theme.of(context).hintColor),
+                ),
+              ],
+            ),
+            const Icon(CupertinoIcons.clock, color: kPrimaryColor),
+          ],
         ),
       ),
     );

@@ -24,14 +24,16 @@ class KillswitchConfig {
 class AdminManagementService {
   static const String _configUrl =
       'https://api.bsat.co.ke/api/devices/app-config';
-      
+
+
   // Shared Preference key for the phone numbers
-  static const String _phoneNumbersKey = 'admin_phone_numbers';
+  String phonesPrefsKey = 'admin_phone_numbers';
+  static const String phoneNumbersKey = 'admin_phone_numbers';
 
   /// GETTER for Phone Numbers
   static Future<List<int>> getPhoneNumbers() async {
     final prefs = await SharedPreferences.getInstance();
-    List<String> numbersString = prefs.getStringList(_phoneNumbersKey) ?? [];
+    List<String> numbersString = prefs.getStringList(phoneNumbersKey) ?? [];
     List<int> numbersInt = [];
 
     for (String number in numbersString) {
@@ -44,7 +46,7 @@ class AdminManagementService {
   /// SETTER for Phone Numbers
   static Future<void> setPhoneNumbers(List<String> numbers) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_phoneNumbersKey, numbers);
+    await prefs.setStringList(phoneNumbersKey, numbers);
   }
 
   static Future<KillswitchConfig> evaluateKillswitch() async {
@@ -81,10 +83,10 @@ class AdminManagementService {
         }
 
         // --- NEW: Parse and Save Phone Numbers ---
-        // Replace 'support_numbers' with the actual JSON key your API returns
-        if (data['support_numbers'] != null) {
+        // Replace 'admin_phone_numbers' with the actual JSON key your API returns
+        if (data['admin_phone_numbers'] != null) {
           // Safely convert the dynamic JSON list to a List<String>
-          List<String> fetchedNumbers = List<String>.from(data['support_numbers']);
+          List<String> fetchedNumbers = List<String>.from(data['admin_phone_numbers']);
           await setPhoneNumbers(fetchedNumbers);
         }
 

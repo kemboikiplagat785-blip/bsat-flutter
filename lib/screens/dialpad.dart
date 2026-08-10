@@ -49,15 +49,31 @@ class _DialPadScreenState extends State<DialPadScreen> {
   }
 
   Future<void> _fetchOffers() async {
-    List offers = await _sqLiteService.queryAll('ussdCodes');
-    if (mounted) {
-      setState(() {
-        myOffers = List<Map<String, dynamic>>.from(offers.map((offer) => {
-              'amount': offer['amount'],
-              'isAdvanced': offer['isAdvanced'],
-              'code': offer['code'],
-            }));
-      });
+    try {
+      final rows = await _sqLiteService.rawQueryInput(
+          'SELECT u.amount as amount, u.isAdvanced as isAdvanced, v.code as code FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY u.amount',
+          []);
+      if (mounted) {
+        setState(() {
+          myOffers = List<Map<String, dynamic>>.from(rows.map((offer) => {
+                'amount': offer['amount'],
+                'isAdvanced': offer['isAdvanced'],
+                'code': offer['code'],
+              }));
+        });
+      }
+    } catch (e) {
+      // fallback to legacy
+      List offers = await _sqLiteService.queryAll('ussdCodes');
+      if (mounted) {
+        setState(() {
+          myOffers = List<Map<String, dynamic>>.from(offers.map((offer) => {
+                'amount': offer['amount'],
+                'isAdvanced': offer['isAdvanced'],
+                'code': offer['code'],
+              }));
+        });
+      }
     }
   }
 

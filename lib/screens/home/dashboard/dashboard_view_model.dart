@@ -13,7 +13,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../../../services/kill_switch_service.dart';
+import '../../../services/admin_management_service.dart';
 
 class DashboardViewModel extends ChangeNotifier {
   final _sqliteService = SQLiteService();

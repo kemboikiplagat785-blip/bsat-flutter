@@ -1184,15 +1184,32 @@ class TransactionController {
 
       if (!isActive) return;
 
-      Map<String, dynamic> thisCOde = lecodes.firstWhere(
-        (code) => code['ussdCode'] == ussdCode,
-        orElse: () => {},
+      Map<String, dynamic> thisCode = {};
+      final variantMatches = await _sqliteService.queryCustom(
+        'ussdCodeVariants',
+        'code = ?',
+        [ussdCode],
+        limit: 1,
       );
+
+      if (variantMatches.isNotEmpty) {
+        thisCode = variantMatches.first;
+      } else {
+        final legacyMatches = await _sqliteService.queryCustom(
+          'ussdCodes',
+          'code = ?',
+          [ussdCode],
+          limit: 1,
+        );
+        if (legacyMatches.isNotEmpty) {
+          thisCode = legacyMatches.first;
+        }
+      }
 
       var signatureQuery = await _sqliteService.queryCustom(
         'codeSignature',
         'ussdCodeId = ?',
-        [thisCOde['id'] ?? -1],
+        [thisCode['ussdCodeId'] ?? thisCode['id'] ?? -1],
       );
 
       codeSignature = codeSignature ??
@@ -2087,11 +2104,20 @@ class TransactionController {
     String ussdRaw = getCodeFromUssd(code);
 
     List offers = await _sqliteService.queryCustom(
-      'ussdCodes',
+      'ussdCodeVariants',
       'code = ?',
       [ussdRaw],
       columns: ['isAdvanced'],
     );
+
+    if (offers.isEmpty) {
+      offers = await _sqliteService.queryCustom(
+        'ussdCodes',
+        'code = ?',
+        [ussdRaw],
+        columns: ['isAdvanced'],
+      );
+    }
 
     return offers.isNotEmpty && offers.first['isAdvanced'] == 1;
   }
@@ -2261,31 +2287,80 @@ class TransactionController {
   }
 
   Future<String> selectBongaUssdCode(int id) async {
+    // Load the ussdCodes row
     List<Map<String, dynamic>> ussdCodeItem = await _sqliteService.queryCustom(
       'ussdCodes',
       'id = ?',
       [id],
     );
 
-    if (ussdCodeItem.first['usesBongaPoints'] == null ||
-        ussdCodeItem.first['usesBongaPoints'] == 0) {
-      return ussdCodeItem.first['code'];
+    if (ussdCodeItem.isEmpty) return '';
+
+    final row = ussdCodeItem.first;
+
+    // choose active variant code for this ussdCode id
+    String activeCode = await _getActiveVariantCode(row['id']);
+
+    if (row['usesBongaPoints'] == null || row['usesBongaPoints'] == 0) {
+      return activeCode;
     }
 
     List<dynamic> reply = await _phoneService.makeMyRequest(
-      ussdCodeItem.first['balanceCheckCode'],
-      ussdCodeItem.first['dialSim'],
+      row['balanceCheckCode'],
+      row['dialSim'],
     );
 
     int bongaBalance = await getBongaBalance(reply[0]);
 
-    //print("Bonga balance: $bongaBalance");
-
-    if (bongaBalance > ussdCodeItem.first['bongaPointsPerTransaction']) {
-      return ussdCodeItem.first['code'];
+    if (bongaBalance > (row['bongaPointsPerTransaction'] ?? 0)) {
+      return activeCode;
     }
 
-    return ussdCodeItem.first['fallbackCode'];
+    return row['fallbackCode'] ?? activeCode;
+  }
+
+  Future<String> _getActiveVariantCode(int ussdCodeId) async {
+    try {
+      final variants = await _sqliteService.queryCustom(
+        'ussdCodeVariants',
+        'ussdCodeId = ?',
+        [ussdCodeId],
+      );
+
+      if (variants.isEmpty) {
+        return '';
+      }
+
+      final now = DateTime.now();
+      final curMin = now.hour * 60 + now.minute;
+
+      for (var v in variants) {
+        final s = v['startTime']?.toString() ?? '';
+        final e = v['endTime']?.toString() ?? '';
+        if (s.isEmpty && e.isEmpty) return v['code'] ?? '';
+        if (s.isEmpty || e.isEmpty) return v['code'] ?? '';
+
+        try {
+          final sParts = s.split(':');
+          final eParts = e.split(':');
+          final sMin = int.parse(sParts[0]) * 60 + int.parse(sParts[1]);
+          final eMin = int.parse(eParts[0]) * 60 + int.parse(eParts[1]);
+          if (sMin <= eMin) {
+            if (curMin >= sMin && curMin < eMin) return v['code'] ?? '';
+          } else {
+            // crosses midnight
+            if (curMin >= sMin || curMin < eMin) return v['code'] ?? '';
+          }
+        } catch (e) {
+          return v['code'] ?? '';
+        }
+      }
+
+      // if none matched, return first
+      return variants.first['code'] ?? '';
+    } catch (e) {
+      return '';
+    }
   }
 
   Future<Map<String, dynamic>> getOfferSignature(
@@ -2350,9 +2425,12 @@ class TransactionController {
       );
     }
 
+    final ussdId = response.first['id'];
+    final variantCode = await _getActiveVariantCode(ussdId);
+
     return UssdCode(
       id: response.first['id'],
-      code: response.first['code'],
+      code: variantCode,
       amount: response.first['amount'] ?? 0,
       fromSim: response.first['fromSim'],
       canRetry: response.first['canRetry'] != 0,

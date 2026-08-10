@@ -58,65 +58,65 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
 
 
-                /// args:
-                ///
-                ///  "sequence": String (e.g. "*123*1*2#")
-                ///  "subscriptionId":  int
-                ///  "acceptedProcedure": List<MAp<String, any>>
-                ///  "autoSwitch": bool
-                ///  "isGettingSignature": bool
-                ///
+            /// args:
+            ///
+            ///  "sequence": String (e.g. "*123*1*2#")
+            ///  "subscriptionId":  int
+            ///  "acceptedProcedure": List<MAp<String, any>>
+            ///  "autoSwitch": bool
+            ///  "isGettingSignature": bool
+            ///
 
-                if (call.method == "runUssdSequence") {
+            if (call.method == "runUssdSequence") {
 
-                    if (UssdSession.ussdSteps.isNotEmpty() || UssdSession.isRunning || UssdSession.currentStepIndex > 0) {
-                        // If there is an ongoing USSD session, return an error
-                        sendNativeLog(
-                            "debug",
-                            "UssdSession",
-                            "USSD session already in progress. Current steps: ${UssdSession.ussdSteps}, Current index: ${UssdSession.currentStepIndex}"
-                        )
-                        result.success("USSD session already in progress. Please wait for it to finish.")
-                        return@setMethodCallHandler
-                    }
-
-                    sendNativeLog("debug", "UssdSession", "Starting new USSD session")
-
-                    UssdSession.acceptedProcedure = listOf()
-
-                    UssdSession.acceptedProcedure =
-                        call.argument<List<Map<String, Any>>>("acceptedProcedure") ?: listOf()
-                    UssdSession.autoSwitch = call.argument<Boolean>("autoSwitch") ?: false
-                    UssdSession.isGettingSignature =
-                        call.argument<Boolean>("isGettingSignature") ?: false
-
+                if (UssdSession.ussdSteps.isNotEmpty() || UssdSession.isRunning || UssdSession.currentStepIndex > 0) {
+                    // If there is an ongoing USSD session, return an error
                     sendNativeLog(
                         "debug",
                         "UssdSession",
-                        "Accepted Procedure: ${UssdSession.acceptedProcedure}, AutoSwitch: ${UssdSession.autoSwitch}"
+                        "USSD session already in progress. Current steps: ${UssdSession.ussdSteps}, Current index: ${UssdSession.currentStepIndex}"
                     )
-
-                    UssdSession.currentStepIndex = 1
-                    var sequence = call.argument<String>("sequence") ?: ""
-                    if (sequence.endsWith("#")) {
-                        sequence = sequence.substring(0, sequence.length - 1)
-                    }
-                    UssdSession.ussdSteps =
-                        sequence.split("*").filter { it.isNotEmpty() }.toMutableList()
-                    UssdSession.usedUssdSteps.clear()
-                    sendNativeLog("debug", "UssdSession", "UssdSteps: ${UssdSession.ussdSteps}")
-
-                    val subscriptionId = call.argument<Int>("subscriptionId") ?: 0
-                    val firstCode = "*${UssdSession.ussdSteps[0]}#"
-                    UssdSession.ussdDialed = firstCode
-                    
-                    if (dialUssd(firstCode, subscriptionId, result)) {
-                        waitForUssdResponse(result)
-                    }
-                } else {
-                    result.notImplemented()
+                    result.success("USSD session already in progress. Please wait for it to finish.")
+                    return@setMethodCallHandler
                 }
+
+                sendNativeLog("debug", "UssdSession", "Starting new USSD session")
+
+                UssdSession.acceptedProcedure = listOf()
+
+                UssdSession.acceptedProcedure =
+                    call.argument<List<Map<String, Any>>>("acceptedProcedure") ?: listOf()
+                UssdSession.autoSwitch = call.argument<Boolean>("autoSwitch") ?: false
+                UssdSession.isGettingSignature =
+                    call.argument<Boolean>("isGettingSignature") ?: false
+
+                sendNativeLog(
+                    "debug",
+                    "UssdSession",
+                    "Accepted Procedure: ${UssdSession.acceptedProcedure}, AutoSwitch: ${UssdSession.autoSwitch}"
+                )
+
+                UssdSession.currentStepIndex = 1
+                var sequence = call.argument<String>("sequence") ?: ""
+                if (sequence.endsWith("#")) {
+                    sequence = sequence.substring(0, sequence.length - 1)
+                }
+                UssdSession.ussdSteps =
+                    sequence.split("*").filter { it.isNotEmpty() }.toMutableList()
+                UssdSession.usedUssdSteps.clear()
+                sendNativeLog("debug", "UssdSession", "UssdSteps: ${UssdSession.ussdSteps}")
+
+                val subscriptionId = call.argument<Int>("subscriptionId") ?: 0
+                val firstCode = "*${UssdSession.ussdSteps[0]}#"
+                UssdSession.ussdDialed = firstCode
+
+                if (dialUssd(firstCode, subscriptionId, result)) {
+                    waitForUssdResponse(result)
+                }
+            } else {
+                result.notImplemented()
             }
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

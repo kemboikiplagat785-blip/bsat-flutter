@@ -34,6 +34,7 @@ class _OffersPageState extends State<OffersPage> {
   bool _selectionMode = false;
 
   final Set<int> _selectedTransactionIds = {};
+  final Set<String> _expandedCodes = {};
 
   @override
   void initState() {
@@ -74,19 +75,30 @@ class _OffersPageState extends State<OffersPage> {
     refreshPage();
   }
 
-  void addOffers() {
+  Future<void> addOffers() async {
     for (var i in kNoAutoretryCodes) {
-      _sqliteService.insertStuff(
+      final id = await _sqliteService.insertStuff(
         {
           'amount': i["amount"],
-          'code': i["code"],
           'fromSim': _fromSim,
           'dialSim': _dialSim,
           'canRetry': 0,
           'isAdvanced': 1,
+          'enabled': 1,
+          'offerName': i["offerName"] ?? 'Ksh ${i["amount"]}',
         },
         'ussdCodes',
       );
+
+      try {
+        await _sqliteService.insertStuff({
+          'ussdCodeId': id,
+          'code': i["code"],
+          'startTime': null,
+          'endTime': null,
+        },
+        'ussdCodeVariants');
+      } catch (e) {}
     }
   }
 
@@ -100,14 +112,13 @@ class _OffersPageState extends State<OffersPage> {
   }
 
   Future<void> getAllUSSDCodes() async {
-    await _sqliteService.queryAll('ussdCodes').then(
-      (value) {
-        setState(() {
-          ussdCodes = value;
-        });
-        // debugPrint('${ussdCodes.length}');
-      },
-    );
+    // Join ussdCodes with ussdCodeVariants so each returned row has a `code` field
+    final rows = await _sqliteService.rawQueryInput(
+        'SELECT u.id as id, v.code as code, u.amount as amount, u.fromSim as fromSim, u.dialSim as dialSim, u.enabled as enabled, u.offerName as offerName FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY v.code, u.amount',
+        []);
+    setState(() {
+      ussdCodes = rows;
+    });
   }
 
   void addAdvancedColumn() async {
@@ -304,30 +315,115 @@ class _OffersPageState extends State<OffersPage> {
                         ),
                       )
                     : Padding(
-                        padding: kPagePaddingInsets,
-                        child: Wrap(
-                          spacing: kPagePadding / 4,
-                          runSpacing: kPagePadding / 2,
-                          children: ussdCodes.map(
-                            (ussdCode) {
-                              return Padding(
-                                padding: const EdgeInsets.only(
-                                    bottom: kPagePadding / 2),
-                                child: ussdCodeListItem(
-                                  context,
-                                  ussdCode['id'],
-                                  ussdCode['code'],
-                                  ussdCode['amount'],
-                                  ussdCode['fromSim'],
-                                  ussdCode['dialSim'],
-                                  sims,
-                                  ussdCode['enabled'] == 1,
-                                ),
+                            padding: kPagePaddingInsets,
+                            child: Builder(builder: (context) {
+                              // Group offers by the USSD code string
+                              final Map<String, List<Map<String, dynamic>>> grouped = {};
+                              for (var item in ussdCodes) {
+                                final code = item['code'] ?? '';
+                                grouped.putIfAbsent(code, () => []).add(item);
+                              }
+
+                              return Column(
+                                children: grouped.entries.map((entry) {
+                                  final code = entry.key;
+                                  final items = entry.value;
+                                  final first = items.first;
+                                  final bool isExpanded = _expandedCodes.contains(code);
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: kPagePadding / 2),
+                                    child: Container(
+                                      padding: kPagePaddingInsets,
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).cardColor,
+                                        borderRadius: BorderRadius.circular(kBorderRadius),
+                                      ),
+                                      child: Column(
+                                        children: [
+                                          InkWell(
+                                            onTap: () {
+                                              setState(() {
+                                                if (isExpanded)
+                                                  _expandedCodes.remove(code);
+                                                else
+                                                  _expandedCodes.add(code);
+                                              });
+                                            },
+                                            child: Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(first['offerName'] ?? 'KSH ${first['amount']}', style: Theme.of(context).textTheme.titleLarge),
+                                                      const SizedBox(height: 6),
+                                                      Text(code, style: TextStyle(color: Theme.of(context).hintColor)),
+                                                      const SizedBox(height: 8),
+                                                      Row(children: [getSimCards(first['fromSim']), const SizedBox(width: 8), getSimCards(first['dialSim'])]),
+                                                    ],
+                                                  ),
+                                                ),
+                                                Column(
+                                                  children: [
+                                                    Icon(isExpanded ? Icons.expand_less : Icons.expand_more),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          if (isExpanded) ...[
+                                            const Divider(color: Colors.white24),
+                                            Column(
+                                              children: items.map((it) {
+                                                return ListTile(
+                                                  contentPadding: EdgeInsets.zero,
+                                                  title: Text('KSH ${it['amount']}', style: TextStyle(fontWeight: FontWeight.bold)),
+                                                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                                                    IconButton(
+                                                      icon: Icon(Icons.edit, color: kPrimaryColor),
+                                                      onPressed: () {
+                                                        Navigator.of(context)
+                                                            .push(
+                                                              PageRouteBuilder(
+                                                                pageBuilder: (context, animation, secondaryAnimation) => EditOfferPage(ruleId: it['id']),
+                                                                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                                                  return CupertinoPageTransition(
+                                                                    primaryRouteAnimation: animation,
+                                                                    secondaryRouteAnimation: secondaryAnimation,
+                                                                    linearTransition: true,
+                                                                    child: child,
+                                                                  );
+                                                                },
+                                                              ),
+                                                            )
+                                                            .then((value) => getAllUSSDCodes());
+                                                      },
+                                                    ),
+                                                    IconButton(
+                                                      icon: Icon(CupertinoIcons.delete, color: kErrorColor),
+                                                      onPressed: () async {
+                                                        final confirmed = await showConfirmDeleteDialog(context, title: 'Delete', message: 'Delete this offer?') ?? false;
+                                                        if (confirmed) {
+                                                          _sqliteService.deleteStuff(it['id'], 'ussdCodes');
+                                                          getAllUSSDCodes();
+                                                        }
+                                                      },
+                                                    ),
+                                                  ]),
+                                                );
+                                              }).toList(),
+                                            ),
+                                          ]
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
                               );
-                            },
-                          ).toList(),
-                        ),
-                      ),
+                            }),
+                          ),
                 const SizedBox(height: kPagePadding * 2),
               ],
             ),

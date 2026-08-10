@@ -5,7 +5,7 @@ import './sqlite_service.dart';
 import './phone_service.dart';
 import '../utils/constants.dart';
 import '../utils/date_ops.dart';
-import 'kill_switch_service.dart';
+import 'admin_management_service.dart';
 
 class PaymentOps {
   final _sqliteHelper = SQLiteService();

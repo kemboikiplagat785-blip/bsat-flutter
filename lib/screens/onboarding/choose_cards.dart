@@ -55,10 +55,9 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
 
   Future<void> addAllCodesToDatabase() async {
     for (var i in kInitialCodes) {
-      _sqliteService.insertStuff(
+      int id = await _sqliteService.insertStuff(
         {
           'amount': i["amount"],
-          'code': i["code"],
           'fromSim': -1,
           'dialSim': _dialSim,
           'canRetry': 1,
@@ -66,13 +65,18 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
         },
         'ussdCodes',
       );
+      try {
+        await _sqliteService.insertStuff({
+          'ussdCodeId': id,
+          'code': i["code"],
+        }, 'ussdCodeVariants');
+      } catch (e) {}
     }
 
     for (var i in kNoAutoretryCodes) {
-      _sqliteService.insertStuff(
+      int id = await _sqliteService.insertStuff(
         {
           'amount': i["amount"],
-          'code': i["code"],
           'fromSim': -1,
           'dialSim': _dialSim,
           // 'canRetry': 0,
@@ -81,6 +85,12 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
         },
         'ussdCodes',
       );
+      try {
+        await _sqliteService.insertStuff({
+          'ussdCodeId': id,
+          'code': i["code"],
+        }, 'ussdCodeVariants');
+      } catch (e) {}
     }
 
     await _sharedPreferencesService.setSmsRunning(true);

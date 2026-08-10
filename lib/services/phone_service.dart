@@ -245,7 +245,7 @@ class PhoneService {
         }).toList();
       }
 
-      // // If platform returned a single map-like object
+      // If platform returned a single map-like object
       // if (result is Map) {
       //   return [Map<String, dynamic>.from(result)];
       // }

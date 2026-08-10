@@ -130,7 +130,6 @@ class USSDResponderService : AccessibilityService() {
                                     "UssdSession",
                                     "Sending split number $splitNumb"
                                 )
-
                             }
 
                             // Re-sync the index so we stay aligned on the next loops
@@ -185,7 +184,7 @@ class USSDResponderService : AccessibilityService() {
                                                 NativeLogger.sendLog("debug", "UssdSession", "Similarity search found alternative input: $alternativeInput")
                                                 nextInput = alternativeInput
                                             } else {
-                                                cancelSession(root, "Offer might have changed. Cannot find expected option $expectedOption")
+                                                cancelSession(root, "Offer might have changed. Cannot find expected option $expectedOption. Found $responseText")
                                                 return
                                             }
                                         }
@@ -210,13 +209,14 @@ class USSDResponderService : AccessibilityService() {
                 NativeLogger.sendLog(
                     "debug",
                     "UssdSession",
-                    "Current step index: ${UssdSession.currentStepIndex}, Next input: $nextInput, Response text: $responseText"
+                    "Next input: $nextInput, Response text: $responseText"
                 )
 
                 val inputNode = findNodeByClass(root, EditText::class.java.name)
 
                 if (UssdSession.isGettingSignature && UssdSession.currentStepIndex == UssdSession.ussdSteps.size) {
                     nextInput = ""
+                    NativeLogger.sendLog("debug", "UssdSession", "Getting signature. Clearing input. Results: $")
                     cancelSession(root, "sd", isSuccess = true, responseText = responseText)
                 } else {
                     inputNode?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {

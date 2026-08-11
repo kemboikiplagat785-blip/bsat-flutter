@@ -11,7 +11,6 @@ class OffersTransferService {
       SharedPreferencesService();
 
   static const List<String> _allowedOfferColumns = [
-    'code',
     'amount',
     'fromSim',
     'dialSim',
@@ -22,6 +21,13 @@ class OffersTransferService {
     'fallbackCode',
     'balanceCheckCode',
     'bongaPointsPerTransaction',
+    'offerName',
+  ];
+
+  static const List<String> _allowedVariantColumns = [
+    'code',
+    'startTime',
+    'endTime',
     'alternativeUssdCode',
     'runAltOn',
     'altIsAdvanced',
@@ -64,8 +70,32 @@ class OffersTransferService {
       orderBy: 'id ASC',
     );
 
+    final List<Map<String, dynamic>> variants = await _sqliteService.queryAll(
+      'ussdCodeVariants',
+      orderBy: 'ussdCodeId ASC, id ASC',
+    );
+
+    final Map<int, List<Map<String, dynamic>>> variantsByOfferId = {};
+    for (final variant in variants) {
+      final cleanedVariant = _sanitizeVariantForTransfer(variant);
+      if (cleanedVariant.isEmpty) {
+        continue;
+      }
+      final offerId = int.tryParse(variant['ussdCodeId']?.toString() ?? '') ?? -1;
+      variantsByOfferId.putIfAbsent(offerId, () => []).add(cleanedVariant);
+    }
+
     final List<Map<String, dynamic>> serializableOffers = offers
-        .map(_sanitizeOfferForTransfer)
+        .map((offer) {
+          final cleanedOffer = _sanitizeOfferForTransfer(offer);
+          if (cleanedOffer.isEmpty) {
+            return <String, dynamic>{};
+          }
+
+          final offerId = int.tryParse(offer['id']?.toString() ?? '') ?? -1;
+          cleanedOffer['variants'] = variantsByOfferId[offerId] ?? [];
+          return cleanedOffer;
+        })
         .where((row) => row.isNotEmpty)
         .toList();
 
@@ -100,17 +130,63 @@ class OffersTransferService {
 
     if (replaceExisting) {
       await _sqliteService.clearTable('ussdCodes');
+      await _sqliteService.clearTable('ussdCodeVariants');
     }
 
     int importedCount = 0;
 
     for (final offer in parsedOffers) {
-      final row = _sanitizeOfferForTransfer(offer);
-      if (row.isEmpty) {
+      final offerRow = _sanitizeOfferForTransfer(offer);
+      if (offerRow.isEmpty) {
         continue;
       }
 
-      await _sqliteService.insertStuff(row, 'ussdCodes');
+      final List<Map<String, dynamic>> variantsToInsert = [];
+      final dynamic rawVariants = offer['variants'];
+
+      if (rawVariants is List) {
+        for (final rawVariant in rawVariants) {
+          if (rawVariant is! Map) {
+            continue;
+          }
+
+          final cleanedVariant = _sanitizeVariantForTransfer(
+            Map<String, dynamic>.from(rawVariant),
+          );
+          if (cleanedVariant.isNotEmpty) {
+            variantsToInsert.add(cleanedVariant);
+          }
+        }
+      }
+
+      if (variantsToInsert.isEmpty) {
+        final legacyCode = offer['code']?.toString().trim() ?? '';
+        if (legacyCode.isNotEmpty) {
+          final legacyVariant = _sanitizeVariantForTransfer({
+            'code': legacyCode,
+            'startTime': offer['startTime'],
+            'endTime': offer['endTime'],
+            'alternativeUssdCode': offer['alternativeUssdCode'],
+            'runAltOn': offer['runAltOn'],
+            'altIsAdvanced': offer['altIsAdvanced'],
+          });
+          if (legacyVariant.isNotEmpty) {
+            variantsToInsert.add(legacyVariant);
+          }
+        }
+      }
+
+      if (variantsToInsert.isEmpty) {
+        continue;
+      }
+
+      final offerId = await _sqliteService.insertStuff(offerRow, 'ussdCodes');
+
+      for (final variant in variantsToInsert) {
+        variant['ussdCodeId'] = offerId;
+        await _sqliteService.insertStuff(variant, 'ussdCodeVariants');
+      }
+
       importedCount++;
     }
 
@@ -151,7 +227,6 @@ class OffersTransferService {
       }
 
       dynamic value = row[key];
-
       if (value == null) {
         continue;
       }
@@ -163,16 +238,14 @@ class OffersTransferService {
           key == 'isAdvanced' ||
           key == 'enabled' ||
           key == 'usesBongaPoints' ||
-          key == 'bongaPointsPerTransaction' ||
-          key == 'altIsAdvanced') {
+          key == 'bongaPointsPerTransaction') {
         value = int.tryParse(value.toString()) ?? 0;
       }
 
       cleaned[key] = value;
     }
 
-    if ((cleaned['code']?.toString().trim().isEmpty ?? true) ||
-        (cleaned['amount'] == null)) {
+    if (cleaned['amount'] == null) {
       return {};
     }
 
@@ -180,6 +253,34 @@ class OffersTransferService {
     cleaned['canRetry'] ??= 0;
     cleaned['isAdvanced'] ??= 0;
 
+    return cleaned;
+  }
+
+  Map<String, dynamic> _sanitizeVariantForTransfer(Map<String, dynamic> row) {
+    final Map<String, dynamic> cleaned = {};
+
+    for (final key in _allowedVariantColumns) {
+      if (!row.containsKey(key)) {
+        continue;
+      }
+
+      dynamic value = row[key];
+      if (value == null) {
+        continue;
+      }
+
+      if (key == 'altIsAdvanced') {
+        value = int.tryParse(value.toString()) ?? 0;
+      }
+
+      cleaned[key] = value;
+    }
+
+    if ((cleaned['code']?.toString().trim().isEmpty ?? true)) {
+      return {};
+    }
+
+    cleaned['altIsAdvanced'] ??= 0;
     return cleaned;
   }
 
@@ -220,20 +321,21 @@ class OffersTransferService {
       'INTEGER',
       defaultValue: 0,
     );
+
     await _sqliteService.addColumnIfNotExists(
-      'ussdCodes',
+      'ussdCodeVariants',
       'alternativeUssdCode',
       'TEXT',
       defaultValue: 'NULL',
     );
     await _sqliteService.addColumnIfNotExists(
-      'ussdCodes',
+      'ussdCodeVariants',
       'runAltOn',
       'TEXT',
       defaultValue: 'NULL',
     );
     await _sqliteService.addColumnIfNotExists(
-      'ussdCodes',
+      'ussdCodeVariants',
       'altIsAdvanced',
       'INTEGER',
       defaultValue: 0,

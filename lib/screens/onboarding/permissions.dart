@@ -30,10 +30,22 @@ class _PermissionsPageState extends State<PermissionsPage> {
     // checkAndProceed();
   }
 
-  Future<void> askForDefaultSms() async {
-    bool? isRequestGranted = await telephony.requestPhoneAndSmsPermissions;
+  Future<bool> _requestPhoneAndSmsPermissions() async {
+    try {
+      return await telephony.requestPhoneAndSmsPermissions ?? false;
+    } catch (e) {
+      // The permission plugin throws instead of resolving to false when the
+      // user denies the SMS/phone permission dialog. Treat that the same as
+      // a denial rather than letting it crash the app.
+      debugPrint("SMS/phone permission request failed: $e");
+      return false;
+    }
+  }
 
-    if (isRequestGranted != null && isRequestGranted) {
+  Future<void> askForDefaultSms() async {
+    bool isRequestGranted = await _requestPhoneAndSmsPermissions();
+
+    if (isRequestGranted) {
       print("App is now the default SMS app!");
       // Now try your BackgroundSms.sendMessage code with the simSlot
     } else {
@@ -46,7 +58,7 @@ class _PermissionsPageState extends State<PermissionsPage> {
     //   if (value) return;
     // });
     await Permission.notification.request();
-    if ((await telephony.requestPhoneAndSmsPermissions ?? false) &&
+    if ((await _requestPhoneAndSmsPermissions()) &&
         (await Permission.notification.isGranted)) {
       await askForDefaultSms();
       initializeBackgroundService();

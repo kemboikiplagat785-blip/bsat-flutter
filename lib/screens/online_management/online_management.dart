@@ -133,15 +133,147 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
     setState(() {});
   }
 
+  Widget _sectionLabel(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(
+        left: kPagePadding + 4,
+        right: kPagePadding,
+        top: kPagePadding * 1.25,
+        bottom: 8,
+      ),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+          color: kIndigoColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _pendingPairsBanner(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kBorderRadius),
+        onTap: () {
+          Navigator.of(context).push(
+            CupertinoPageRoute(
+              builder: (context) => PairedDevices(),
+            ),
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: kPagePadding,
+            vertical: kPagePadding / 1.3,
+          ),
+          decoration: BoxDecoration(
+            color: kWarningColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(kBorderRadius),
+            border: Border.all(color: kWarningColor.withOpacity(0.4)),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                CupertinoIcons.exclamationmark_triangle_fill,
+                color: kWarningColor,
+                size: 20,
+              ),
+              const SizedBox(width: kPagePadding / 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      "Pending Pairing Requests",
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "$pendingPairs device${pendingPairs == 1 ? '' : 's'} waiting for approval",
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(CupertinoIcons.chevron_right, size: 18, color: kIndigoColor),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _signOutButton(BuildContext context) {
+    return InkWell(
+      onTap: () async {
+        bool confirmed = await showConfirmDeleteDialog(
+              context,
+              title: "",
+              message: "Sign out of this device?",
+            ) ??
+            false;
+
+        if (!confirmed) return;
+        showLoadingDialog(
+          context,
+          text: "Signing out...",
+        );
+
+        await AuthService().logout();
+
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: kPagePadding),
+        padding: kPagePaddingInsets,
+        decoration: BoxDecoration(
+          color: kErrorColorLight,
+          borderRadius: BorderRadius.circular(kBorderRadius),
+          border: Border.all(color: kErrorColor.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            const Icon(CupertinoIcons.power, color: kErrorColor),
+            const SizedBox(width: kPagePadding / 2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Sign out',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: kErrorColor),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'End session on this device',
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(CupertinoIcons.chevron_right, size: 20, color: kErrorColor),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SingleChildScrollView(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             header(context, 'Online Management'),
+            const SizedBox(height: kPagePadding),
             Padding(
-              padding: kPagePaddingInsets,
+              padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
               child: ProfileCard(
                 name: name,
                 webLink: webLink,
@@ -149,8 +281,9 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                 email: email,
               ),
             ),
+            _sectionLabel('This Device'),
             Padding(
-              padding: kPagePaddingInsets,
+              padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
               child: deviceCard(
                 context: context,
                 deviceName: myDeviceName,
@@ -161,87 +294,14 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                 iconData: CupertinoIcons.phone_solid,
               ),
             ),
-            Padding(
-              padding: kPagePaddingInsets,
-              child: pendingPairs > 0
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.of(context).push(
-                              CupertinoPageRoute(
-                                builder: (context) => PairedDevices(),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              // color: Colors.white,
-                              color: Theme.of(context).cardColor,
-                              borderRadius:
-                                  BorderRadius.circular(kBorderRadius),
-                              border: Border(
-                                bottom: BorderSide(
-                                  // color: Theme.of(context).hintColor,
-                                  color: kIndigoColor,
-                                  width: 4,
-                                ),
-                                right: BorderSide(
-                                  // color: Theme.of(context).hintColor,
-                                  color: kIndigoColor,
-                                  width: 4,
-                                ),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  "Pending Pairing Requests",
-                                  style: TextStyle(
-                                      // fontSize: 14,
-                                      // color: Colors.grey,
-                                      ),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Icon(
-                                            CupertinoIcons
-                                                .exclamationmark_triangle,
-                                            color: Colors.orangeAccent),
-                                        const SizedBox(width: 10),
-                                        Text(
-                                          "$pendingPairs",
-                                          style: const TextStyle(
-                                            // fontSize: 16,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    Icon(CupertinoIcons.chevron_right,
-                                        color: kIndigoColor),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: kPagePadding),
-                      ],
-                    )
-                  : SizedBox.shrink(),
-            ),
+            if (pendingPairs > 0) ...[
+              const SizedBox(height: kPagePadding / 1.5),
+              _pendingPairsBanner(context),
+            ],
+            _sectionLabel('Manage'),
             buttonDescriptive(
               context,
-              title: 'Buy for another number + Sell data online (${webLink})',
+              title: 'Buy for another number + Sell data online ($webLink)',
               subtitle: 'My Link (Online Presence)',
               icon: Icon(CupertinoIcons.link, color: kIndigoColor),
               onTap: () {
@@ -277,35 +337,11 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                     builder: (context) => MyWebsitePage(),
                   ),
                 );
-                // open url in browser
-                
               },
             ),
-            buttonDescriptive(
-              context,
-              title: 'End Session',
-              subtitle: 'Sign out',
-              icon: Icon(CupertinoIcons.power, color: kErrorColor),
-              onTap: () async {
-                bool confirmed = await showConfirmDeleteDialog(
-                      context,
-                      title: "",
-                      message: "Sign out of this device?",
-                    ) ??
-                    false;
-
-                if (!confirmed) return;
-                showLoadingDialog(
-                  context,
-                  text: "Signing out...",
-                );
-
-                await AuthService().logout();
-
-                Navigator.of(context).popUntil((route) => route.isFirst);
-              },
-            ),
-            const SizedBox(height: kPagePadding * 5),
+            _sectionLabel('Session'),
+            _signOutButton(context),
+            const SizedBox(height: kPagePadding * 3),
           ],
         ),
       ),

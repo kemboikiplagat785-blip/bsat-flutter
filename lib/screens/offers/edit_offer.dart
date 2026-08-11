@@ -2,13 +2,11 @@ import 'dart:ui';
 
 import 'package:bsat/components/dialogs/delete_ussd_dialog.dart';
 import 'package:bsat/components/dialogs/make_offer_tutorial_dialog.dart';
-import 'package:bsat/components/dialogs/show_error_dialog.dart';
 import 'package:bsat/components/tool_button.dart';
 import 'package:bsat/screens/online_management/search_device.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:sim_data/sim_data.dart';
 
 import '../../components/device_card.dart';
@@ -34,18 +32,15 @@ class EditOfferPage extends StatefulWidget {
 class _EditOfferPageState extends State<EditOfferPage> {
   final TextEditingController _amountTextController = TextEditingController();
   final TextEditingController _codeTextController = TextEditingController();
-  final TextEditingController _alternativeUssdCodeTextController =
-      TextEditingController();
-  final TextEditingController _runAltOnTextController = TextEditingController();
   final TextEditingController _fallbackCodeTextController =
       TextEditingController();
   final TextEditingController _balanceCheckCodeTextController =
       TextEditingController();
   final TextEditingController _bongaPointsPerTransactionTextController =
       TextEditingController();
-    final TextEditingController _offerNameController = TextEditingController();
-    List<Map<String, TextEditingController>> _codeEntries = [];
-    Set<String> _originalCodes = {};
+  final TextEditingController _offerNameController = TextEditingController();
+  List<Map<String, dynamic>> _codeEntries = [];
+  Set<String> _originalCodes = {};
   final TextEditingController signatureTestNumberController =
       TextEditingController();
 
@@ -67,8 +62,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
   bool isAdvanced = false;
   bool usesBongaPoints = false;
   bool hasAcceptedProcedure = false;
-  bool hasAlternativeCode = false;
-  bool altIsAdvanced = false;
 
   List<Map<String, dynamic>> forwardingDevices = [];
 
@@ -109,6 +102,100 @@ class _EditOfferPageState extends State<EditOfferPage> {
         forwardingDevices = devices;
       });
     }
+  }
+
+  Map<String, dynamic> _createCodeEntry({
+    String code = '',
+    String start = '',
+    String end = '',
+    String alternativeUssdCode = '',
+    String runAltOn = '',
+    bool hasAlternativeCode = false,
+    bool altIsAdvanced = false,
+    String altDelayMinutes = '0',
+  }) {
+    final entry = <String, dynamic>{
+      'code': TextEditingController(text: code),
+      'start': TextEditingController(text: start),
+      'end': TextEditingController(text: end),
+      'alternativeUssdCode': TextEditingController(text: alternativeUssdCode),
+      'runAltOn': TextEditingController(text: runAltOn),
+      'altDelayMinutes': TextEditingController(text: altDelayMinutes),
+      'hasAlternativeCode': hasAlternativeCode,
+      'altIsAdvanced': altIsAdvanced,
+    };
+
+    for (final key in [
+      'code',
+      'start',
+      'end',
+      'alternativeUssdCode',
+      'runAltOn',
+      'altDelayMinutes',
+    ]) {
+      (entry[key] as TextEditingController).addListener(() {
+        if (mounted) {
+          setState(() => _hasChanges = true);
+        } else {
+          _hasChanges = true;
+        }
+      });
+    }
+
+    return entry;
+  }
+
+  TextEditingController _entryController(
+    Map<String, dynamic> entry,
+    String key,
+  ) {
+    return entry[key] as TextEditingController;
+  }
+
+  void _setEntryHasAlt(Map<String, dynamic> entry, bool value) {
+    setState(() {
+      entry['hasAlternativeCode'] = value;
+      _hasChanges = true;
+      if (!value) {
+        _entryController(entry, 'alternativeUssdCode').clear();
+        _entryController(entry, 'runAltOn').clear();
+        _entryController(entry, 'altDelayMinutes').text = '0';
+        entry['altIsAdvanced'] = false;
+      }
+    });
+  }
+
+  void _setEntryAltAdvanced(Map<String, dynamic> entry, bool value) {
+    setState(() {
+      entry['altIsAdvanced'] = value;
+      _hasChanges = true;
+    });
+  }
+
+  void _removeCodeEntry(int index) {
+    final entry = _codeEntries[index];
+    _entryController(entry, 'code').dispose();
+    _entryController(entry, 'start').dispose();
+    _entryController(entry, 'end').dispose();
+    _entryController(entry, 'alternativeUssdCode').dispose();
+    _entryController(entry, 'runAltOn').dispose();
+    _entryController(entry, 'altDelayMinutes').dispose();
+    setState(() {
+      _codeEntries.removeAt(index);
+      _hasChanges = true;
+    });
+  }
+
+  void _clearCodeEntries() {
+    for (final entry in _codeEntries) {
+      _entryController(entry, 'code').dispose();
+      _entryController(entry, 'start').dispose();
+      _entryController(entry, 'end').dispose();
+      _entryController(entry, 'alternativeUssdCode').dispose();
+      _entryController(entry, 'runAltOn').dispose();
+      _entryController(entry, 'altDelayMinutes').dispose();
+    }
+    _codeEntries.clear();
   }
 
   Future<bool> checkAccessibilityPermission() async {
@@ -153,7 +240,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     }
 
     for (var entry in _codeEntries) {
-      final codeText = entry['code']?.text ?? '';
+      final codeText = _entryController(entry, 'code').text;
       if (codeText.isEmpty) {
         setState(() {
           _errorUSSDCode = " *Required";
@@ -165,6 +252,29 @@ class _EditOfferPageState extends State<EditOfferPage> {
           _errorUSSDSyntax = " Code has error";
         });
         return false;
+      }
+
+      if (entry['hasAlternativeCode'] == true) {
+        final altCode = _entryController(entry, 'alternativeUssdCode').text;
+        if (altCode.isNotEmpty && RegExp(r'[^0-9*n#]').hasMatch(altCode)) {
+          setState(() {
+            _errorUSSDSyntax = " Code has error";
+          });
+          return false;
+        }
+
+        final delayText = _entryController(entry, 'altDelayMinutes').text;
+        final delayValue = int.tryParse(delayText);
+        if (delayText.isNotEmpty && (delayValue == null || delayValue < 0)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Alternative delay must be a whole number of minutes (0 or more).',
+              ),
+            ),
+          );
+          return false;
+        }
       }
     }
 
@@ -286,35 +396,27 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
   Future<void> addCodeToDatabase(int amount) async {
     int codeId = -1;
+    final offerRow = {
+      'amount': amount,
+      'offerName': _offerNameController.text.isNotEmpty
+          ? _offerNameController.text
+          : 'Ksh $amount',
+      'fromSim': _fromSim,
+      'dialSim': _dialSim,
+      'canRetry': _canRetry ? 1 : 0,
+      'isAdvanced': isAdvanced ? 1 : 0,
+      'usesBongaPoints': usesBongaPoints ? 1 : 0,
+      'fallbackCode': _fallbackCodeTextController.text,
+      'balanceCheckCode': _balanceCheckCodeTextController.text,
+      'bongaPointsPerTransaction':
+          int.tryParse(_bongaPointsPerTransactionTextController.text) ?? 0,
+    };
+
     if (widget.ruleId >= 0) {
-      // signature = signature.copyWith(
-      //   ussdCodeId: widget.ruleId,
-      //   usdCode: code,
-      // );
       codeId = widget.ruleId;
 
       await _sqliteService.updateStuff(
-        {
-          'id': widget.ruleId,
-          'amount': amount,
-          'offerName': _offerNameController.text.isNotEmpty
-              ? _offerNameController.text
-              : 'Ksh $amount',
-          'alternativeUssdCode': hasAlternativeCode
-              ? _alternativeUssdCodeTextController.text
-              : null,
-          'runAltOn': hasAlternativeCode ? _runAltOnTextController.text : null,
-          'altIsAdvanced': (hasAlternativeCode && altIsAdvanced) ? 1 : 0,
-          'fromSim': _fromSim,
-          'dialSim': _dialSim,
-          'canRetry': _canRetry ? 1 : 0,
-          'isAdvanced': isAdvanced ? 1 : 0,
-          'usesBongaPoints': usesBongaPoints ? 1 : 0,
-          'fallbackCode': _fallbackCodeTextController.text,
-          'balanceCheckCode': _balanceCheckCodeTextController.text,
-          'bongaPointsPerTransaction':
-              int.tryParse(_bongaPointsPerTransactionTextController.text) ?? 0,
-        },
+        offerRow,
         'id = ?',
         [widget.ruleId],
         'ussdCodes',
@@ -331,25 +433,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
     } else {
       codeId = await _sqliteService.insertStuff(
         {
-          'amount': amount,
-          'offerName': _offerNameController.text.isNotEmpty
-              ? _offerNameController.text
-              : 'Ksh $amount',
-          'alternativeUssdCode': hasAlternativeCode
-              ? _alternativeUssdCodeTextController.text
-              : null,
-          'runAltOn': hasAlternativeCode ? _runAltOnTextController.text : null,
-          'altIsAdvanced': (hasAlternativeCode && altIsAdvanced) ? 1 : 0,
+          ...offerRow,
           'fromSim': -1,
-          'dialSim': _dialSim,
-          'canRetry': _canRetry ? 1 : 0,
-          'isAdvanced': isAdvanced ? 1 : 0,
           'enabled': 1,
-          'usesBongaPoints': usesBongaPoints ? 1 : 0,
-          'fallbackCode': _fallbackCodeTextController.text,
-          'balanceCheckCode': _balanceCheckCodeTextController.text,
-          'bongaPointsPerTransaction':
-              int.tryParse(_bongaPointsPerTransactionTextController.text) ?? 0,
         },
         'ussdCodes',
       );
@@ -390,8 +476,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
     _codeTextController.clear();
     _amountTextController.clear();
-    _alternativeUssdCodeTextController.clear();
-    _runAltOnTextController.clear();
     _fallbackCodeTextController.clear();
     _balanceCheckCodeTextController.clear();
     _offerNameController.clear();
@@ -401,24 +485,51 @@ class _EditOfferPageState extends State<EditOfferPage> {
     } catch (e) {}
 
     // prepare new variants list to insert
-    final List<Map<String, String>> newVariants = [];
+    final List<Map<String, dynamic>> newVariants = [];
     for (var entry in _codeEntries) {
-      final codeText = entry['code']?.text ?? '';
-      final s = entry['start']?.text ?? '';
-      final e = entry['end']?.text ?? '';
+      final codeText = _entryController(entry, 'code').text;
+      final s = _entryController(entry, 'start').text;
+      final e = _entryController(entry, 'end').text;
       if (codeText.isEmpty) continue;
-      newVariants.add({'code': codeText, 'start': s, 'end': e});
+      newVariants.add({
+        'code': codeText,
+        'start': s,
+        'end': e,
+        'hasAlternativeCode': entry['hasAlternativeCode'] == true,
+        'alternativeUssdCode': _entryController(entry, 'alternativeUssdCode').text,
+        'runAltOn': _entryController(entry, 'runAltOn').text,
+        'altIsAdvanced': entry['altIsAdvanced'] == true,
+        'altDelayMinutes':
+            int.tryParse(_entryController(entry, 'altDelayMinutes').text) ?? 0,
+      });
     }
 
     // insert new variants for this offer
     for (var nv in newVariants) {
       try {
-        await _sqliteService.insertStuff({
-          'ussdCodeId': codeId,
-          'code': nv['code'],
-          'startTime': nv['start']!.isNotEmpty ? nv['start'] : null,
-          'endTime': nv['end']!.isNotEmpty ? nv['end'] : null,
-        }, 'ussdCodeVariants');
+        await _sqliteService.insertStuff(
+          {
+            'ussdCodeId': codeId,
+            'code': nv['code'],
+            'startTime': nv['start']!.isNotEmpty ? nv['start'] : null,
+            'endTime': nv['end']!.isNotEmpty ? nv['end'] : null,
+            'alternativeUssdCode': (nv['hasAlternativeCode'] == true &&
+                    (nv['alternativeUssdCode'] ?? '').toString().isNotEmpty)
+                ? nv['alternativeUssdCode']
+                : null,
+            'runAltOn': (nv['hasAlternativeCode'] == true &&
+                    (nv['runAltOn'] ?? '').toString().isNotEmpty)
+                ? nv['runAltOn']
+                : null,
+            'altIsAdvanced': (nv['hasAlternativeCode'] == true &&
+                    nv['altIsAdvanced'] == true)
+                ? 1
+                : 0,
+            'altDelayMinutes':
+                nv['hasAlternativeCode'] == true ? nv['altDelayMinutes'] : 0,
+          },
+          'ussdCodeVariants',
+        );
       } catch (e) {}
     }
 
@@ -439,27 +550,10 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
     for (var otherId in affectedIds) {
       try {
-        // update ussdCodes non-amount fields
         await _sqliteService.updateStuff(
           {
-            'alternativeUssdCode': hasAlternativeCode
-                ? _alternativeUssdCodeTextController.text
-                : null,
-            'runAltOn': hasAlternativeCode ? _runAltOnTextController.text : null,
-            'altIsAdvanced': (hasAlternativeCode && altIsAdvanced) ? 1 : 0,
-            'fromSim': _fromSim,
-            'dialSim': _dialSim,
-            'canRetry': _canRetry ? 1 : 0,
-            'isAdvanced': isAdvanced ? 1 : 0,
-            'usesBongaPoints': usesBongaPoints ? 1 : 0,
-            'fallbackCode': _fallbackCodeTextController.text,
-            'balanceCheckCode': _balanceCheckCodeTextController.text,
-            'bongaPointsPerTransaction':
-                int.tryParse(_bongaPointsPerTransactionTextController.text) ?? 0,
+            ...offerRow,
             'enabled': 1,
-            'offerName': _offerNameController.text.isNotEmpty
-                ? _offerNameController.text
-                : 'Ksh $amount',
           },
           'id = ?',
           [otherId],
@@ -473,12 +567,32 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
         for (var nv in newVariants) {
           try {
-            await _sqliteService.insertStuff({
-              'ussdCodeId': otherId,
-              'code': nv['code'],
-              'startTime': nv['start']!.isNotEmpty ? nv['start'] : null,
-              'endTime': nv['end']!.isNotEmpty ? nv['end'] : null,
-            }, 'ussdCodeVariants');
+            await _sqliteService.insertStuff(
+              {
+                'ussdCodeId': otherId,
+                'code': nv['code'],
+                'startTime': nv['start']!.isNotEmpty ? nv['start'] : null,
+                'endTime': nv['end']!.isNotEmpty ? nv['end'] : null,
+                'alternativeUssdCode': (nv['hasAlternativeCode'] == true &&
+                        (nv['alternativeUssdCode'] ?? '')
+                            .toString()
+                            .isNotEmpty)
+                    ? nv['alternativeUssdCode']
+                    : null,
+                'runAltOn': (nv['hasAlternativeCode'] == true &&
+                        (nv['runAltOn'] ?? '').toString().isNotEmpty)
+                    ? nv['runAltOn']
+                    : null,
+                'altIsAdvanced': (nv['hasAlternativeCode'] == true &&
+                        nv['altIsAdvanced'] == true)
+                    ? 1
+                    : 0,
+                'altDelayMinutes': nv['hasAlternativeCode'] == true
+                    ? nv['altDelayMinutes']
+                    : 0,
+              },
+              'ussdCodeVariants',
+            );
           } catch (e) {}
         }
       } catch (e) {}
@@ -503,7 +617,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     _amountTextController.text = thisData['amount'].toString();
     _offerNameController.text = thisData['offerName'] ?? 'Ksh ${thisData['amount']}';
     // load variants for this ussd code row
-    _codeEntries.clear();
+    _clearCodeEntries();
     List<Map<String, dynamic>> variants = [];
     try {
       variants = await _sqliteService.queryCustom(
@@ -514,18 +628,37 @@ class _EditOfferPageState extends State<EditOfferPage> {
     } catch (e) {}
 
     if (variants.isEmpty) {
-      _codeEntries.add({
-        'code': TextEditingController(),
-        'start': TextEditingController(),
-        'end': TextEditingController(),
-      });
+      _codeEntries.add(
+        _createCodeEntry(
+          alternativeUssdCode: thisData['alternativeUssdCode'] ?? '',
+          runAltOn: thisData['runAltOn'] ?? '',
+          altIsAdvanced: (thisData['altIsAdvanced'] != null)
+              ? thisData['altIsAdvanced'] == 1
+              : false,
+          hasAlternativeCode: (thisData['alternativeUssdCode'] ?? '')
+              .toString()
+              .isNotEmpty,
+          altDelayMinutes: (thisData['altDelayMinutes'] ?? 0).toString(),
+        ),
+      );
     } else {
       for (var v in variants) {
-        _codeEntries.add({
-          'code': TextEditingController(text: v['code'] ?? ''),
-          'start': TextEditingController(text: v['startTime'] ?? ''),
-          'end': TextEditingController(text: v['endTime'] ?? ''),
-        });
+        _codeEntries.add(
+          _createCodeEntry(
+            code: v['code'] ?? '',
+            start: v['startTime'] ?? '',
+            end: v['endTime'] ?? '',
+            alternativeUssdCode: v['alternativeUssdCode'] ?? '',
+            runAltOn: v['runAltOn'] ?? '',
+            hasAlternativeCode: (v['alternativeUssdCode'] ?? '')
+                .toString()
+                .isNotEmpty,
+            altIsAdvanced: (v['altIsAdvanced'] != null)
+                ? v['altIsAdvanced'] == 1
+                : false,
+            altDelayMinutes: (v['altDelayMinutes'] ?? 0).toString(),
+          ),
+        );
         if ((v['code'] ?? '').toString().isNotEmpty) {
           _originalCodes.add(v['code'].toString());
         }
@@ -542,15 +675,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
         ? thisData['usesBongaPoints'] == 1
         : false;
     _fallbackCodeTextController.text = thisData['fallbackCode'] ?? '';
-    _alternativeUssdCodeTextController.text =
-        thisData['alternativeUssdCode'] ?? '';
-    _runAltOnTextController.text = thisData['runAltOn'] ?? '';
-    altIsAdvanced = (thisData['altIsAdvanced'] != null)
-        ? thisData['altIsAdvanced'] == 1
-        : false;
-    if ((thisData['alternativeUssdCode'] ?? '').isNotEmpty) {
-      hasAlternativeCode = true;
-    }
     _balanceCheckCodeTextController.text =
         thisData['balanceCheckCode'] ?? '*126*7*1#';
     _bongaPointsPerTransactionTextController.text =
@@ -592,10 +716,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
   void _addChangeListeners() {
     _amountTextController.addListener(() => setState(() => _hasChanges = true));
     _codeTextController.addListener(() => setState(() => _hasChanges = true));
-    _alternativeUssdCodeTextController
-        .addListener(() => setState(() => _hasChanges = true));
-    _runAltOnTextController
-        .addListener(() => setState(() => _hasChanges = true));
     _fallbackCodeTextController
         .addListener(() => setState(() => _hasChanges = true));
     _balanceCheckCodeTextController
@@ -607,11 +727,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     _offerNameController.addListener(() => setState(() => _hasChanges = true));
     // ensure at least one code entry exists
     if (_codeEntries.isEmpty) {
-      _codeEntries.add({
-        'code': TextEditingController(),
-        'start': TextEditingController(),
-        'end': TextEditingController(),
-      });
+      _codeEntries.add(_createCodeEntry());
     }
   }
 
@@ -619,18 +735,12 @@ class _EditOfferPageState extends State<EditOfferPage> {
   void dispose() {
     _amountTextController.dispose();
     _codeTextController.dispose();
-    _alternativeUssdCodeTextController.dispose();
-    _runAltOnTextController.dispose();
     _fallbackCodeTextController.dispose();
     _balanceCheckCodeTextController.dispose();
     _bongaPointsPerTransactionTextController.dispose();
     signatureTestNumberController.dispose();
     _offerNameController.dispose();
-    for (var entry in _codeEntries) {
-      entry['code']?.dispose();
-      entry['start']?.dispose();
-      entry['end']?.dispose();
-    }
+    _clearCodeEntries();
     super.dispose();
   }
 
@@ -737,7 +847,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 _buildInputTile(
                   label: 'Offer Name',
                   controller: _offerNameController,
-                  hint: 'Ksh 100',
+                  hint: '1gb 24hrs',
                   icon: CupertinoIcons.tag,
                 ),
                 _buildSimSelector(
@@ -781,7 +891,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                 children: [
                                   Expanded(
                                     child: TextField(
-                                      controller: entry['code'],
+                                      controller: _entryController(entry, 'code'),
                                       decoration: InputDecoration(
                                         labelText: 'USSD Code',
                                         hintText: '*180*5*2*n#',
@@ -792,12 +902,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                   IconButton(
                                     icon: const Icon(CupertinoIcons.trash, color: kErrorColor),
                                     onPressed: () {
-                                      setState(() {
-                                        entry['code']?.dispose();
-                                        entry['start']?.dispose();
-                                        entry['end']?.dispose();
-                                        _codeEntries.removeAt(idx);
-                                      });
+                                      _removeCodeEntry(idx);
                                     },
                                   ),
                                 ],
@@ -805,11 +910,43 @@ class _EditOfferPageState extends State<EditOfferPage> {
                               const SizedBox(height: 8),
                               Row(
                                 children: [
-                                  Expanded(child: _buildTimeTile(label: 'Start', controller: entry['start']!)),
+                                  Expanded(child: _buildTimeTile(label: 'Start', controller: _entryController(entry, 'start'))),
                                   const SizedBox(width: 8),
-                                  Expanded(child: _buildTimeTile(label: 'End', controller: entry['end']!)),
+                                  Expanded(child: _buildTimeTile(label: 'End', controller: _entryController(entry, 'end'))),
                                 ],
                               ),
+                              const SizedBox(height: 8),
+                              _buildSwitchTile(
+                                label: 'Has Alternative Code',
+                                value: entry['hasAlternativeCode'] == true,
+                                onChanged: (val) => _setEntryHasAlt(entry, val),
+                              ),
+                              if (entry['hasAlternativeCode'] == true) ...[
+                                Padding(
+                                  padding: kPagePaddingInsets,
+                                  child: const Text(
+                                      'Use this alternative only while the variant is active.'),
+                                ),
+                                _buildInputTile(
+                                  label: 'Alternative USSD Code',
+                                  controller: _entryController(entry, 'alternativeUssdCode'),
+                                  hint: '*180*5*2*n#',
+                                  icon: CupertinoIcons.number,
+                                ),
+                                _buildSwitchTile(
+                                  label: 'Alternative Code is Advanced',
+                                  value: entry['altIsAdvanced'] == true,
+                                  onChanged: (val) => _setEntryAltAdvanced(entry, val),
+                                ),
+                                _buildInputTile(
+                                  label: 'Run Alternative After (minutes)',
+                                  controller: _entryController(entry, 'altDelayMinutes'),
+                                  hint: '0 = run immediately on failure',
+                                  keyboardType: TextInputType.number,
+                                  icon: CupertinoIcons.timer,
+                                ),
+                                _buildRunAltOnSelector(entry),
+                              ],
                             ],
                           ),
                         );
@@ -819,11 +956,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
                         child: TextButton.icon(
                           onPressed: () {
                             setState(() {
-                              _codeEntries.add({
-                                'code': TextEditingController(),
-                                'start': TextEditingController(),
-                                'end': TextEditingController(),
-                              });
+                              _codeEntries.add(_createCodeEntry());
+                              _hasChanges = true;
                             });
                           },
                           icon: const Icon(CupertinoIcons.plus),
@@ -861,37 +995,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
                     setState(() => _canRetry = val);
                   },
                 ),
-                const Divider(color: Colors.white24, height: 1),
-                _buildSwitchTile(
-                  label: 'Has Alternative Code',
-                  value: hasAlternativeCode,
-                  onChanged: (val) {
-                    _hasChanges = true;
-                    setState(() => hasAlternativeCode = val);
-                  },
-                ),
-                if (hasAlternativeCode) ...[
-                  Padding(
-                    padding: kPagePaddingInsets,
-                    child: Text(
-                        'For when the number has already been recommended'),
-                  ),
-                  _buildInputTile(
-                    label: 'Alternative USSD Code',
-                    controller: _alternativeUssdCodeTextController,
-                    hint: '*180*5*2*n#',
-                    icon: CupertinoIcons.number,
-                  ),
-                  _buildSwitchTile(
-                    label: 'Alternative Code is Advanced',
-                    value: altIsAdvanced,
-                    onChanged: (val) {
-                      _hasChanges = true;
-                      setState(() => altIsAdvanced = val);
-                    },
-                  ),
-                  _buildRunAltOnSelector(),
-                ],
                 const Divider(color: Colors.white24, height: 1),
                 _buildSwitchTile(
                   label: 'Uses Bonga Points',
@@ -1049,11 +1152,13 @@ class _EditOfferPageState extends State<EditOfferPage> {
                               isGettingSignature: true,
                             );
 
+                            final acceptedProcedure = (res[2] as List?)
+                                ?.cast<Map<String, dynamic>>();
+
                             signature = signature.copyWith(
                               usdCode: _codeTextController.text,
-                              acceptedProcedure: res[2],
-                              lastProcedure: (res[2] as List?)
-                                  ?.cast<Map<String, dynamic>>(),
+                              acceptedProcedure: acceptedProcedure,
+                              lastProcedure: acceptedProcedure,
                             );
 
                             print("Signature: $signature");
@@ -1381,28 +1486,27 @@ class _EditOfferPageState extends State<EditOfferPage> {
                   ),
                 );
               }),
-              if (onSelect != null) // Logic for "Both"
-                GestureDetector(
-                  onTap: () => onSelect(-1, true),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isBoth
-                          ? kPrimaryColor.withOpacity(0.1)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: isBoth
-                              ? kPrimaryColor
-                              : kGrayColor.withOpacity(0.2)),
-                    ),
-                    child: Text('Both',
-                        style: TextStyle(
-                            color: isBoth ? kPrimaryColor : kGrayColor,
-                            fontWeight: FontWeight.bold)),
+              GestureDetector(
+                onTap: () => onSelect(-1, true),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isBoth
+                        ? kPrimaryColor.withOpacity(0.1)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: isBoth
+                            ? kPrimaryColor
+                            : kGrayColor.withOpacity(0.2)),
                   ),
+                  child: Text('Both',
+                      style: TextStyle(
+                          color: isBoth ? kPrimaryColor : kGrayColor,
+                          fontWeight: FontWeight.bold)),
                 ),
+              ),
             ],
           ),
         ],
@@ -1410,7 +1514,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     );
   }
 
-  void showDevicePicker() {
+  void showDevicePicker(TextEditingController controller) {
     showDialog(
       context: context,
       builder: (context) {
@@ -1426,7 +1530,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                   title: const Text('This Device'),
                   onTap: () {
                     setState(() {
-                      _runAltOnTextController.text = '';
+                      controller.text = '';
                       _hasChanges = true;
                     });
                     Navigator.pop(context);
@@ -1440,7 +1544,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                       subtitle: Text(device['owner_email'] ?? ''),
                       onTap: () {
                         setState(() {
-                          _runAltOnTextController.text = device['device_name'];
+                          controller.text = device['device_name'];
                           _hasChanges = true;
                         });
                         Navigator.pop(context);
@@ -1463,7 +1567,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                     if (device != null) {
                       Navigator.pop(context); // close the picker dialog
                       setState(() {
-                        _runAltOnTextController.text = device['device_name'];
+                        controller.text = device['device_name'];
                         _hasChanges = true;
                       });
                     }
@@ -1477,18 +1581,19 @@ class _EditOfferPageState extends State<EditOfferPage> {
     );
   }
 
-  Widget _buildRunAltOnSelector() {
+  Widget _buildRunAltOnSelector(Map<String, dynamic> entry) {
+    final controller = _entryController(entry, 'runAltOn');
     Map<String, dynamic>? selectedDevice;
-    if (_runAltOnTextController.text.isNotEmpty) {
+    if (controller.text.isNotEmpty) {
       try {
         selectedDevice = forwardingDevices.firstWhere(
-          (d) => d['device_name'] == _runAltOnTextController.text,
+          (d) => d['device_name'] == controller.text,
         );
       } catch (e) {}
     }
 
     return InkWell(
-      onTap: showDevicePicker,
+      onTap: () => showDevicePicker(controller),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Column(
@@ -1510,13 +1615,13 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 iconData: Icons.devices,
               ),
               const SizedBox(height: 8),
-            ] else if (_runAltOnTextController.text.isNotEmpty) ...[
+            ] else if (controller.text.isNotEmpty) ...[
               Row(
                 children: [
                   const Icon(Icons.devices, color: kPrimaryColor),
                   const SizedBox(width: 8),
                   Text(
-                    _runAltOnTextController.text,
+                    controller.text,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ],

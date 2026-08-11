@@ -656,7 +656,7 @@ class TransactionController {
                     -1,
                     status: TransactionStatuses.error,
                     reply:
-                        'Forwarding failed: Server not reachable. Will retry later.',
+                        'Forwarding failed: Phone offline of server not reachable. Will retry later.',
                     canRetry: true,
                     source: name,
                   );
@@ -703,7 +703,7 @@ class TransactionController {
                       {
                         'status': TransactionStatuses.error,
                         'ussdReply':
-                            'Forwarding failed. Server not reachable. Will retry later.',
+                            'Forwarding failed: Phone offline or server not reachable. Will retry later.',
                       },
                       'id = ?',
                       [transactionId],
@@ -721,6 +721,16 @@ class TransactionController {
                     'id = ?',
                     [transactionId],
                     'transactions');
+
+                await processReply(
+                  number,
+                  TransactionStatuses.forwardedOnline,
+                  name.split(' ')[0],
+                  name.trim().split(RegExp(r'\s+')).length > 1
+                      ? name.trim().split(RegExp(r'\s+'))[1]
+                      : '',
+                  amount,
+                );
 
                 return transactionId;
               }
@@ -1043,6 +1053,23 @@ class TransactionController {
       limit: 1,
     );
 
+    if (tx.isEmpty) {
+      debugPrint("Transaction with id $id not found for retry.");
+      return;
+    }
+
+    int firstFailedTimeStamp = (tx.first['firstFailedTimeStamp'] as int?) ??
+        DateTime.now().millisecondsSinceEpoch;
+
+    if (tx.first['firstFailedTimeStamp'] == null) {
+      await _sqliteService.updateStuff(
+        {'firstFailedTimeStamp': firstFailedTimeStamp},
+        'id = ?',
+        [id],
+        'transactions',
+      );
+    }
+
     MyTransaction transaction = MyTransaction.fromMap(tx.first);
 
     String trimmedBody = transaction.initialMessage.length > 160
@@ -1062,11 +1089,6 @@ class TransactionController {
 
     if (newTransactionId != null) {
       await purgeAndMerge(newTransactionId, id);
-      return;
-    }
-
-    if (tx.isEmpty) {
-      debugPrint("Transaction with id $id not found for retry.");
       return;
     }
 
@@ -1188,22 +1210,14 @@ class TransactionController {
       final variantMatches = await _sqliteService.queryCustom(
         'ussdCodeVariants',
         'code = ?',
-        [ussdCode],
+        [getCodeFromUssd(ussdCode)],
         limit: 1,
       );
 
+      // Note: `ussdCodes` has no `code` column (it only lives on
+      // `ussdCodeVariants`), so there is no legacy table to fall back to.
       if (variantMatches.isNotEmpty) {
         thisCode = variantMatches.first;
-      } else {
-        final legacyMatches = await _sqliteService.queryCustom(
-          'ussdCodes',
-          'code = ?',
-          [ussdCode],
-          limit: 1,
-        );
-        if (legacyMatches.isNotEmpty) {
-          thisCode = legacyMatches.first;
-        }
       }
 
       var signatureQuery = await _sqliteService.queryCustom(
@@ -1301,33 +1315,40 @@ class TransactionController {
 
     if (response[1] == TransactionStatuses.secondAttempt &&
         lecodes.isNotEmpty) {
-      String? altUssdCode = lecodes.first['alternativeUssdCode'];
-      String? runAltOn = lecodes.first['runAltOn'];
-      bool altIsAdvanced = lecodes.first['altIsAdvanced'] == 1;
+      final activeVariant = await _getActiveVariantWithLegacyFallback(
+        lecodes.first['id'] ?? -1,
+      );
+      String? altUssdCode = activeVariant?['alternativeUssdCode']?.toString();
+      String? runAltOn = activeVariant?['runAltOn']?.toString();
+      bool altIsAdvanced = (activeVariant?['altIsAdvanced'] ?? 0) == 1;
+      int altDelayMinutes =
+          int.tryParse(activeVariant?['altDelayMinutes']?.toString() ?? '') ??
+              0;
+      int minutesSinceFirstFailure =
+          (DateTime.now().millisecondsSinceEpoch - firstFailedTimeStamp) ~/
+              60000;
+      bool altDelayElapsed = minutesSinceFirstFailure >= altDelayMinutes;
 
-      // print(object)
-
-      if (altUssdCode != null && altUssdCode.isNotEmpty) {
+      if (altUssdCode != null &&
+          altUssdCode.isNotEmpty &&
+          altDelayElapsed) {
         altUssdCode = replaceNWithNumber(altUssdCode, number);
 
         if (runAltOn == null || runAltOn.isEmpty) {
-          String processedAltUssdCode = replaceNWithNumber(altUssdCode, number);
+          final processedAltUssdCode = replaceNWithNumber(altUssdCode, number);
           debugPrint('Running alternative USSD code: $processedAltUssdCode');
           List<dynamic> altResponse = [];
           if (altIsAdvanced) {
-            CodeSignature altSignature = CodeSignature.fromMap(
-              (await _sqliteService.queryCustom(
-                'codeSignature',
-                'ussdCodeId = ?',
-                [lecodes.first['id'] ?? -1],
-              ))
-                  .first,
+            await _sqliteService.queryCustom(
+              'codeSignature',
+              'ussdCodeId = ?',
+              [activeVariant?['ussdCodeId'] ?? lecodes.first['id'] ?? -1],
+              limit: 1,
             );
 
             altResponse = await PhoneService().makeAdvancedRequest(
               processedAltUssdCode,
               simSubId,
-              // codeSignature: altSignature,
             );
             altResponse[1] = await transactionStatus(altResponse);
           } else {
@@ -1352,19 +1373,19 @@ class TransactionController {
             );
           }
           if (deviceMatches.isNotEmpty) {
-            String recipientDeviceName = deviceMatches.first['device_name'];
-            String senderDeviceName =
+            final recipientDeviceName = deviceMatches.first['device_name'];
+            final senderDeviceName =
                 await SharedPreferencesService().getDeviceName() ??
-                    "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
+                    'Unknown Device ${DateTime.now().millisecondsSinceEpoch}';
 
-            print(
-                "Forwarding alternative USSD code request to $recipientDeviceName for transaction $id");
+            debugPrint(
+              'Forwarding alternative USSD code request to $recipientDeviceName for transaction $id',
+            );
 
             final res = await BackendService().post(
               '/api/fcm/send-secure',
               body: {
-                'title': "BSAT Online Forwarding",
-                // keep notification.body scalar for FCM compatibility
+                'title': 'BSAT Online Forwarding',
                 'body': 'Forwarded alternative USSD request',
                 'senderDeviceName': senderDeviceName,
                 'recipientDeviceName': recipientDeviceName,
@@ -1374,20 +1395,17 @@ class TransactionController {
                   'isAdvanced': altIsAdvanced.toString(),
                   'smsMessage': transaction.initialMessage,
                   'body': 'Forwarded alternative USSD request',
-                  'title': "Forwarded Code",
+                  'title': 'Forwarded Code',
                 }
               },
             );
 
-            // initialMessage =
-            //     "$initialMessage $interpunct TDN$recipientDeviceName";
-
             if (res['success'] == true) {
               debugPrint(
-                  'Alternative USSD code request sent to ${deviceMatches.first['device_name']} successfully.');
-              // add to ussdReply "sent alt ussd code request to deviceName"
+                'Alternative USSD code request sent to ${deviceMatches.first['device_name']} successfully.',
+              );
               response[0] =
-                  "\nSent alternative USSD code request to ${deviceMatches.first['device_name']} $interpunct ${tx[0]['ussdReply'] ?? ''}";
+                  '\nSent alternative USSD code request to ${deviceMatches.first['device_name']} $interpunct ${tx[0]['ussdReply'] ?? ''}';
               response[1] = TransactionStatuses.doneConfirmed;
             } else {
               debugPrint(
@@ -1488,7 +1506,8 @@ class TransactionController {
     }
 
     if (sim < 0) {
-      sim = (await _phoneService.getAllDialSims()).first;
+      final dialSims = await _phoneService.getAllDialSims();
+      sim = dialSims.isNotEmpty ? dialSims.first : -1;
     }
 
     return [
@@ -2103,21 +2122,14 @@ class TransactionController {
   Future<bool> isAdvanced(String code) async {
     String ussdRaw = getCodeFromUssd(code);
 
+    // Note: `ussdCodes` has no `code` column (it only lives on
+    // `ussdCodeVariants`), so there is no legacy table to fall back to.
     List offers = await _sqliteService.queryCustom(
       'ussdCodeVariants',
       'code = ?',
       [ussdRaw],
       columns: ['isAdvanced'],
     );
-
-    if (offers.isEmpty) {
-      offers = await _sqliteService.queryCustom(
-        'ussdCodes',
-        'code = ?',
-        [ussdRaw],
-        columns: ['isAdvanced'],
-      );
-    }
 
     return offers.isNotEmpty && offers.first['isAdvanced'] == 1;
   }
@@ -2321,46 +2333,82 @@ class TransactionController {
 
   Future<String> _getActiveVariantCode(int ussdCodeId) async {
     try {
-      final variants = await _sqliteService.queryCustom(
-        'ussdCodeVariants',
-        'ussdCodeId = ?',
-        [ussdCodeId],
-      );
+      final variant = await _getActiveVariantRow(ussdCodeId);
 
-      if (variants.isEmpty) {
+      if (variant == null) {
         return '';
       }
 
-      final now = DateTime.now();
-      final curMin = now.hour * 60 + now.minute;
-
-      for (var v in variants) {
-        final s = v['startTime']?.toString() ?? '';
-        final e = v['endTime']?.toString() ?? '';
-        if (s.isEmpty && e.isEmpty) return v['code'] ?? '';
-        if (s.isEmpty || e.isEmpty) return v['code'] ?? '';
-
-        try {
-          final sParts = s.split(':');
-          final eParts = e.split(':');
-          final sMin = int.parse(sParts[0]) * 60 + int.parse(sParts[1]);
-          final eMin = int.parse(eParts[0]) * 60 + int.parse(eParts[1]);
-          if (sMin <= eMin) {
-            if (curMin >= sMin && curMin < eMin) return v['code'] ?? '';
-          } else {
-            // crosses midnight
-            if (curMin >= sMin || curMin < eMin) return v['code'] ?? '';
-          }
-        } catch (e) {
-          return v['code'] ?? '';
-        }
-      }
-
-      // if none matched, return first
-      return variants.first['code'] ?? '';
+      return variant['code']?.toString() ?? '';
     } catch (e) {
       return '';
     }
+  }
+
+  Future<Map<String, dynamic>?> _getActiveVariantRow(int ussdCodeId) async {
+    final variants = await _sqliteService.queryCustom(
+      'ussdCodeVariants',
+      'ussdCodeId = ?',
+      [ussdCodeId],
+    );
+
+    if (variants.isEmpty) {
+      return null;
+    }
+
+    final now = DateTime.now();
+    final curMin = now.hour * 60 + now.minute;
+
+    Map<String, dynamic>? fallback;
+    for (final variant in variants) {
+      fallback ??= variant;
+      final s = variant['startTime']?.toString() ?? '';
+      final e = variant['endTime']?.toString() ?? '';
+      if (s.isEmpty && e.isEmpty) return variant;
+      if (s.isEmpty || e.isEmpty) return variant;
+
+      try {
+        final sParts = s.split(':');
+        final eParts = e.split(':');
+        final sMin = int.parse(sParts[0]) * 60 + int.parse(sParts[1]);
+        final eMin = int.parse(eParts[0]) * 60 + int.parse(eParts[1]);
+        if (sMin <= eMin) {
+          if (curMin >= sMin && curMin < eMin) return variant;
+        } else {
+          if (curMin >= sMin || curMin < eMin) return variant;
+        }
+      } catch (_) {
+        return variant;
+      }
+    }
+
+    return fallback;
+  }
+
+  Future<Map<String, dynamic>?> _getActiveVariantWithLegacyFallback(
+    int ussdCodeId,
+  ) async {
+    final variant = await _getActiveVariantRow(ussdCodeId);
+    final legacyRows = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'id = ?',
+      [ussdCodeId],
+      limit: 1,
+    );
+
+    if (variant == null) {
+      return legacyRows.isNotEmpty ? legacyRows.first : null;
+    }
+
+    if (legacyRows.isNotEmpty) {
+      final legacy = legacyRows.first;
+      variant['alternativeUssdCode'] ??= legacy['alternativeUssdCode'];
+      variant['runAltOn'] ??= legacy['runAltOn'];
+      variant['altIsAdvanced'] ??= legacy['altIsAdvanced'];
+      variant['altDelayMinutes'] ??= legacy['altDelayMinutes'];
+    }
+
+    return variant;
   }
 
   Future<Map<String, dynamic>> getOfferSignature(
@@ -2506,7 +2554,7 @@ class TransactionController {
       '(status = ? OR status = ?) AND transactionId = ?',
       [TransactionStatuses.masked, TransactionStatuses.paused, mpesaCode],
     ))
-        .first;
+        .firstOrNull;
 
     if (transaction == null) return null;
 

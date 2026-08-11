@@ -64,6 +64,7 @@ class TransactionStatuses {
   static const doneConfirmed = "transaction-confirmed";
   static const forwarded = "transaction-forwarded";
   static const masked = "transaction-masked";
+  static const forwardedOnline = "transaction-forwarded-online";
 
   static const doneMap = {0: done};
   static const errorMap = {1: error};
@@ -78,6 +79,7 @@ class TransactionStatuses {
   static const doneConfirmedMap = {10: doneConfirmed};
   static const forwardedMap = {11: forwarded};
   static const maskedMap = {12: masked};
+  static const forwardedOnlineMap = {13: forwardedOnline};
 
   static const statuses = {
     0: done,
@@ -93,6 +95,7 @@ class TransactionStatuses {
     10: doneConfirmed,
     11: forwarded,
     12: masked,
+    13: forwardedOnline,
   };
 }
 

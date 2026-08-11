@@ -275,6 +275,17 @@ class _EditReplyPageState extends State<EditReplyPage> {
                               });
                             },
                           ),
+                          RadioListTile(
+                            title: const Text('Forwarded (online)'),
+                            // leading: Radio<int>(
+                            value: TransactionStatuses.forwardedOnlineMap.keys.first,
+                            groupValue: _selectedOption,
+                            onChanged: (int? value) {
+                              setState(() {
+                                _selectedOption = value!;
+                              });
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -386,7 +397,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
                               \n \t$interpunct amnt? - amount received
                               \n \t$interpunct date? - date today
                               \n \t$interpunct time? - time now
-                              \n \t$interpunct dayw? - day of the week
+                              \n \t$interpunct dayw? - day of the week \n
                               \n For example: "Hello fnam? lnam?, there's no offer for Ksh amnt?.
                             ''',
                           ),

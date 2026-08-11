@@ -114,7 +114,7 @@ class _OffersPageState extends State<OffersPage> {
   Future<void> getAllUSSDCodes() async {
     // Join ussdCodes with ussdCodeVariants so each returned row has a `code` field
     final rows = await _sqliteService.rawQueryInput(
-        'SELECT u.id as id, v.code as code, u.amount as amount, u.fromSim as fromSim, u.dialSim as dialSim, u.enabled as enabled, u.offerName as offerName FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY v.code, u.amount',
+        'SELECT u.id as id, v.code as code, u.amount as amount, u.fromSim as fromSim, u.dialSim as dialSim, u.enabled as enabled, u.offerName as offerName FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY u.amount, v.code',
         []);
     setState(() {
       ussdCodes = rows;
@@ -434,6 +434,34 @@ class _OffersPageState extends State<OffersPage> {
     getAllUSSDCodes();
   }
 
+  Widget _amountChip(Map<String, dynamic> item) {
+    final bool isEnabled = (item['enabled'] ?? 1) == 1;
+    final Color color = isEnabled ? kPrimaryColor : Theme.of(context).hintColor;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: isEnabled
+            ? kPrimaryColor.withOpacity(0.1)
+            : Theme.of(context).dividerColor.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(kBorderRadius / 2),
+        border: Border.all(
+          color: isEnabled
+              ? kPrimaryColor.withOpacity(0.3)
+              : Theme.of(context).dividerColor.withOpacity(0.2),
+        ),
+      ),
+      child: Text(
+        'KSH ${item['amount']}',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: color,
+          decoration: isEnabled ? null : TextDecoration.lineThrough,
+        ),
+      ),
+    );
+  }
+
   Widget _codeChip(String code) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: kPagePadding / 3, vertical: 4),
@@ -604,13 +632,23 @@ class _OffersPageState extends State<OffersPage> {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.layers, size: 15, color: Theme.of(context).hintColor),
+                            Icon(Icons.layers, size: 14, color: Theme.of(context).hintColor),
                             const SizedBox(width: 6),
                             Text(
                               '${items.length} tiers on this code',
-                              style: Theme.of(context).textTheme.titleMedium,
+                              style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: kPagePadding / 2),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: (List<Map<String, dynamic>>.from(items)
+                                ..sort((a, b) => ((a['amount'] ?? 0) as int)
+                                    .compareTo((b['amount'] ?? 0) as int)))
+                              .map((it) => _amountChip(it))
+                              .toList(),
                         ),
                         const SizedBox(height: kPagePadding / 2),
                         _codeChip(code),

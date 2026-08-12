@@ -38,7 +38,14 @@ class _HomePageState extends State<HomePage> {
   Future<void> _requestPermissions() async {
     // Request Phone permission for call state monitoring in background service
     // This must be requested in the foreground with an Activity context
-    await Permission.phone.request();
+    try {
+      await Permission.phone.request();
+    } catch (e) {
+      // permission_handler only supports one in-flight request at a time and
+      // throws (instead of queuing) if another request is already running,
+      // e.g. one still resolving from the onboarding permissions screen.
+      debugPrint("Phone permission request failed: $e");
+    }
   }
 
   @override

@@ -210,10 +210,22 @@ class _EditOfferPageState extends State<EditOfferPage> {
     }
   }
 
+  int? _parseAmount(String text) {
+    final asInt = int.tryParse(text);
+    if (asInt != null) return asInt;
+    final asDouble = double.tryParse(text);
+    if (asDouble != null) return asDouble.round();
+    return null;
+  }
+
   Future<bool> checkForErrorsAndProceed() async {
-    if (_amountTextController.text == '') {
+    final int? parsedAmount = _parseAmount(_amountTextController.text);
+
+    if (_amountTextController.text == '' || parsedAmount == null) {
       setState(() {
-        _errorAmount = " *Required";
+        _errorAmount = _amountTextController.text == ''
+            ? " *Required"
+            : " *Enter a valid whole number";
       });
       return false;
     } else {
@@ -335,7 +347,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
         return false;
       }
     }
-    await addCodeToDatabase(int.parse(_amountTextController.text));
+    await addCodeToDatabase(parsedAmount);
     return true;
   }
 
@@ -1152,8 +1164,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
                               isGettingSignature: true,
                             );
 
-                            final acceptedProcedure = (res[2] as List?)
-                                ?.cast<Map<String, dynamic>>();
+                            final acceptedProcedure =
+                                (res.length > 2 ? res[2] as List? : null)
+                                    ?.cast<Map<String, dynamic>>();
 
                             signature = signature.copyWith(
                               usdCode: _codeTextController.text,
@@ -1165,7 +1178,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
                             setState(() {});
 
-                            if (signature.acceptedProcedure == null) {
+                            if (acceptedProcedure == null) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(

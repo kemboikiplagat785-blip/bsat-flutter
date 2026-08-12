@@ -2388,7 +2388,7 @@ class TransactionController {
   Future<Map<String, dynamic>?> _getActiveVariantWithLegacyFallback(
     int ussdCodeId,
   ) async {
-    final variant = await _getActiveVariantRow(ussdCodeId);
+    final variantRow = await _getActiveVariantRow(ussdCodeId);
     final legacyRows = await _sqliteService.queryCustom(
       'ussdCodes',
       'id = ?',
@@ -2396,9 +2396,14 @@ class TransactionController {
       limit: 1,
     );
 
-    if (variant == null) {
-      return legacyRows.isNotEmpty ? legacyRows.first : null;
+    if (variantRow == null) {
+      return legacyRows.isNotEmpty
+          ? Map<String, dynamic>.from(legacyRows.first)
+          : null;
     }
+
+    // Query rows from sqflite are read-only; copy before mutating below.
+    final variant = Map<String, dynamic>.from(variantRow);
 
     if (legacyRows.isNotEmpty) {
       final legacy = legacyRows.first;

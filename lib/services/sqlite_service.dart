@@ -376,6 +376,10 @@ class SQLiteService {
     } catch (_) {}
 
     try {
+      await db.execute('ALTER TABLE ussdCodes ADD COLUMN offerName TEXT');
+    } catch (_) {}
+
+    try {
       await db.execute('ALTER TABLE transactions ADD COLUMN runOn TEXT');
     } catch (_) {}
 

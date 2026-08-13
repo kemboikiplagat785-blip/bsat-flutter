@@ -18,7 +18,7 @@ class SQLiteService {
     final path = join(databasesPath, 'bsat_app.db');
     return openDatabase(
       path,
-      version: 15,
+      version: 16,
       onCreate: onCreate,
       onUpgrade: onUpgrade,
       singleInstance: true,

@@ -16,13 +16,42 @@ class SQLiteService {
   Future<Database> _initDatabase() async {
     final databasesPath = await getDatabasesPath();
     final path = join(databasesPath, 'bsat_app.db');
-    return openDatabase(
+    final db = await openDatabase(
       path,
       version: 16,
       onCreate: onCreate,
       onUpgrade: onUpgrade,
       singleInstance: true,
     );
+    // Unconditional safety net: some devices' schema history predates or
+    // fell through gaps in the onCreate/onUpgrade version-transition logic
+    // (e.g. installs that have been incrementally upgraded since long before
+    // ussdCodeVariants/offerName existed). Ensure these are present on every
+    // app start, independent of what version transition (if any) just ran.
+    await _ensureCriticalSchema(db);
+    return db;
+  }
+
+  Future<void> _ensureCriticalSchema(Database db) async {
+    try {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS ussdCodeVariants (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ussdCodeId INTEGER,
+          code TEXT,
+          startTime TEXT,
+          endTime TEXT,
+          alternativeUssdCode TEXT,
+          runAltOn TEXT,
+          altIsAdvanced INTEGER DEFAULT 0,
+          altDelayMinutes INTEGER DEFAULT 0
+        )
+      ''');
+    } catch (_) {}
+
+    try {
+      await db.execute('ALTER TABLE ussdCodes ADD COLUMN offerName TEXT');
+    } catch (_) {}
   }
 
   Future<void> onCreate(Database db, int version) async {
@@ -247,86 +276,122 @@ class SQLiteService {
       return;
     }
 
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS whitelistedDevices (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        device_name TEXT NOT NULL,
-        device_id TEXT NOT NULL,
-        owner_email TEXT NOT NULL,
-        user_id INTEGER
-      )
-    ''');
+    // Every statement below is individually try/catch-wrapped: some devices'
+    // schema history predates these tables/columns in ways this linear
+    // version-gated migration doesn't fully anticipate, and one unexpected
+    // failure here must never prevent the rest of onUpgrade (in particular
+    // ussdCodeVariants creation further down) from still running.
+    try {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS whitelistedDevices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_name TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          owner_email TEXT NOT NULL,
+          user_id INTEGER
+        )
+      ''');
+    } catch (_) {}
 
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS clients (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        firstName TEXT NOT NULL,
-        lastName TEXT NOT NULL,
-        phoneNumber TEXT NOT NULL UNIQUE,
-        alternativePhoneNumber TEXT,
-        createdAt INTEGER NOT NULL,
-        lastBought INTEGER,
-        noOfPurchases INTEGER NOT NULL DEFAULT 0
-      )
-    ''');
+    try {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS clients (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          firstName TEXT NOT NULL,
+          lastName TEXT NOT NULL,
+          phoneNumber TEXT NOT NULL UNIQUE,
+          alternativePhoneNumber TEXT,
+          createdAt INTEGER NOT NULL,
+          lastBought INTEGER,
+          noOfPurchases INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+    } catch (_) {}
 
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS forwardingDevices (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        device_name TEXT NOT NULL UNIQUE,
-        device_id TEXT NOT NULL,
-        owner_email TEXT NOT NULL,
-        user_id INTEGER,
-        amounts_to_forward TEXT,
-        paused INTEGER DEFAULT 0
-      )
-    ''');
+    try {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS forwardingDevices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_name TEXT NOT NULL UNIQUE,
+          device_id TEXT NOT NULL,
+          owner_email TEXT NOT NULL,
+          user_id INTEGER,
+          amounts_to_forward TEXT,
+          paused INTEGER DEFAULT 0
+        )
+      ''');
+    } catch (_) {}
 
-    await db.execute('''
-      CREATE TABLE IF NOT EXISTS "custom codes" (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pattern TEXT NOT NULL,
-        transactionStatus TEXT NOT NULL,
-        isCaseSensitive INTEGER DEFAULT 0
-      )
-    ''');
+    try {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS "custom codes" (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pattern TEXT NOT NULL,
+          transactionStatus TEXT NOT NULL,
+          isCaseSensitive INTEGER DEFAULT 0
+        )
+      ''');
+    } catch (_) {}
 
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_custom_codes_pattern ON "custom codes"(pattern)',
-    );
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_custom_codes_pattern ON "custom codes"(pattern)',
+      );
+    } catch (_) {}
 
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phoneNumber)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(firstName, lastName)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_clients_last_bought ON clients(lastBought)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_clients_purchases ON clients(noOfPurchases)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_email ON forwardingDevices(owner_email)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_device_id ON forwardingDevices(device_id)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_user_id ON forwardingDevices(user_id)',
-    );
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phoneNumber)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(firstName, lastName)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_clients_last_bought ON clients(lastBought)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_clients_purchases ON clients(noOfPurchases)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_email ON forwardingDevices(owner_email)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_device_id ON forwardingDevices(device_id)',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_forwarding_devices_user_id ON forwardingDevices(user_id)',
+      );
+    } catch (_) {}
 
-    await db.execute('''
+    try {
+      await db.execute('''
       CREATE TABLE IF NOT EXISTS codeSignature (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ussdCodeId INTEGER,
@@ -339,8 +404,10 @@ class SQLiteService {
         isActive INTEGER DEFAULT 1
       )
     ''');
+    } catch (_) {}
 
-    await db.execute('''
+    try {
+      await db.execute('''
       CREATE TABLE IF NOT EXISTS ussdCodeVariants (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ussdCodeId INTEGER,
@@ -352,6 +419,7 @@ class SQLiteService {
         altIsAdvanced INTEGER DEFAULT 0
       )
     ''');
+    } catch (_) {}
 
     try {
       await db.execute(
@@ -434,35 +502,37 @@ class SQLiteService {
     } catch (_) {}
 
     if (oldVersion < 4) {
-      await db.execute('''
-        CREATE TABLE IF NOT EXISTS whitelistedDevices_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          device_name TEXT NOT NULL,
-          device_id TEXT NOT NULL,
-          owner_email TEXT NOT NULL,
-          user_id INTEGER
-        )
-      ''');
+      try {
+        await db.execute('''
+          CREATE TABLE IF NOT EXISTS whitelistedDevices_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_name TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            owner_email TEXT NOT NULL,
+            user_id INTEGER
+          )
+        ''');
 
-      await db.execute('''
-        INSERT INTO whitelistedDevices_new (id, device_name, device_id, owner_email, user_id)
-        SELECT id, device_name, device_id, owner_email, user_id FROM whitelistedDevices
-      ''');
+        await db.execute('''
+          INSERT INTO whitelistedDevices_new (id, device_name, device_id, owner_email, user_id)
+          SELECT id, device_name, device_id, owner_email, user_id FROM whitelistedDevices
+        ''');
 
-      await db.execute('DROP TABLE IF EXISTS whitelistedDevices');
-      await db.execute(
-        'ALTER TABLE whitelistedDevices_new RENAME TO whitelistedDevices',
-      );
+        await db.execute('DROP TABLE IF EXISTS whitelistedDevices');
+        await db.execute(
+          'ALTER TABLE whitelistedDevices_new RENAME TO whitelistedDevices',
+        );
 
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)',
-      );
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)',
-      );
-      await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)',
-      );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)',
+        );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)',
+        );
+        await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)',
+        );
+      } catch (_) {}
     }
 
     if (oldVersion < 9) {

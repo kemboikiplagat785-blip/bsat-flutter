@@ -99,7 +99,7 @@ git push -u origin "release/v$RELEASE_TAG"
 
 # Step 6: Build APKs
 echo -e "${CYAN}Building APKs...${NC}"
-#flutter build apk --split-per-abi
+flutter build apk --split-per-abi
 
 # Step 7: Rename APKs
 BASE_PATH="build/app/outputs/flutter-apk"

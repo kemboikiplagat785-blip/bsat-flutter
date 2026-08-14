@@ -51,7 +51,7 @@ class _DialPadScreenState extends State<DialPadScreen> {
   Future<void> _fetchOffers() async {
     try {
       final rows = await _sqLiteService.rawQueryInput(
-          'SELECT u.amount as amount, u.isAdvanced as isAdvanced, v.code as code FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY u.amount',
+          'SELECT u.amount as amount, u.isAdvanced as isAdvanced, v.code as code, v.startTime as startTime, v.endTime as endTime FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY u.amount',
           []);
       if (mounted) {
         setState(() {
@@ -59,6 +59,8 @@ class _DialPadScreenState extends State<DialPadScreen> {
                 'amount': offer['amount'],
                 'isAdvanced': offer['isAdvanced'],
                 'code': offer['code'],
+                'startTime': offer['startTime'],
+                'endTime': offer['endTime'],
               }));
         });
       }
@@ -71,10 +73,19 @@ class _DialPadScreenState extends State<DialPadScreen> {
                 'amount': offer['amount'],
                 'isAdvanced': offer['isAdvanced'],
                 'code': offer['code'],
+                'startTime': null,
+                'endTime': null,
               }));
         });
       }
     }
+  }
+
+  String? _timeWindowLabel(Map<String, dynamic> offer) {
+    final String start = (offer['startTime'] ?? '').toString();
+    final String end = (offer['endTime'] ?? '').toString();
+    if (start.isEmpty || end.isEmpty) return null;
+    return '$start-$end';
   }
 
   Future<void> _getClipboardContent() async {
@@ -246,37 +257,66 @@ class _DialPadScreenState extends State<DialPadScreen> {
                             width: 1,
                           ),
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              '${offer['amount']}',
-                              style: const TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: kPrimaryColor,
-                              ),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '${offer['amount']}',
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.bold,
+                                    color: kPrimaryColor,
+                                  ),
+                                ),
+                                Text(
+                                  'Ksh',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Theme.of(context).hintColor,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  offer['code'],
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: Theme.of(context).hintColor,
+                                    fontFamily: 'Monospace',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (_timeWindowLabel(offer) != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: kIndigoColor.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(
+                                            kBorderRadius / 2),
+                                      ),
+                                      child: Text(
+                                        _timeWindowLabel(offer)!,
+                                        style: const TextStyle(
+                                          fontSize: 7,
+                                          fontWeight: FontWeight.w700,
+                                          color: kIndigoColor,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
-                            Text(
-                              'Ksh',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Theme.of(context).hintColor,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              offer['code'],
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: Theme.of(context).hintColor,
-                                fontFamily: 'Monospace',
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),

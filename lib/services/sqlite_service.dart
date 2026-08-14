@@ -75,25 +75,37 @@ class SQLiteService {
   Future<void> backfillOrphanedUssdCodeVariants([Database? dbOverride]) async {
     final db = dbOverride ?? await database;
 
+    // Devices that originated from very old installs (e.g. v4.0.53) never
+    // had startTime/endTime columns on ussdCodes at all (those were added at
+    // a later intermediate schema, before offers moved to ussdCodeVariants).
+    // Check up front rather than try-and-catch on every call: sqflite's
+    // native layer logs a failed statement's error to the platform console
+    // even when the Dart side catches it, so attempting a statement we
+    // already know will fail on this device would spam the device log on
+    // every single app start and offers-list refresh.
+    bool hasLegacyStartEndTime = false;
     try {
-      await db.execute('''
-        INSERT INTO ussdCodeVariants(ussdCodeId, code, startTime, endTime)
-        SELECT id, code, startTime, endTime
-        FROM ussdCodes u
-        WHERE code IS NOT NULL AND code != ''
-          AND NOT EXISTS (
-            SELECT 1 FROM ussdCodeVariants v WHERE v.ussdCodeId = u.id
-          )
-      ''');
-    } catch (_) {
-      // Devices that originated from very old installs (e.g. v4.0.53) never
-      // had startTime/endTime columns on ussdCodes at all (those were added
-      // at a later intermediate schema, before offers moved to
-      // ussdCodeVariants) - retry without them so this backfill still runs
-      // for those devices instead of silently doing nothing. Backfilled
-      // variants get NULL start/end time, i.e. "always active", which is
-      // correct for offers that never had time-of-day restrictions.
-      try {
+      final columns = await db.rawQuery('PRAGMA table_info(ussdCodes)');
+      final columnNames = columns.map((c) => c['name']).toSet();
+      hasLegacyStartEndTime =
+          columnNames.contains('startTime') && columnNames.contains('endTime');
+    } catch (_) {}
+
+    try {
+      if (hasLegacyStartEndTime) {
+        await db.execute('''
+          INSERT INTO ussdCodeVariants(ussdCodeId, code, startTime, endTime)
+          SELECT id, code, startTime, endTime
+          FROM ussdCodes u
+          WHERE code IS NOT NULL AND code != ''
+            AND NOT EXISTS (
+              SELECT 1 FROM ussdCodeVariants v WHERE v.ussdCodeId = u.id
+            )
+        ''');
+      } else {
+        // Backfilled variants get NULL start/end time, i.e. "always
+        // active", which is correct for offers that never had time-of-day
+        // restrictions.
         await db.execute('''
           INSERT INTO ussdCodeVariants(ussdCodeId, code)
           SELECT id, code
@@ -103,8 +115,8 @@ class SQLiteService {
               SELECT 1 FROM ussdCodeVariants v WHERE v.ussdCodeId = u.id
             )
         ''');
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
 
     try {
       await db.execute('''

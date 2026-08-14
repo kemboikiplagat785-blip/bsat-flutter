@@ -119,7 +119,7 @@ class _OffersPageState extends State<OffersPage> {
 
     // Join ussdCodes with ussdCodeVariants so each returned row has a `code` field
     final rows = await _sqliteService.rawQueryInput(
-        'SELECT u.id as id, v.code as code, u.amount as amount, u.fromSim as fromSim, u.dialSim as dialSim, u.enabled as enabled, u.offerName as offerName FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY u.amount, v.code',
+        'SELECT u.id as id, v.code as code, v.startTime as startTime, v.endTime as endTime, u.amount as amount, u.fromSim as fromSim, u.dialSim as dialSim, u.enabled as enabled, u.offerName as offerName FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY u.amount, v.code',
         []);
     setState(() {
       ussdCodes = rows;
@@ -518,6 +518,31 @@ class _OffersPageState extends State<OffersPage> {
     );
   }
 
+  Widget? _timeWindowChip(Map<String, dynamic> item) {
+    final String start = (item['startTime'] ?? '').toString();
+    final String end = (item['endTime'] ?? '').toString();
+    if (start.isEmpty || end.isEmpty) return null;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: kIndigoColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(kBorderRadius / 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(CupertinoIcons.clock, size: 11, color: kIndigoColor),
+          const SizedBox(width: 4),
+          Text(
+            '$start - $end',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: kIndigoColor),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _simRow(int fromSim, int dialSim) {
     return Row(
       children: [
@@ -580,7 +605,15 @@ class _OffersPageState extends State<OffersPage> {
                   const SizedBox(height: kPagePadding / 2),
                   _simRow(item['fromSim'], item['dialSim']),
                   const SizedBox(height: kPagePadding / 2),
-                  _codeChip(item['code'] ?? ''),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _codeChip(item['code'] ?? ''),
+                      if (_timeWindowChip(item) != null) _timeWindowChip(item)!,
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -716,6 +749,10 @@ class _OffersPageState extends State<OffersPage> {
                       offerName,
                       style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
                     ),
+                  if (_timeWindowChip(item) != null) ...[
+                    const SizedBox(height: 4),
+                    _timeWindowChip(item)!,
+                  ],
                 ],
               ),
             ),

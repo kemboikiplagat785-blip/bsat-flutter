@@ -112,6 +112,11 @@ class _OffersPageState extends State<OffersPage> {
   }
 
   Future<void> getAllUSSDCodes() async {
+    // Self-heal any ussdCodes rows still missing a ussdCodeVariants row
+    // (historical migration gaps, or offers created via CSV import/FCM push)
+    // before listing offers, so they show up within this running session.
+    await _sqliteService.backfillOrphanedUssdCodeVariants();
+
     // Join ussdCodes with ussdCodeVariants so each returned row has a `code` field
     final rows = await _sqliteService.rawQueryInput(
         'SELECT u.id as id, v.code as code, u.amount as amount, u.fromSim as fromSim, u.dialSim as dialSim, u.enabled as enabled, u.offerName as offerName FROM ussdCodes u JOIN ussdCodeVariants v ON u.id = v.ussdCodeId ORDER BY u.amount, v.code',

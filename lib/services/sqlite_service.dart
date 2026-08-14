@@ -29,6 +29,7 @@ class SQLiteService {
     // ussdCodeVariants/offerName existed). Ensure these are present on every
     // app start, independent of what version transition (if any) just ran.
     await _ensureCriticalSchema(db);
+    await backfillOrphanedUssdCodeVariants(db);
     return db;
   }
 
@@ -51,6 +52,91 @@ class SQLiteService {
 
     try {
       await db.execute('ALTER TABLE ussdCodes ADD COLUMN offerName TEXT');
+    } catch (_) {}
+  }
+
+  /// Idempotent, unconditional backfill: copies legacy per-offer USSD data
+  /// that still lives on `ussdCodes` (code / alternativeUssdCode / runAltOn /
+  /// altIsAdvanced) into `ussdCodeVariants` for any `ussdCodes` row that has
+  /// zero variants. Safe to call on every DB open and on every offer-list
+  /// refresh:
+  ///  - the INSERT is guarded with NOT EXISTS so it only ever fills in a
+  ///    ussdCodes row that currently has zero variants, and never duplicates.
+  ///  - the UPDATEs only ever touch NULL/empty fields, so they can't clobber
+  ///    data a user has since edited via the app.
+  /// This exists because onUpgrade (which used to run this same logic) is
+  /// only invoked by sqflite when storedVersion < targetVersion - devices
+  /// whose stored user_version was already stamped to/past the target by an
+  /// earlier build never got this migration to run. New orphan rows can also
+  /// be created live by CSV import (file_service.dart) and inbound FCM
+  /// offer-edit pushes (firebase_messaging_service.dart), neither of which
+  /// creates a matching ussdCodeVariants row - calling this again from the
+  /// offers list refresh heals those within the same running session.
+  Future<void> backfillOrphanedUssdCodeVariants([Database? dbOverride]) async {
+    final db = dbOverride ?? await database;
+
+    try {
+      await db.execute('''
+        INSERT INTO ussdCodeVariants(ussdCodeId, code, startTime, endTime)
+        SELECT id, code, startTime, endTime
+        FROM ussdCodes u
+        WHERE code IS NOT NULL AND code != ''
+          AND NOT EXISTS (
+            SELECT 1 FROM ussdCodeVariants v WHERE v.ussdCodeId = u.id
+          )
+      ''');
+    } catch (_) {
+      // Devices that originated from very old installs (e.g. v4.0.53) never
+      // had startTime/endTime columns on ussdCodes at all (those were added
+      // at a later intermediate schema, before offers moved to
+      // ussdCodeVariants) - retry without them so this backfill still runs
+      // for those devices instead of silently doing nothing. Backfilled
+      // variants get NULL start/end time, i.e. "always active", which is
+      // correct for offers that never had time-of-day restrictions.
+      try {
+        await db.execute('''
+          INSERT INTO ussdCodeVariants(ussdCodeId, code)
+          SELECT id, code
+          FROM ussdCodes u
+          WHERE code IS NOT NULL AND code != ''
+            AND NOT EXISTS (
+              SELECT 1 FROM ussdCodeVariants v WHERE v.ussdCodeId = u.id
+            )
+        ''');
+      } catch (_) {}
+    }
+
+    try {
+      await db.execute('''
+        UPDATE ussdCodeVariants
+        SET alternativeUssdCode = (
+          SELECT alternativeUssdCode FROM ussdCodes
+          WHERE ussdCodes.id = ussdCodeVariants.ussdCodeId
+        )
+        WHERE alternativeUssdCode IS NULL OR alternativeUssdCode = ''
+      ''');
+    } catch (_) {}
+
+    try {
+      await db.execute('''
+        UPDATE ussdCodeVariants
+        SET runAltOn = (
+          SELECT runAltOn FROM ussdCodes
+          WHERE ussdCodes.id = ussdCodeVariants.ussdCodeId
+        )
+        WHERE runAltOn IS NULL OR runAltOn = ''
+      ''');
+    } catch (_) {}
+
+    try {
+      await db.execute('''
+        UPDATE ussdCodeVariants
+        SET altIsAdvanced = COALESCE((
+          SELECT altIsAdvanced FROM ussdCodes
+          WHERE ussdCodes.id = ussdCodeVariants.ussdCodeId
+        ), 0)
+        WHERE altIsAdvanced IS NULL
+      ''');
     } catch (_) {}
   }
 
@@ -457,49 +543,11 @@ class SQLiteService {
       );
     } catch (_) {}
 
-    try {
-      await db.execute('''
-        INSERT INTO ussdCodeVariants(ussdCodeId, code, startTime, endTime)
-        SELECT id, code, startTime, endTime
-        FROM ussdCodes
-        WHERE code IS NOT NULL AND code != ''
-      ''');
-    } catch (_) {}
-
-    try {
-      await db.execute('''
-        UPDATE ussdCodeVariants
-        SET alternativeUssdCode = (
-          SELECT alternativeUssdCode
-          FROM ussdCodes
-          WHERE ussdCodes.id = ussdCodeVariants.ussdCodeId
-        )
-        WHERE alternativeUssdCode IS NULL OR alternativeUssdCode = ''
-      ''');
-    } catch (_) {}
-
-    try {
-      await db.execute('''
-        UPDATE ussdCodeVariants
-        SET runAltOn = (
-          SELECT runAltOn
-          FROM ussdCodes
-          WHERE ussdCodes.id = ussdCodeVariants.ussdCodeId
-        )
-        WHERE runAltOn IS NULL OR runAltOn = ''
-      ''');
-    } catch (_) {}
-
-    try {
-      await db.execute('''
-        UPDATE ussdCodeVariants
-        SET altIsAdvanced = COALESCE((
-          SELECT altIsAdvanced
-          FROM ussdCodes
-          WHERE ussdCodes.id = ussdCodeVariants.ussdCodeId
-        ), 0)
-      ''');
-    } catch (_) {}
+    // Legacy ussdCodes -> ussdCodeVariants data copy now lives in
+    // backfillOrphanedUssdCodeVariants(), called unconditionally from
+    // _initDatabase() and from the offers list refresh - it's a strict
+    // superset of what used to run here (idempotent, not tied to whether
+    // onUpgrade fires at all), so it's not duplicated in this callback.
 
     if (oldVersion < 4) {
       try {

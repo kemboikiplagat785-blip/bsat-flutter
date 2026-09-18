@@ -92,7 +92,8 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
       if (selectedNameHeaders.isEmpty || selectedPhoneHeader == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Please select headers for Name(s) and Phone Number.'),
+            content:
+                Text('Please select headers for Name(s) and Phone Number.'),
           ),
         );
         return;
@@ -169,7 +170,8 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
         var row = csvTable[i];
         if (row.length <= phoneIndex) continue;
 
-        String phone = row[phoneIndex].toString().replaceAll(RegExp(r'\s+'), '');
+        String phone =
+            row[phoneIndex].toString().replaceAll(RegExp(r'\s+'), '');
         if (phone.isEmpty) continue;
 
         List<String> nameParts = [];
@@ -184,7 +186,8 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
 
         List<String> fnParts = fullName.split(RegExp(r'\s+'));
         String firstName = fnParts.first;
-        String lastName = fnParts.length > 1 ? fnParts.sublist(1).join(' ') : '';
+        String lastName =
+            fnParts.length > 1 ? fnParts.sublist(1).join(' ') : '';
 
         final client = Client(
           firstName: firstName,
@@ -193,10 +196,9 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
           createdAt: DateTime.now(),
         );
 
-        List<Map<String, dynamic>> similarClients = await SQLiteService().queryAll(
-            'clients',
-            where: 'phoneNumber = ?',
-            whereArgs: [client.phoneNumber]);
+        List<Map<String, dynamic>> similarClients = await SQLiteService()
+            .queryAll('clients',
+                where: 'phoneNumber = ?', whereArgs: [client.phoneNumber]);
 
         if (similarClients.isEmpty) {
           await SQLiteService().insertStuff(client.toMap(), 'clients');
@@ -214,15 +216,15 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
           const SnackBar(content: Text('Import cancelled')),
         );
       } else {
-        showSuccessDialog(context, text: "Successfully imported $addedCount clients!");
+        showSuccessDialog(context,
+            text: "Successfully imported $addedCount clients!");
       }
 
       Navigator.of(context).pop(); // Go back
-
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Close progress dialog
-      showErrorDialog(context, "",   "Error importing from CSV: $e");
+      showErrorDialog(context, "", "Error importing from CSV: $e");
     }
   }
 
@@ -231,7 +233,7 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
 
     try {
       final fileContent = await File(filePath!).readAsString();
-      
+
       // Basic manual parse of VCF logic as regex since parser plugin might not be available
       // Matches BEGIN:VCARD to END:VCARD
       final cards = fileContent.split('BEGIN:VCARD');
@@ -302,7 +304,8 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
         if (phone.isNotEmpty && name.isNotEmpty) {
           List<String> fnParts = name.split(RegExp(r'\s+'));
           String firstName = fnParts.first;
-          String lastName = fnParts.length > 1 ? fnParts.sublist(1).join(' ') : '';
+          String lastName =
+              fnParts.length > 1 ? fnParts.sublist(1).join(' ') : '';
 
           final client = Client(
             firstName: firstName,
@@ -311,10 +314,9 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
             createdAt: DateTime.now(),
           );
 
-          List<Map<String, dynamic>> similarClients = await SQLiteService().queryAll(
-              'clients',
-              where: 'phoneNumber = ?',
-              whereArgs: [client.phoneNumber]);
+          List<Map<String, dynamic>> similarClients = await SQLiteService()
+              .queryAll('clients',
+                  where: 'phoneNumber = ?', whereArgs: [client.phoneNumber]);
 
           if (similarClients.isEmpty) {
             await SQLiteService().insertStuff(client.toMap(), 'clients');
@@ -339,7 +341,6 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
       }
 
       Navigator.of(context).pop(); // Go back
-
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Close progress dialog
@@ -349,7 +350,6 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -358,7 +358,6 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
           children: [
             header(context, "Import Contacts"),
             const SizedBox(height: kPagePadding),
-            
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
@@ -373,36 +372,38 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
                     style: TextStyle(color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 16),
-                  
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: _pickFile, 
-                      icon: const Icon(CupertinoIcons.doc_text), 
-                      label: Text(filePath == null ? "Select File" : "Change File"),
+                      onPressed: _pickFile,
+                      icon: const Icon(CupertinoIcons.doc_text),
+                      label: Text(
+                          filePath == null ? "Select File" : "Change File"),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.all(16),
-                        backgroundColor: filePath == null ? kPrimaryColor : Colors.grey[200],
-                        foregroundColor: filePath == null ? Colors.white : Colors.black87,
+                        backgroundColor:
+                            filePath == null ? kPrimaryColor : Colors.grey[200],
+                        foregroundColor:
+                            filePath == null ? Colors.white : Colors.black87,
                       ),
                     ),
                   ),
-
                   if (filePath != null) ...[
                     const SizedBox(height: 8),
                     Text(
                       "Selected: ${filePath!.split('/').last}",
-                      style: const TextStyle(fontWeight: FontWeight.w600, color: kPrimaryColor),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w600, color: kPrimaryColor),
                     ),
                   ],
-
                   const SizedBox(height: 32),
-
-                  if (selectedType == FileTypeStatus.csv && headers.isNotEmpty) ...[
+                  if (selectedType == FileTypeStatus.csv &&
+                      headers.isNotEmpty) ...[
                     const Text(
                       "Step 2: Map Columns",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -417,22 +418,26 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
                       decoration: BoxDecoration(
                         color: Theme.of(context).cardColor,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.withOpacity(0.3)),
+                        border: Border.all(
+                            color: Colors.grey.withValues(alpha: 0.3)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("Name Column(s):", style: TextStyle(fontWeight: FontWeight.w600)),
+                          const Text("Name Column(s):",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
                             children: headers.map((header) {
-                              bool isSelected = selectedNameHeaders.contains(header);
+                              bool isSelected =
+                                  selectedNameHeaders.contains(header);
                               return ChoiceChip(
                                 label: Text(header),
                                 selected: isSelected,
-                                selectedColor: kPrimaryColor.withOpacity(0.2),
+                                selectedColor:
+                                    kPrimaryColor.withValues(alpha: 0.2),
                                 onSelected: (selected) {
                                   setState(() {
                                     if (selected) {
@@ -445,10 +450,9 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
                               );
                             }).toList(),
                           ),
-
                           const Divider(height: 32),
-
-                          const Text("Phone Number Column:", style: TextStyle(fontWeight: FontWeight.w600)),
+                          const Text("Phone Number Column:",
+                              style: TextStyle(fontWeight: FontWeight.w600)),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
@@ -458,10 +462,12 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
                               return ChoiceChip(
                                 label: Text(header),
                                 selected: isSelected,
-                                selectedColor: kIndigoColor.withOpacity(0.2),
+                                selectedColor:
+                                    kIndigoColor.withValues(alpha: 0.2),
                                 onSelected: (selected) {
                                   setState(() {
-                                    selectedPhoneHeader = selected ? header : null;
+                                    selectedPhoneHeader =
+                                        selected ? header : null;
                                   });
                                 },
                               );
@@ -471,11 +477,11 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
                       ),
                     ),
                   ],
-
                   if (selectedType == FileTypeStatus.vcf) ...[
                     const Text(
                       "Step 2: Confirm",
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -483,12 +489,10 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
                       style: TextStyle(color: Colors.grey[600]),
                     ),
                   ],
-
                   const SizedBox(height: 48),
                 ],
               ),
             ),
-            
             if (filePath != null)
               Padding(
                 padding: const EdgeInsets.all(kPagePadding),
@@ -501,7 +505,8 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
                       backgroundColor: kPrimaryColor,
                       foregroundColor: Colors.white,
                     ),
-                    child: const Text("Import to Clients", style: TextStyle(fontSize: 18)),
+                    child: const Text("Import to Clients",
+                        style: TextStyle(fontSize: 18)),
                   ),
                 ),
               ),

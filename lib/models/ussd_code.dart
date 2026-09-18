@@ -28,13 +28,13 @@ class UssdCode {
   });
 
   factory UssdCode.fromMap(Map<String, dynamic> m) {
-    int _parseInt(dynamic v, [int def = 0]) {
+    int parseInt(dynamic v, [int def = 0]) {
       if (v == null) return def;
       if (v is int) return v;
       return int.tryParse(v.toString()) ?? def;
     }
 
-    bool _parseBool(dynamic v) {
+    bool parseBool(dynamic v) {
       if (v == null) return false;
       if (v is bool) return v;
       if (v is int) return v != 0;
@@ -43,18 +43,18 @@ class UssdCode {
     }
 
     return UssdCode(
-      id: _parseInt(m['id'], 0) == 0 ? null : _parseInt(m['id'], 0),
+      id: parseInt(m['id'], 0) == 0 ? null : parseInt(m['id'], 0),
       code: m['code']?.toString() ?? '',
-      amount: _parseInt(m['amount'], 0),
-      fromSim: _parseInt(m['fromSim'], -1),
-      dialSim: _parseInt(m['dialSim'], -1),
-      canRetry: _parseBool(m['canRetry']),
-      isAdvanced: _parseBool(m['isAdvanced']),
-      enabled: m['enabled'] == null ? true : _parseBool(m['enabled']),
-      usesBongaPoints: _parseBool(m['usesBongaPoints']),
+      amount: parseInt(m['amount'], 0),
+      fromSim: parseInt(m['fromSim'], -1),
+      dialSim: parseInt(m['dialSim'], -1),
+      canRetry: parseBool(m['canRetry']),
+      isAdvanced: parseBool(m['isAdvanced']),
+      enabled: m['enabled'] == null ? true : parseBool(m['enabled']),
+      usesBongaPoints: parseBool(m['usesBongaPoints']),
       fallbackCode: m['fallbackCode']?.toString(),
       balanceCheckCode: m['balanceCheckCode']?.toString(),
-      bongaPointsPerTransaction: _parseInt(m['bongaPointsPerTransaction'], 0),
+      bongaPointsPerTransaction: parseInt(m['bongaPointsPerTransaction'], 0),
     );
   }
 

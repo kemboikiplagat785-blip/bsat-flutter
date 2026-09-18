@@ -69,7 +69,9 @@ class MainActivity : FlutterActivity() {
 
             if (call.method == "runUssdSequence") {
 
-                if (UssdSession.ussdSteps.isNotEmpty() || UssdSession.isRunning || UssdSession.currentStepIndex > 0) {
+                 Log.d("BSAT_USSD", "runUssdSequence RECEIVED from Flutter")
+
+                 if (UssdSession.ussdSteps.isNotEmpty() || UssdSession.isRunning || UssdSession.currentStepIndex > 0) {
                     // If there is an ongoing USSD session, return an error
                     sendNativeLog(
                         "debug",
@@ -109,6 +111,8 @@ class MainActivity : FlutterActivity() {
                 val subscriptionId = call.argument<Int>("subscriptionId") ?: 0
                 val firstCode = "*${UssdSession.ussdSteps[0]}#"
                 UssdSession.ussdDialed = firstCode
+
+                Log.d("BSAT_USSD", "About to dial: $firstCode on subscriptionId=$subscriptionId")
 
                 if (dialUssd(firstCode, subscriptionId, result)) {
                     waitForUssdResponse(result)

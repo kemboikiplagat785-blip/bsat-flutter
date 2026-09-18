@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-
-Future<String?> showAskDeviceNameDialog(BuildContext context, String initialName) {
-  TextEditingController _deviceNameController =
+Future<String?> showAskDeviceNameDialog(
+    BuildContext context, String initialName) {
+  TextEditingController deviceNameController =
       TextEditingController(text: initialName);
 
   return showDialog<String>(
@@ -10,7 +10,6 @@ Future<String?> showAskDeviceNameDialog(BuildContext context, String initialName
     context: context,
     builder: (BuildContext context) {
       return AlertDialog(
-        
         title: Text('Device Name'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -20,7 +19,7 @@ Future<String?> showAskDeviceNameDialog(BuildContext context, String initialName
               'Please enter a name for your device.',
             ),
             TextField(
-              controller: _deviceNameController,
+              controller: deviceNameController,
               decoration: InputDecoration(
                 hintText: 'Device Name',
               ),
@@ -30,10 +29,10 @@ Future<String?> showAskDeviceNameDialog(BuildContext context, String initialName
         actions: <Widget>[
           TextButton(
             onPressed: () {
-              if(_deviceNameController.text.isEmpty){
+              if (deviceNameController.text.isEmpty) {
                 return;
               }
-              Navigator.of(context).pop(_deviceNameController.text);
+              Navigator.of(context).pop(deviceNameController.text);
             },
             child: Text('Save'),
           ),

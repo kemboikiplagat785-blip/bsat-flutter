@@ -3,7 +3,7 @@ import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../../services/sms_sevice.dart';
 import '../../services/sqlite_service.dart';
@@ -22,7 +22,7 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
   final List<Map<String, dynamic>> offerVolumes = [];
 
   int defaultSimSubId = -1;
-  List<SimCard> simCards = [];
+  List<SubscriptionInfo> simCards = [];
   List<int> balances = [];
   List<int> numbers = [];
 
@@ -198,14 +198,14 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
 
     for (var i in simCards) {
       debugPrint(
-          "Getting balance for ${i.displayName} (${i.slotIndex}), id = ${i.subscriptionId}");
-      int balance = await PhoneService()
-          .getAirtimeBalance(subscriptionId: i.subscriptionId);
+          "Getting balance for ${i.displayName} (${i.simSlotIndex}), id = ${i.subscriptionId}");
+      int balance = await PhoneService().getAirtimeBalance(
+          subscriptionId: i.subscriptionId ?? defaultSimSubId);
 
-      int number = extract9DigitNumber(
-          (await PhoneService().makeMyRequest("*100*4*1#", i.subscriptionId))
-                  .first ??
-              "");
+      int number = extract9DigitNumber((await PhoneService().makeMyRequest(
+                  "*100*4*1#", i.subscriptionId ?? defaultSimSubId))
+              .first ??
+          "");
 
       if (!mounted) return;
       debugPrint("Balance: $balance");
@@ -221,10 +221,10 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
   void initState() {
     super.initState();
     _loadDataForTimeframe();
-    SimDataPlugin.getSimData().then((value) async {
+    Telephony.instance.getSubscriptionList().then((value) async {
       defaultSimSubId = (await PhoneService().getAllDialSims()).first;
       setState(() {
-        simCards = value.cards;
+        simCards = value;
       });
 
       _getBalances();
@@ -288,7 +288,7 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
                   child: Column(
                     children: [
                       Text(
-                        '''${entry.value.displayName} ${Numbers.formatNumber(entry.value.slotIndex + 1)} ${entry.value.subscriptionId == defaultSimSubId ? '(Default)' : ''} ''',
+                        '''${entry.value.displayName} ${Numbers.formatNumber((entry.value.simSlotIndex ?? 0) + 1)} ${entry.value.subscriptionId == defaultSimSubId ? '(Default)' : ''} ''',
                         style: TextStyle(
                             // fontSize: 16,
                             // color: Theme.of(context).textTheme.bodyText1?.color,
@@ -404,7 +404,7 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
         Padding(
           padding: const EdgeInsets.only(bottom: kPagePadding),
           child: DropdownButtonFormField<String>(
-            value: _selectedTimeframe,
+            initialValue: _selectedTimeframe,
             items: const [
               DropdownMenuItem(value: 'week', child: Text('Week')),
               DropdownMenuItem(value: 'month', child: Text('Month')),

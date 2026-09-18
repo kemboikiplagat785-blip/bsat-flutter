@@ -1,11 +1,10 @@
+import 'package:another_telephony/telephony.dart';
 import 'package:flutter/services.dart';
-import 'package:sim_data/sim_data.dart';
 
-Future<SimData?> getSimCardsData() async {
+Future<List<SubscriptionInfo>?> getSimCardsData() async {
   try {
-    SimData simData = await SimDataPlugin.getSimData();
-    return simData;
-  } on PlatformException catch (e) {
+    return await Telephony.instance.getSubscriptionList();
+  } on PlatformException {
     return null;
   }
 }

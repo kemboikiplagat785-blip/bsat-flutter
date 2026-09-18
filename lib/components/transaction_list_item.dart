@@ -57,9 +57,7 @@ Widget transactionListItem(
           color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(kBorderRadius),
           border: Border.all(
-            color: (selectionMode ?? false)
-                ? kIndigoColor
-                : Colors.transparent,
+            color: (selectionMode ?? false) ? kIndigoColor : Colors.transparent,
             width: 1,
           ),
         ),
@@ -103,7 +101,8 @@ Widget transactionListItem(
                 Text(
                   date,
                   style: TextStyle(
-                      color: Theme.of(context).primaryColor.withOpacity(.5)),
+                      color:
+                          Theme.of(context).primaryColor.withValues(alpha: .5)),
                 ),
               ],
             ),
@@ -116,22 +115,25 @@ Widget transactionListItem(
                       "KSH",
                       // style: textTheme.labelSmall,
                       style: TextStyle(
-                          color:
-                              Theme.of(context).primaryColor.withOpacity(.5)),
+                          color: Theme.of(context)
+                              .primaryColor
+                              .withValues(alpha: .5)),
                     ),
                     Text(
                       " $amount",
                       // "10,000",
                       style: TextStyle(
-                          color:
-                              Theme.of(context).primaryColor.withOpacity(.5)),
+                          color: Theme.of(context)
+                              .primaryColor
+                              .withValues(alpha: .5)),
                     ),
                   ],
                 ),
                 Text(
                   time,
                   style: TextStyle(
-                      color: Theme.of(context).primaryColor.withOpacity(.5)),
+                      color:
+                          Theme.of(context).primaryColor.withValues(alpha: .5)),
                 ),
               ],
             ),
@@ -187,7 +189,9 @@ Widget transactionListItem(
                                       ? CupertinoIcons.checkmark_seal_fill
                                       : CupertinoIcons.checkmark,
                                   color: status ==
-                                          TransactionStatuses.secondAttempt || status == TransactionStatuses.done
+                                              TransactionStatuses
+                                                  .secondAttempt ||
+                                          status == TransactionStatuses.done
                                       ? kWarningColor
                                       : kPrimaryColor,
                                 ),

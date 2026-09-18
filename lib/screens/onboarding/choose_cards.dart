@@ -1,12 +1,9 @@
 import 'package:bsat/components/dialogs/check_offers_dialog.dart';
-import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:bsat/screens/home/home.dart';
 import 'package:bsat/screens/offers/offers.dart';
-import 'package:bsat/screens/settings/settings.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../../components/dialogs/must_use_both_sims_dialog.dart';
 import '../../components/dialogs/show_error_dialog.dart';
@@ -23,7 +20,7 @@ class ChooseCardPage extends StatefulWidget {
 }
 
 class _ChooseCardPageState extends State<ChooseCardPage> {
-  List<SimCard> sims = [];
+  List<SubscriptionInfo> sims = [];
 
   bool error = false;
 
@@ -44,10 +41,9 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
   }
 
   void getAndProcessCards() {
-    SimDataPlugin.getSimData().then((value) {
+    Telephony.instance.getSubscriptionList().then((value) {
       setState(() {
-        sims = value.cards;
-        sims = value.cards;
+        sims = value;
         // debugPrint("Got cards");
       });
     });
@@ -146,8 +142,8 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
                                   setState(() {
                                     // _fromBothSims = false;
                                     // _fromSim = s.subscriptionId;
-                                _fromBothSims = true;
-                                _fromSim = -1;
+                                    _fromBothSims = true;
+                                    _fromSim = -1;
                                   });
                                   mustUseBothSimsDialog(context);
                                 },
@@ -157,7 +153,7 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
                                   child: Column(
                                     children: [
                                       Text(
-                                        s.displayName,
+                                        s.displayName ?? 'SIM',
                                         style: TextStyle(
                                           color: s.subscriptionId == _fromSim
                                               ? kPrimaryColor
@@ -219,13 +215,13 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
                         child: InkWell(
                           onTap: () {
                             setState(() {
-                              _dialSim = s.subscriptionId;
+                              _dialSim = s.subscriptionId ?? -1;
                             });
                           },
                           child: Column(
                             children: [
                               Text(
-                                s.displayName,
+                                s.displayName ?? 'SIM',
                                 style: TextStyle(
                                   color: s.subscriptionId == _dialSim
                                       ? kPrimaryColor

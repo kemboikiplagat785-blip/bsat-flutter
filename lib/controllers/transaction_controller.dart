@@ -37,7 +37,7 @@ import '../services/phone_service.dart';
 class TransactionController {
   final PhoneService _phoneService = PhoneService();
   final SQLiteService _sqliteService = SQLiteService();
-  static bool _isProcessingMaskedFromCallLogs = false;
+  static final bool _isProcessingMaskedFromCallLogs = false;
 
   final _paymentOps = PaymentOps();
 
@@ -101,9 +101,7 @@ class TransactionController {
         ? smsMessage.body!.substring(0, 160)
         : smsMessage.body!;
 
-    if (number == 0 ||
-        client.formattedPhone == null ||
-        client.formattedPhone!.length < 9) {
+    if (number == 0 || client.formattedPhone.length < 9) {
       var client1 = await getMaskedPhoneNumber(smsMessage);
       // print(
       // "Client from masked number: ${client?.fullName}, ${client?.formattedPhone}");
@@ -1304,8 +1302,9 @@ class TransactionController {
               print(txs);
 
               if (txs.isNotEmpty) {
-                if (txs.first['status'] != TransactionStatuses.secondAttempt)
+                if (txs.first['status'] != TransactionStatuses.secondAttempt) {
                   return;
+                }
               }
             }
           }
@@ -1329,9 +1328,7 @@ class TransactionController {
               60000;
       bool altDelayElapsed = minutesSinceFirstFailure >= altDelayMinutes;
 
-      if (altUssdCode != null &&
-          altUssdCode.isNotEmpty &&
-          altDelayElapsed) {
+      if (altUssdCode != null && altUssdCode.isNotEmpty && altDelayElapsed) {
         altUssdCode = replaceNWithNumber(altUssdCode, number);
 
         if (runAltOn == null || runAltOn.isEmpty) {
@@ -1689,7 +1686,7 @@ class TransactionController {
           (await _sqliteService.queryCustom(
                 'codeSignature',
                 'ussdCodeId = ?',
-                [codeMap!.first['id'] ?? -1],
+                [codeMap.first['id'] ?? -1],
               ))
                   .firstOrNull ??
               {},

@@ -33,7 +33,14 @@ class _EditOnlineOfferState extends State<EditOnlineOffer> {
   String selectedDurationUnit = 'hours';
 
   List bundleUnits = ['MB', 'GB', 'sms', 'minutes', 'dabo dabo'];
-  List durationUnits = ['minutes', 'till midnight', 'hours', 'days', 'weeks', 'months'];
+  List durationUnits = [
+    'minutes',
+    'till midnight',
+    'hours',
+    'days',
+    'weeks',
+    'months'
+  ];
 
   void fillData() async {
     linkExtension = await SharedPreferencesService().getLinkExtension() ?? '';
@@ -111,7 +118,8 @@ class _EditOnlineOfferState extends State<EditOnlineOffer> {
     } else {
       // Handle error
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update offer : ${response['message']}')),
+        SnackBar(
+            content: Text('Failed to update offer : ${response['message']}')),
       );
     }
   }
@@ -153,7 +161,7 @@ class _EditOnlineOfferState extends State<EditOnlineOffer> {
                       Expanded(
                         flex: 2,
                         child: DropdownButtonFormField<String>(
-                          value: selectedBundleUnit,
+                          initialValue: selectedBundleUnit,
                           onChanged: (value) {
                             setState(() {
                               selectedBundleUnit = value!;
@@ -195,7 +203,7 @@ class _EditOnlineOfferState extends State<EditOnlineOffer> {
                       Expanded(
                         flex: 2,
                         child: DropdownButtonFormField<String>(
-                          value: selectedDurationUnit,
+                          initialValue: selectedDurationUnit,
                           onChanged: (value) {
                             setState(() {
                               selectedDurationUnit = value!;

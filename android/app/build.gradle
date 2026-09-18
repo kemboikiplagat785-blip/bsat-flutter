@@ -4,7 +4,7 @@ plugins {
     id 'com.google.gms.google-services'
     id 'com.google.firebase.crashlytics'
     // END: FlutterFire Configuration
-    id "kotlin-android"
+    id "org.jetbrains.kotlin.android"
     id "dev.flutter.flutter-gradle-plugin"
     
 }
@@ -29,7 +29,7 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.bsat.app"
-    compileSdkVersion 35
+    compileSdkVersion 36
     ndkVersion '29.0.13113456'
 
     compileOptions {

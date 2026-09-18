@@ -7,12 +7,12 @@ import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../services/sqlite_service.dart';
 
 class DialPadScreen extends StatefulWidget {
-  const DialPadScreen({Key? key}) : super(key: key);
+  const DialPadScreen({super.key});
 
   @override
   _DialPadScreenState createState() => _DialPadScreenState();
@@ -23,7 +23,7 @@ class _DialPadScreenState extends State<DialPadScreen> {
   final FocusNode focusNode = FocusNode();
   final SQLiteService _sqLiteService = SQLiteService();
 
-  List<SimCard> sims = [];
+  List<SubscriptionInfo> sims = [];
   List<Map<String, dynamic>> myOffers = [];
 
   @override
@@ -32,10 +32,10 @@ class _DialPadScreenState extends State<DialPadScreen> {
     _fetchOffers();
     _getClipboardContent();
 
-    SimDataPlugin.getSimData().then((value) {
+    Telephony.instance.getSubscriptionList().then((value) {
       if (mounted) {
         setState(() {
-          sims = value.cards;
+          sims = value;
         });
       }
     });
@@ -127,7 +127,7 @@ class _DialPadScreenState extends State<DialPadScreen> {
                       borderRadius: BorderRadius.circular(kBorderRadius),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 5),
                         ),
@@ -230,7 +230,7 @@ class _DialPadScreenState extends State<DialPadScreen> {
                     color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(kBorderRadius),
                     elevation: 1,
-                    shadowColor: Colors.black.withOpacity(0.05),
+                    shadowColor: Colors.black.withValues(alpha: 0.05),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(kBorderRadius),
                       onTap: () async {
@@ -238,13 +238,15 @@ class _DialPadScreenState extends State<DialPadScreen> {
                         final currentNumber = _controller.text;
                         if (currentNumber.isEmpty) return;
 
-                        SimCard? chosen = await chooseSim(context, sims);
+                        SubscriptionInfo? chosen =
+                            await chooseSim(context, sims);
                         if (chosen == null) return;
+                        if (chosen.subscriptionId == null) return;
 
                         await transact(
                           offer['code'],
                           currentNumber,
-                          chosen.subscriptionId,
+                          chosen.subscriptionId!,
                           offer['amount'],
                           offer['isAdvanced'] == 1,
                         );
@@ -253,7 +255,7 @@ class _DialPadScreenState extends State<DialPadScreen> {
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(kBorderRadius),
                           border: Border.all(
-                            color: kGrayColor.withOpacity(0.1),
+                            color: kGrayColor.withValues(alpha: 0.1),
                             width: 1,
                           ),
                         ),
@@ -298,7 +300,8 @@ class _DialPadScreenState extends State<DialPadScreen> {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 5, vertical: 1),
                                       decoration: BoxDecoration(
-                                        color: kIndigoColor.withOpacity(0.1),
+                                        color:
+                                            kIndigoColor.withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(
                                             kBorderRadius / 2),
                                       ),

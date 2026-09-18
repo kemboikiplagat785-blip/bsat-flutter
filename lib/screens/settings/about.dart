@@ -46,7 +46,8 @@ class _AboutPageState extends State<AboutPage> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('About', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 24)),
+        title: const Text('About',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 24)),
         centerTitle: false,
         elevation: 0,
         backgroundColor: Colors.transparent,
@@ -55,7 +56,6 @@ class _AboutPageState extends State<AboutPage> {
         padding: const EdgeInsets.all(20),
         children: [
           const MyHeroWidget(),
-          
           _buildSectionTitle('The Project'),
           _buildGroup([
             const Padding(
@@ -66,7 +66,6 @@ class _AboutPageState extends State<AboutPage> {
               ),
             ),
           ]),
-
           _buildSectionTitle('Support'),
           _buildGroup([
             _buildActionTile(
@@ -84,19 +83,18 @@ class _AboutPageState extends State<AboutPage> {
               onLongPress: () => _copyToClipboard('0795559924'),
             ),
           ]),
-
           _buildSectionTitle('Legal'),
           _buildGroup([
-             _buildActionTile(
+            _buildActionTile(
               label: 'Affiliation',
               value: 'Independent Project',
               icon: CupertinoIcons.shield,
             ),
           ]),
-          
           const SizedBox(height: 40),
           const Center(
-            child: Text('Made with ❤️ in Kenya', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            child: Text('Made with ❤️ in Kenya',
+                style: TextStyle(fontSize: 12, color: Colors.grey)),
           ),
         ],
       ),
@@ -114,7 +112,7 @@ class _AboutPageState extends State<AboutPage> {
           fontSize: 11,
           fontWeight: FontWeight.w800,
           letterSpacing: 1.1,
-          color: kIndigoColor.withOpacity(0.7),
+          color: kIndigoColor.withValues(alpha: 0.7),
         ),
       ),
     );
@@ -125,7 +123,8 @@ class _AboutPageState extends State<AboutPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).dividerColor.withOpacity(0.05)),
+        border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.05)),
       ),
       child: Column(children: children),
     );
@@ -142,9 +141,13 @@ class _AboutPageState extends State<AboutPage> {
       onTap: onTap,
       onLongPress: onLongPress,
       leading: Icon(icon, size: 22, color: kIndigoColor),
-      title: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-      subtitle: Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-      trailing: onTap != null ? const Icon(CupertinoIcons.chevron_right, size: 14) : null,
+      title: Text(label,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      subtitle: Text(value,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+      trailing: onTap != null
+          ? const Icon(CupertinoIcons.chevron_right, size: 14)
+          : null,
     );
   }
 }

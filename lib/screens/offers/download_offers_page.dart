@@ -159,7 +159,7 @@ class _DownloadOffersPageState extends State<DownloadOffersPage> {
         side: BorderSide(
           color: _selectedDeviceName == deviceName
               ? kPrimaryColor
-              : Colors.grey.withOpacity(0.2),
+              : Colors.grey.withValues(alpha: 0.2),
           width: _selectedDeviceName == deviceName ? 1.5 : 1,
         ),
       ),
@@ -210,7 +210,7 @@ class _DownloadOffersPageState extends State<DownloadOffersPage> {
                         color: Theme.of(context).cardColor,
                         borderRadius: BorderRadius.circular(kBorderRadius),
                         border: Border.all(
-                          color: Colors.grey.withOpacity(0.15),
+                          color: Colors.grey.withValues(alpha: 0.15),
                         ),
                       ),
                       child: Column(

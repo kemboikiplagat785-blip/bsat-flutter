@@ -3,11 +3,11 @@ import 'dart:io';
 void main() {
   var file = File('lib/screens/clients/clients.dart');
   var content = file.readAsStringSync();
-  
+
   if (!content.contains('_showAddClientDialog')) {
     var insertMethodPos = content.lastIndexOf('}');
-    content = content.substring(0, insertMethodPos) + '''
-  Future<void> _showAddClientDialog(BuildContext context) async {
+    content =
+        '''${content.substring(0, insertMethodPos)}  Future<void> _showAddClientDialog(BuildContext context) async {
     final firstNameController = TextEditingController();
     final lastNameController = TextEditingController();
     final phoneController = TextEditingController();
@@ -85,7 +85,7 @@ void main() {
         foregroundColor: Colors.white,
         child: const Icon(CupertinoIcons.add),
       ),''');
-      
+
   file.writeAsStringSync(content);
   // print('Injected in clients.dart');
 }

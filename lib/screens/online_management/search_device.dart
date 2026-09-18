@@ -126,17 +126,21 @@ class _SearchDevicePageState extends State<SearchDevicePage> {
             const SizedBox(height: kPagePadding * 2),
             if (pairedDevices.isNotEmpty && searchController.text.isEmpty)
               ...pairedDevices.map((device) => Padding(
-                padding: EdgeInsets.only(bottom: kPagePadding / 2, left: kPagePadding, right: kPagePadding),
-                child: GestureDetector(
-                  onTap: () {
-                    Navigator.of(context).pop(device);
-                  },
-                  child: deviceCard(
-                    context: context,
-                    deviceName: device['device_name'],
-                    iconData: Icons.check_circle_outline_rounded,),
-                ),
-              )),
+                    padding: EdgeInsets.only(
+                        bottom: kPagePadding / 2,
+                        left: kPagePadding,
+                        right: kPagePadding),
+                    child: GestureDetector(
+                      onTap: () {
+                        Navigator.of(context).pop(device);
+                      },
+                      child: deviceCard(
+                        context: context,
+                        deviceName: device['device_name'],
+                        iconData: Icons.check_circle_outline_rounded,
+                      ),
+                    ),
+                  )),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
               child: Column(
@@ -211,7 +215,7 @@ class _SearchDevicePageState extends State<SearchDevicePage> {
                           iconData: Icons.devices,
                         ),
                       );
-                    }).toList(),
+                    }),
                 ],
               ),
             ),

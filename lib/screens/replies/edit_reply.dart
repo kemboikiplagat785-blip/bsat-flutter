@@ -5,14 +5,14 @@ import 'package:bsat/screens/messaging/whatsapp_screen.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../../services/sqlite_service.dart';
 
 class EditReplyPage extends StatefulWidget {
   final int replyId;
 
-  const EditReplyPage({required this.replyId});
+  const EditReplyPage({super.key, required this.replyId});
 
   @override
   State<EditReplyPage> createState() => _EditReplyPageState();
@@ -26,7 +26,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
 
   int _dialSim = -1;
 
-  List<SimCard> sims = [];
+  List<SubscriptionInfo> sims = [];
   List<int> _amountsForReply = [];
 
   int _characterCount = 0;
@@ -105,9 +105,9 @@ class _EditReplyPageState extends State<EditReplyPage> {
   }
 
   void _getAndProcessCards() async {
-    await SimDataPlugin.getSimData().then((value) {
+    await Telephony.instance.getSubscriptionList().then((value) {
       setState(() {
-        sims = value.cards;
+        sims = value;
       });
       // debugPrint("Got cards");
     });
@@ -278,7 +278,8 @@ class _EditReplyPageState extends State<EditReplyPage> {
                           RadioListTile(
                             title: const Text('Forwarded (online)'),
                             // leading: Radio<int>(
-                            value: TransactionStatuses.forwardedOnlineMap.keys.first,
+                            value: TransactionStatuses
+                                .forwardedOnlineMap.keys.first,
                             groupValue: _selectedOption,
                             onChanged: (int? value) {
                               setState(() {
@@ -425,7 +426,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
                                   return InkWell(
                                     onTap: () {
                                       setState(() {
-                                        _dialSim = s.subscriptionId;
+                                        _dialSim = s.subscriptionId ?? -1;
                                       });
                                     },
                                     child: Padding(
@@ -434,7 +435,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
                                       child: Column(
                                         children: [
                                           Text(
-                                            s.displayName,
+                                            s.displayName ?? 'SIM',
                                             style: TextStyle(
                                               color:
                                                   s.subscriptionId == _dialSim
@@ -461,8 +462,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
                                 onTap: () {
                                   Navigator.of(context).push(
                                     MaterialPageRoute(
-                                      builder: (context) =>
-                                          WhatsappScreen(),
+                                      builder: (context) => WhatsappScreen(),
                                     ),
                                   );
                                 },

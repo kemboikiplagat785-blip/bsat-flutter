@@ -9,13 +9,12 @@ import 'package:bsat/services/file_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_contacts/contact.dart';
+import 'package:flutter_contacts/flutter_contacts.dart';
 
 import '../../components/button_descriptive.dart';
 import '../../components/header.dart';
 import '../../models/client.dart';
 import '../../services/sms_sevice.dart';
-import 'share_data.dart';
 import './share_contacts_page.dart';
 
 class SyncDataPage extends StatefulWidget {
@@ -79,9 +78,9 @@ class _SyncDataPageState extends State<SyncDataPage> {
 
                 // Process the retrieved messages and save to database
                 messageIndex = messages.length;
-                
+
                 ValueNotifier<int> messagesLeft = ValueNotifier(messageIndex);
-                
+
                 showDialog(
                   context: context,
                   barrierDismissible: false,
@@ -97,7 +96,8 @@ class _SyncDataPageState extends State<SyncDataPage> {
                             Center(
                               child: Text(
                                 "Processing $value messages ...",
-                                style: const TextStyle(fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.bold),
                               ),
                             ),
                           ],
@@ -258,26 +258,27 @@ class _SyncDataPageState extends State<SyncDataPage> {
         String firstName = '';
         String lastName = '';
 
-        if (contact.displayName.trim().isNotEmpty) {
-          final parts = contact.displayName.trim().split(RegExp(r'\s+'));
-          firstName = parts.first;
-          lastName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
-        } else {
-          final nameParts = <String>[];
-          if (contact.name.first.trim().isNotEmpty) {
-            nameParts.add(contact.name.first.trim());
-          }
-          if (contact.name.middle.trim().isNotEmpty) {
-            nameParts.add(contact.name.middle.trim());
-          }
-          if (contact.name.last.trim().isNotEmpty) {
-            nameParts.add(contact.name.last.trim());
+        final nameParts = <String>[];
+
+        final contactName = contact.name;
+
+        if (contactName != null) {
+          if (contactName.first?.trim().isNotEmpty == true) {
+            nameParts.add(contactName.first!.trim());
           }
 
-          if (nameParts.isNotEmpty) {
-            firstName = nameParts.first;
-            lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
+          if (contactName.middle?.trim().isNotEmpty == true) {
+            nameParts.add(contactName.middle!.trim());
           }
+
+          if (contactName.last?.trim().isNotEmpty == true) {
+            nameParts.add(contactName.last!.trim());
+          }
+        }
+
+        if (nameParts.isNotEmpty) {
+          firstName = nameParts.first;
+          lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : '';
         }
 
         if (firstName.isEmpty && lastName.isEmpty) {
@@ -292,8 +293,8 @@ class _SyncDataPageState extends State<SyncDataPage> {
           createdAt: DateTime.now(),
         );
 
-        List<Map<String, dynamic>> similarClients =
-            await SQLiteService().queryAll('clients',
+        List<Map<String, dynamic>> similarClients = await SQLiteService()
+            .queryAll('clients',
                 where: 'phoneNumber = ?', whereArgs: [client.phoneNumber]);
         if (similarClients.isEmpty) {
           await SQLiteService().insertStuff(client.toMap(), 'clients');
@@ -330,8 +331,7 @@ class _SyncDataPageState extends State<SyncDataPage> {
               buttonDescriptive(
                 context,
                 title: "Add clients manually",
-                subtitle:
-                    "Add clients directly to the app.",
+                subtitle: "Add clients directly to the app.",
                 onTap: () async {
                   await showAddClientDialog(context);
                 },
@@ -369,7 +369,7 @@ class _SyncDataPageState extends State<SyncDataPage> {
                 context,
                 title: "Share contacts with another BSAT phone",
                 subtitle:
-                "Pair with another BSAT device, then send your saved contacts to it.",
+                    "Pair with another BSAT device, then send your saved contacts to it.",
                 onTap: () {
                   Navigator.push(
                     context,
@@ -388,12 +388,12 @@ class _SyncDataPageState extends State<SyncDataPage> {
               buttonDescriptive(
                 context,
                 title: "Import clients from vcf/csv file",
-                subtitle:
-                    "Import clients from a vcf/csv file.",
+                subtitle: "Import clients from a vcf/csv file.",
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const ImportFromFilePage()),
+                    MaterialPageRoute(
+                        builder: (context) => const ImportFromFilePage()),
                   );
                 },
                 icon: Icon(

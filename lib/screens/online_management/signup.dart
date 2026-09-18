@@ -1,9 +1,6 @@
-import 'package:bsat/components/dialogs/ask_device_name_dialog.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
-import 'package:bsat/screens/online_management/otp.dart';
 // import 'package:bsat/services/supabase_auth.dart';
 import 'package:bsat/utils/constants.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

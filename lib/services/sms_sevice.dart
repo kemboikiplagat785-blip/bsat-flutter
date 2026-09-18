@@ -1,7 +1,6 @@
 import 'dart:ui';
 
 import 'package:another_telephony/telephony.dart';
-import 'package:background_sms/background_sms.dart' as backgroundSms;
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/models/transaction_message.dart';
 import 'package:bsat/models/client.dart';
@@ -268,7 +267,8 @@ int extract9DigitNumber(String messageBody) {
   final Match selectedMatch = matches.length >= 2 ? matches[1] : matches[0];
 
   // Clean non-digit characters before parsing
-  final String cleanedMatch = (selectedMatch.group(0) ?? '').replaceAll(RegExp(r'\D'), '');
+  final String cleanedMatch =
+      (selectedMatch.group(0) ?? '').replaceAll(RegExp(r'\D'), '');
   int? number = int.tryParse(cleanedMatch);
   if (number == null) return 0;
 
@@ -290,7 +290,7 @@ String getMpesaCode(String messageBody) {
   if (strictMatch != null) {
     return strictMatch.group(0)!;
   }
- 
+
   Match? fallbackMatch = fallbackRegex.firstMatch(messageBody);
   return fallbackMatch?.group(0) ?? "";
 }
@@ -346,7 +346,7 @@ int getAmount(String? smsBody) {
 
   if (amountMatch == null) return 0;
 
-  int? amount = int.tryParse(amountMatch!);
+  int? amount = int.tryParse(amountMatch);
 
   amount ??= double.parse(amountMatch).toInt();
 
@@ -389,40 +389,33 @@ Future<String> sendEvenInBackground(String address, String message,
     if (similar.isNotEmpty) return "Already sent";
   }
 
-  //print("Sending message to $address, $message");
-
   List<String> messages = [];
   String status = "Sent";
   int start = 0;
+
   while (start < message.length) {
     int end = start + 160;
+
     if (end > message.length) {
       end = message.length;
     }
+
     messages.add(message.substring(start, end));
     start = end;
   }
 
   for (String msg in messages) {
-    backgroundSms.SmsStatus result =
-        await backgroundSms.BackgroundSms.sendMessage(
-      phoneNumber: address,
-      message: msg,
-      simSlot: simSlot,
-    ).onError((e, _) {
-      //print("ERRRRO: $e");
-      DartPluginRegistrant.ensureInitialized();
-      return backgroundSms.SmsStatus.failed;
-    });
-    //print(result);
-    if (result == backgroundSms.SmsStatus.sent) {
-      // //print("Sent");
-    } else {
-      // //print("Failed");
+    try {
+      await telephony.sendSms(
+        to: address,
+        message: msg,
+      );
+
+      if (sendFirstPartOnly) break;
+    } catch (e) {
+      debugPrint("SMS sending error: $e");
       status = "Failed";
     }
-
-    if (sendFirstPartOnly) break;
   }
 
   return status;

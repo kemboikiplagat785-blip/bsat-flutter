@@ -8,7 +8,7 @@ import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../../utils/date_ops.dart';
 
@@ -45,7 +45,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
 
   int _dialSim = -1;
 
-  List<SimCard> sims = [];
+  List<SubscriptionInfo> sims = [];
 
   List myOffers = [];
 
@@ -60,9 +60,9 @@ class _EditTaskPageState extends State<EditTaskPage> {
   String date = "";
 
   void _getAndProcessCards() async {
-    await SimDataPlugin.getSimData().then((value) {
+    await Telephony.instance.getSubscriptionList().then((value) {
       setState(() {
-        sims = value.cards;
+        sims = value;
       });
       // debugPrint("Got cards");
     });
@@ -193,13 +193,14 @@ class _EditTaskPageState extends State<EditTaskPage> {
       });
     } else if (widget.taskId == -2) {
       _numberTextController.text = "0${widget.number.toString()}";
-      _dialSim = widget.dialSim ?? sims[0].subscriptionId;
+      _dialSim = widget.dialSim ?? sims[0].subscriptionId ?? -1;
       _durationTextController.text = "1";
       _selectedDate =
           DateTime.fromMillisecondsSinceEpoch(getTodayMidnightMillis()).add(
         const Duration(days: 1),
       );
-      _selectedOffer = TransactionController().getCodeFromUssd(widget.offer ?? "");
+      _selectedOffer =
+          TransactionController().getCodeFromUssd(widget.offer ?? "");
       _selectedItem = "${widget.amount} - $_selectedOffer";
       _selectedAmount = widget.amount ?? 0;
       _deleteAfterRunning = true;
@@ -249,11 +250,12 @@ class _EditTaskPageState extends State<EditTaskPage> {
                       ),
                       const SizedBox(height: kPagePadding / 2),
                       DropdownButtonFormField(
-                        value: _selectedItem,
+                        initialValue: _selectedItem,
                         items: myOffers.map((offer) {
                           return DropdownMenuItem(
                             value: "${offer['amount']} - ${offer['code']}",
-                            child: Text('${offer['amount']} (${offer['code']})'),
+                            child:
+                                Text('${offer['amount']} (${offer['code']})'),
                           );
                         }).toList(),
                         onChanged: (value) {
@@ -265,7 +267,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
                                   .replaceAll(RegExp(r'\D'), ''),
                             );
                             _selectedOffer = value.split(' - ')[1];
-      
+
                             if (_dialSim < 0) {
                               _dialSim = myOffers.firstWhere(
                                     (offer) =>
@@ -274,7 +276,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
                                     orElse: () => {'dialSim': -1},
                                   )['dialSim'] ??
                                   -1;
-      
+
                               debugPrint("Dial SIM set to $_dialSim");
                             }
                           });
@@ -297,7 +299,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
                           controller: _numberTextController,
                           decoration: InputDecoration(
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(kBorderRadius),
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
                             ),
                           ),
                         ),
@@ -312,18 +315,21 @@ class _EditTaskPageState extends State<EditTaskPage> {
                         children: sims.map((s) {
                           return InkWell(
                             onTap: () {
-                              setState(() {
-                                _dialSim = s.subscriptionId;
-                              });
+                              final subscriptionId = s.subscriptionId;
+                              if (subscriptionId != null) {
+                                setState(() {
+                                  _dialSim = subscriptionId;
+                                });
+                              }
                               // mustUseBothSimsDialog(context);
                             },
                             child: Padding(
-                              padding:
-                                  const EdgeInsets.only(right: kPagePadding / 2),
+                              padding: const EdgeInsets.only(
+                                  right: kPagePadding / 2),
                               child: Column(
                                 children: [
                                   Text(
-                                    s.displayName,
+                                    s.displayName ?? 'SIM',
                                     style: TextStyle(
                                       color: s.subscriptionId == _dialSim
                                           ? kPrimaryColor
@@ -423,7 +429,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
                           controller: _durationTextController,
                           decoration: InputDecoration(
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(kBorderRadius),
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
                             ),
                           ),
                         ),
@@ -444,7 +451,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
                   ),
                 ),
               ),
-      
+
               const SizedBox(height: kPagePadding),
               // Spacer(),
               Padding(
@@ -457,7 +464,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
                         ? Flexible(
                             child: IconButton(
                               onPressed: () {
-                                deleteUssdDialog(context, widget.taskId, 'tasks')
+                                deleteUssdDialog(
+                                        context, widget.taskId, 'tasks')
                                     .then(
                                   (value) {
                                     Navigator.pop(context);
@@ -476,7 +484,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
                           await _checkAndSave().then((value) {
                             // debugPrint('$value');
                             if (value) {
-                              showSuccessDialog(context, text: 'Saved Sucessfully')
+                              showSuccessDialog(context,
+                                      text: 'Saved Sucessfully')
                                   .then(
                                 (value) => Navigator.pop(context),
                               );

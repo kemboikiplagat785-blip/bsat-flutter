@@ -63,26 +63,24 @@ class _HomePageState extends State<HomePage> {
         margin: const EdgeInsets.fromLTRB(
             kPagePadding, 0, kPagePadding, kPagePadding),
         decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
-          borderRadius: BorderRadius.circular(kBorderRadius),
-          border: Border (
-            bottom: BorderSide(
-              color: kIndigoColor,
-              width: 3,
-            ),
-            right: BorderSide(
-              color: kIndigoColor,
-              width: 3,
-            ),
-
-          )
-        ),
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: BorderRadius.circular(kBorderRadius),
+            border: Border(
+              bottom: BorderSide(
+                color: kIndigoColor,
+                width: 3,
+              ),
+              right: BorderSide(
+                color: kIndigoColor,
+                width: 3,
+              ),
+            )),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(0),
           child: NavigationBarTheme(
             data: NavigationBarThemeData(
               backgroundColor: Theme.of(context).cardColor,
-              indicatorColor: kIndigoColor.withOpacity(0.15),
+              indicatorColor: kIndigoColor.withValues(alpha: 0.15),
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
               labelTextStyle: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
@@ -152,8 +150,7 @@ class _QuickAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.color,
-    this.onTap,
-  });
+  }) : onTap = null;
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +164,7 @@ class _QuickAction extends StatelessWidget {
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),

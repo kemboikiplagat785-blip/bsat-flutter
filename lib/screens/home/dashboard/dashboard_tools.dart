@@ -25,7 +25,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../../../controllers/transaction_controller.dart';
 import '../../../services/sqlite_service.dart';
@@ -64,7 +64,7 @@ class DashboardToolsSection extends StatelessWidget {
               color: Theme.of(context).cardColor,
               borderRadius: BorderRadius.circular(kBorderRadius / 2),
               border: Border.all(
-                color: Theme.of(context).primaryColor.withOpacity(.1),
+                color: Theme.of(context).primaryColor.withValues(alpha: .1),
               ),
               // image: DecorationImage(
               //   image: const AssetImage('assets/images/mesh.png'),
@@ -182,7 +182,7 @@ class DashboardToolsSection extends StatelessWidget {
               color: Theme.of(context).cardColor,
               borderRadius: BorderRadius.circular(kBorderRadius / 2),
               border: Border.all(
-                color: Theme.of(context).primaryColor.withOpacity(.1),
+                color: Theme.of(context).primaryColor.withValues(alpha: .1),
               ),
               // image: DecorationImage(
               //   image: const AssetImage('assets/images/mesh.png'),
@@ -394,7 +394,7 @@ class DashboardToolsSection extends StatelessWidget {
               color: Theme.of(context).cardColor,
               borderRadius: BorderRadius.circular(kBorderRadius / 2),
               border: Border.all(
-                color: Theme.of(context).primaryColor.withOpacity(.1),
+                color: Theme.of(context).primaryColor.withValues(alpha: .1),
               ),
               // image: DecorationImage(
               //   image: const AssetImage('assets/images/mesh.png'),

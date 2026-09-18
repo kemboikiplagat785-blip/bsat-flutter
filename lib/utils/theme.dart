@@ -7,13 +7,13 @@ var lightTheme = ThemeData(
   fontFamily: GoogleFonts.karla().fontFamily,
   useMaterial3: true,
   scaffoldBackgroundColor: kBgColor,
-  cardColor: kLightColor.withOpacity(.5),
+  cardColor: kLightColor.withValues(alpha: .5),
   hintColor: kSecondaryColor,
   focusColor: kSecondaryColor,
-  indicatorColor: kIndigoColor,
   textTheme: GoogleFonts.karlaTextTheme().apply(
-    // bodyColor: kIndigoColor,
-  ),
+      // bodyColor: kIndigoColor,
+      ),
+  tabBarTheme: TabBarThemeData(indicatorColor: kIndigoColor),
   // brightness: Brightness.dark
 );
 
@@ -23,14 +23,14 @@ var darkTheme = ThemeData(
   useMaterial3: true,
   scaffoldBackgroundColor: kSecondaryColor,
   primaryColor: kLightColor,
-  indicatorColor: kLightColor,
-  cardColor: kLightColor.withOpacity(.1),
-  hintColor: kLightColor.withOpacity(.7),
-  focusColor: kLightColor.withOpacity(.7),
+  cardColor: kLightColor.withValues(alpha: .1),
+  hintColor: kLightColor.withValues(alpha: .7),
+  focusColor: kLightColor.withValues(alpha: .7),
 
   textTheme: GoogleFonts.karlaTextTheme()
-      .apply(bodyColor: kLightColor.withOpacity(.7)),
+      .apply(bodyColor: kLightColor.withValues(alpha: .7)),
   brightness: Brightness.dark,
+  tabBarTheme: TabBarThemeData(indicatorColor: kLightColor),
 );
 
 var brownTheme = ThemeData(
@@ -38,13 +38,13 @@ var brownTheme = ThemeData(
   useMaterial3: true,
   scaffoldBackgroundColor: kBrownBackground,
   primaryColor: kLightColor,
-  indicatorColor: kLightColor,
-  cardColor: kLightColor.withOpacity(.1),
-  hintColor: kLightColor.withOpacity(.7),
-  focusColor: kLightColor.withOpacity(.7),
+  cardColor: kLightColor.withValues(alpha: .1),
+  hintColor: kLightColor.withValues(alpha: .7),
+  focusColor: kLightColor.withValues(alpha: .7),
   textTheme: GoogleFonts.karlaTextTheme()
-      .apply(bodyColor: kLightColor.withOpacity(.7)),
+      .apply(bodyColor: kLightColor.withValues(alpha: .7)),
   brightness: Brightness.dark,
+  tabBarTheme: TabBarThemeData(indicatorColor: kLightColor),
 );
 
 var indigoTheme = ThemeData(
@@ -52,13 +52,13 @@ var indigoTheme = ThemeData(
   useMaterial3: true,
   scaffoldBackgroundColor: kIndigoColor.withAlpha(150),
   primaryColor: kLightColor,
-  indicatorColor: kLightColor,
-  cardColor: kLightColor.withOpacity(.1),
-  hintColor: kLightColor.withOpacity(.7),
-  focusColor: kLightColor.withOpacity(.7),
+  cardColor: kLightColor.withValues(alpha: .1),
+  hintColor: kLightColor.withValues(alpha: .7),
+  focusColor: kLightColor.withValues(alpha: .7),
   textTheme: GoogleFonts.karlaTextTheme()
-      .apply(bodyColor: kLightColor.withOpacity(.7)),
+      .apply(bodyColor: kLightColor.withValues(alpha: .7)),
   brightness: Brightness.dark,
+  tabBarTheme: TabBarThemeData(indicatorColor: kLightColor),
 );
 
 var darkPurpleTheme = ThemeData(
@@ -66,13 +66,13 @@ var darkPurpleTheme = ThemeData(
   useMaterial3: true,
   scaffoldBackgroundColor: Color(0xFF190b28),
   primaryColor: kLightColor,
-  indicatorColor: kLightColor,
-  cardColor: kLightColor.withOpacity(.1),
-  hintColor: kLightColor.withOpacity(.7),
-  focusColor: kLightColor.withOpacity(.7),
+  cardColor: kLightColor.withValues(alpha: .1),
+  hintColor: kLightColor.withValues(alpha: .7),
+  focusColor: kLightColor.withValues(alpha: .7),
   textTheme: GoogleFonts.karlaTextTheme()
-      .apply(bodyColor: kLightColor.withOpacity(.7)),
+      .apply(bodyColor: kLightColor.withValues(alpha: .7)),
   brightness: Brightness.dark,
+  tabBarTheme: TabBarThemeData(indicatorColor: kLightColor),
 );
 
 var pinkTheme = ThemeData(
@@ -81,14 +81,14 @@ var pinkTheme = ThemeData(
   useMaterial3: true,
   scaffoldBackgroundColor: Color.fromARGB(255, 82, 23, 52),
   primaryColor: kLightColor,
-  indicatorColor: kLightColor,
-  cardColor: kLightColor.withOpacity(.1),
-  hintColor: kLightColor.withOpacity(.7),
-  focusColor: kLightColor.withOpacity(.7),
+  cardColor: kLightColor.withValues(alpha: .1),
+  hintColor: kLightColor.withValues(alpha: .7),
+  focusColor: kLightColor.withValues(alpha: .7),
 
   textTheme: GoogleFonts.karlaTextTheme()
-      .apply(bodyColor: kLightColor.withOpacity(.7)),
+      .apply(bodyColor: kLightColor.withValues(alpha: .7)),
   brightness: Brightness.dark,
+  tabBarTheme: TabBarThemeData(indicatorColor: kLightColor),
 );
 
 // black background. force everything to white or black
@@ -98,12 +98,12 @@ var blackAndWhiteTheme = ThemeData(
   useMaterial3: true,
   scaffoldBackgroundColor: Colors.black,
   primaryColor: Colors.white,
-  indicatorColor: Colors.white,
   cardColor: Colors.black,
-  hintColor: Colors.white.withOpacity(.7),
-  focusColor: Colors.white.withOpacity(.7),
+  hintColor: Colors.white.withValues(alpha: .7),
+  focusColor: Colors.white.withValues(alpha: .7),
 
   textTheme: GoogleFonts.karlaTextTheme()
-      .apply(bodyColor: Colors.white.withOpacity(.7)),
+      .apply(bodyColor: Colors.white.withValues(alpha: .7)),
   brightness: Brightness.dark,
+  tabBarTheme: TabBarThemeData(indicatorColor: Colors.white),
 );

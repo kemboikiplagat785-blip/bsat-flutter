@@ -1,4 +1,3 @@
-
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/material.dart';
 
@@ -6,11 +5,16 @@ class QuickAction extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
-  final Function() onTap; 
+  final Function() onTap;
   final BuildContext context;
 
-  const QuickAction({required this.icon, required this.label, required this.color, required this.onTap, required this.context });
-      
+  const QuickAction(
+      {super.key,
+      required this.icon,
+      required this.label,
+      required this.color,
+      required this.onTap,
+      required this.context});
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +27,7 @@ class QuickAction extends StatelessWidget {
           borderRadius: BorderRadius.circular(kBorderRadius),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.9),
+              color: Colors.black.withValues(alpha: 0.9),
               blurRadius: 0,
               offset: const Offset(2, 2),
             ),

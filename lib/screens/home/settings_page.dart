@@ -1,5 +1,4 @@
 import 'package:bsat/screens/black_screen.dart';
-import 'package:bsat/screens/settings/about.dart';
 import 'package:bsat/screens/settings/settings.dart';
 import 'package:bsat/screens/settings/subscription.dart';
 import 'package:flutter/cupertino.dart';
@@ -8,7 +7,6 @@ import 'package:flutter/material.dart';
 import '../../components/button_descriptive.dart';
 import '../../components/header.dart';
 import '../../utils/constants.dart';
-import '../settings/updater.dart';
 
 class HomeSettingsPage extends StatefulWidget {
   const HomeSettingsPage({super.key});
@@ -18,7 +16,7 @@ class HomeSettingsPage extends StatefulWidget {
 }
 
 class _HomeSettingsPageState extends State<HomeSettingsPage> {
-    String appVersion = '';
+  String appVersion = '';
 
   @override
   void initState() {
@@ -57,11 +55,11 @@ class _HomeSettingsPageState extends State<HomeSettingsPage> {
                 ),
               ),
 
-              
               // account settings
               buttonDescriptive(
                 context,
-                title: 'Manage your account details, preferences, and security settings',
+                title:
+                    'Manage your account details, preferences, and security settings',
                 subtitle: 'Settings',
                 onTap: () {
                   Navigator.of(context).push(
@@ -75,11 +73,12 @@ class _HomeSettingsPageState extends State<HomeSettingsPage> {
                   color: kPrimaryColor,
                 ),
               ),
-              
+
               // account settings
               buttonDescriptive(
                 context,
-                title: 'Reduce power consumption when running advanced requests',
+                title:
+                    'Reduce power consumption when running advanced requests',
                 subtitle: 'Black Screen',
                 onTap: () {
                   Navigator.of(context).push(
@@ -93,7 +92,7 @@ class _HomeSettingsPageState extends State<HomeSettingsPage> {
                   color: kWarningColor,
                 ),
               ),
-                    const SizedBox(height: kPagePadding * 7),
+              const SizedBox(height: kPagePadding * 7),
             ],
           ),
         ),

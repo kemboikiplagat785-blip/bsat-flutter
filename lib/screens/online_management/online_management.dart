@@ -89,8 +89,7 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
         if (data != null && data['requests'] != null) {
           return (data['requests'] as List).length;
         }
-      } else {
-      }
+      } else {}
       return 0;
     });
 
@@ -171,9 +170,9 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
             vertical: kPagePadding / 1.3,
           ),
           decoration: BoxDecoration(
-            color: kWarningColor.withOpacity(0.12),
+            color: kWarningColor.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(kBorderRadius),
-            border: Border.all(color: kWarningColor.withOpacity(0.4)),
+            border: Border.all(color: kWarningColor.withValues(alpha: 0.4)),
           ),
           child: Row(
             children: [
@@ -189,18 +188,21 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                   children: [
                     const Text(
                       "Pending Pairing Requests",
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                      style:
+                          TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       "$pendingPairs device${pendingPairs == 1 ? '' : 's'} waiting for approval",
-                      style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                      style: TextStyle(
+                          fontSize: 12, color: Theme.of(context).hintColor),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(CupertinoIcons.chevron_right, size: 18, color: kIndigoColor),
+              const Icon(CupertinoIcons.chevron_right,
+                  size: 18, color: kIndigoColor),
             ],
           ),
         ),
@@ -234,7 +236,7 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
         decoration: BoxDecoration(
           color: kErrorColorLight,
           borderRadius: BorderRadius.circular(kBorderRadius),
-          border: Border.all(color: kErrorColor.withOpacity(0.3)),
+          border: Border.all(color: kErrorColor.withValues(alpha: 0.3)),
         ),
         child: Row(
           children: [
@@ -246,17 +248,20 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
                 children: [
                   const Text(
                     'Sign out',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: kErrorColor),
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: kErrorColor),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'End session on this device',
-                    style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                    style: TextStyle(
+                        fontSize: 12, color: Theme.of(context).hintColor),
                   ),
                 ],
               ),
             ),
-            const Icon(CupertinoIcons.chevron_right, size: 20, color: kErrorColor),
+            const Icon(CupertinoIcons.chevron_right,
+                size: 20, color: kErrorColor),
           ],
         ),
       ),

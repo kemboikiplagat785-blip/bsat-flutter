@@ -280,7 +280,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 );
               },
             ),
-            Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
+            Divider(
+                height: 1, color: theme.dividerColor.withValues(alpha: 0.1)),
             ListTile(
               title: const Text('Send Logs to Developer',
                   style: TextStyle(
@@ -290,7 +291,8 @@ class _SettingsPageState extends State<SettingsPage> {
               onTap: _handleSendLogs,
             ),
             // divider
-            Divider(height: 1, color: theme.dividerColor.withOpacity(0.1)),
+            Divider(
+                height: 1, color: theme.dividerColor.withValues(alpha: 0.1)),
             // clear logs
             ListTile(
               title: const Text('Clear Logs',
@@ -401,7 +403,7 @@ class _SettingsPageState extends State<SettingsPage> {
           fontSize: 12,
           fontWeight: FontWeight.w800,
           letterSpacing: 1.2,
-          color: Theme.of(context).primaryColor.withOpacity(0.7),
+          color: Theme.of(context).primaryColor.withValues(alpha: 0.7),
         ),
       ),
     );
@@ -412,8 +414,8 @@ class _SettingsPageState extends State<SettingsPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: Theme.of(context).dividerColor.withOpacity(0.05)),
+        border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.05)),
       ),
       child: Column(children: children),
     );
@@ -429,7 +431,7 @@ class _SettingsPageState extends State<SettingsPage> {
       title: Text(label,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
       trailing: CupertinoSwitch(
-          value: value, onChanged: onChanged, activeColor: kPrimaryColor),
+          value: value, onChanged: onChanged, activeTrackColor: kPrimaryColor),
       subtitle: hint != null
           ? Text(hint,
               style:
@@ -545,7 +547,8 @@ class _SettingsPageState extends State<SettingsPage> {
                         color: themes[index]['color'],
                         shape: BoxShape.circle,
                         border: Border.all(
-                            color: Colors.grey.withOpacity(0.3), width: 1),
+                            color: Colors.grey.withValues(alpha: 0.3),
+                            width: 1),
                       ),
                     ),
                     const SizedBox(height: 4),

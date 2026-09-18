@@ -5,7 +5,7 @@ class MyWebsitePage extends StatefulWidget {
   // Replace with your actual website URL
   final String websiteUrl = "https://portal.bsat.co.ke";
 
-  const MyWebsitePage({Key? key}) : super(key: key);
+  const MyWebsitePage({super.key});
 
   @override
   State<MyWebsitePage> createState() => _MyWebsitePageState();
@@ -56,12 +56,12 @@ class _MyWebsitePageState extends State<MyWebsitePage> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      // This allows the user to use the phone's back button to navigate 
+      // This allows the user to use the phone's back button to navigate
       // backward in the website's history instead of instantly closing the app page
       canPop: false,
       onPopInvoked: (didPop) async {
         if (didPop) return;
-        
+
         if (await _controller.canGoBack()) {
           await _controller.goBack();
         } else {
@@ -73,7 +73,7 @@ class _MyWebsitePageState extends State<MyWebsitePage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text("My Portal"),
-          actions:[
+          actions: [
             // Add a reload button to the AppBar
             IconButton(
               icon: const Icon(Icons.refresh),
@@ -84,10 +84,10 @@ class _MyWebsitePageState extends State<MyWebsitePage> {
           ],
         ),
         body: Stack(
-          children:[
+          children: [
             // The actual WebView
             WebViewWidget(controller: _controller),
-            
+
             // A loading progress bar at the top of the screen
             if (_loadingProgress < 100)
               LinearProgressIndicator(

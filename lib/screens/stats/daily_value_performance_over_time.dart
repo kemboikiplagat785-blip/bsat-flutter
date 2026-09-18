@@ -109,7 +109,7 @@ class _ValuePerformanceOverTimeState extends State<ValuePerformanceOverTime> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: DropdownButtonFormField<String>(
-            value: _selectedTimeframe,
+            initialValue: _selectedTimeframe,
             items: const [
               DropdownMenuItem(value: 'week', child: Text('Week')),
               DropdownMenuItem(value: 'month', child: Text('Month')),
@@ -248,7 +248,7 @@ class _LineChart extends StatelessWidget {
                         color: Colors.yellow, fontWeight: FontWeight.bold),
                   ),
                   TextSpan(
-                    text: '${spot.y.toStringAsFixed(0)}',
+                    text: spot.y.toStringAsFixed(0),
                     style: const TextStyle(
                         color: Colors.yellow, fontWeight: FontWeight.bold),
                   ),

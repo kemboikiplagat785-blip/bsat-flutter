@@ -56,9 +56,11 @@ class _PairedDevicesState extends State<PairedDevices> {
       if (mounted) showSuccessDialog(context, text: "Device unlinked");
     } else {
       if (mounted) {
-        if (response['body'] != null && response['body']['error'] == 'Pairing not found') {
+        if (response['body'] != null &&
+            response['body']['error'] == 'Pairing not found') {
           // delete device from local db
-          await SQLiteService().deleteWhere('whitelistedDevices', 'device_name = ?', [targetDeviceName]);
+          await SQLiteService().deleteWhere(
+              'whitelistedDevices', 'device_name = ?', [targetDeviceName]);
           await getData();
           if (mounted) showSuccessDialog(context, text: "Device unlinked");
         }
@@ -165,7 +167,6 @@ class _PairedDevicesState extends State<PairedDevices> {
     });
 
     forwardingDevices = await SQLiteService().queryAll('forwardingDevices');
-
 
     Navigator.of(context).pop(); // Hide loading
 
@@ -352,10 +353,10 @@ class _PairedDevicesState extends State<PairedDevices> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(kBorderRadius),
-        border: Border.all(color: Colors.grey.withOpacity(0.1)),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -364,7 +365,7 @@ class _PairedDevicesState extends State<PairedDevices> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
-          backgroundColor: kPrimaryColor.withOpacity(0.1),
+          backgroundColor: kPrimaryColor.withValues(alpha: 0.1),
           child: const Icon(Icons.smartphone_rounded, color: kPrimaryColor),
         ),
         title: Text(device['device_name'],
@@ -396,8 +397,8 @@ class _PairedDevicesState extends State<PairedDevices> {
         borderRadius: BorderRadius.circular(kBorderRadius),
         border: Border.all(
           color: isPaused
-              ? Colors.orange.withOpacity(0.3)
-              : Colors.grey.withOpacity(0.1),
+              ? Colors.orange.withValues(alpha: 0.3)
+              : Colors.grey.withValues(alpha: 0.1),
         ),
       ),
       child: Column(
@@ -423,7 +424,7 @@ class _PairedDevicesState extends State<PairedDevices> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
+                    color: Colors.orange.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text("PAUSED",
@@ -465,7 +466,7 @@ class _PairedDevicesState extends State<PairedDevices> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: kPrimaryColor.withOpacity(0.08),
+        color: kPrimaryColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
@@ -478,7 +479,7 @@ class _PairedDevicesState extends State<PairedDevices> {
 
   Widget _buildIconButton(IconData icon, Color color, VoidCallback onPressed) {
     return Material(
-      color: color.withOpacity(0.1),
+      color: color.withValues(alpha: 0.1),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -502,7 +503,7 @@ class _PairedDevicesState extends State<PairedDevices> {
             width: 50,
             height: 50,
             decoration: BoxDecoration(
-              color: kPrimaryColor.withOpacity(0.1),
+              color: kPrimaryColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(15),
             ),
             child:
@@ -519,7 +520,7 @@ class _PairedDevicesState extends State<PairedDevices> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Icon(icon, color: Colors.grey.withOpacity(0.3), size: 40),
+            Icon(icon, color: Colors.grey.withValues(alpha: 0.3), size: 40),
             const SizedBox(height: 8),
             Text(message,
                 style: const TextStyle(color: Colors.grey, fontSize: 13)),
@@ -535,14 +536,13 @@ class _PairedDevicesState extends State<PairedDevices> {
     final targetName = pairing['recipient_name'] ?? 'Unknown';
     final isSentByMe = requesterName == myDeviceName;
 
-
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: kPrimaryColor.withOpacity(0.05),
+        color: kPrimaryColor.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: kPrimaryColor.withOpacity(0.1)),
+        border: Border.all(color: kPrimaryColor.withValues(alpha: 0.1)),
       ),
       child: Row(
         children: [

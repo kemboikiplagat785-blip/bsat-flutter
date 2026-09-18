@@ -76,7 +76,11 @@ class _ShareDataPageState extends State<ShareDataPage> {
         var prefs = SharedPreferencesService();
         String email = await prefs.getUserEmail() ?? 'noemail';
         String deviceName = await prefs.getDeviceName() ?? 'nodevice';
-        String dateStr = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+        String dateStr = DateTime.now()
+            .toIso8601String()
+            .replaceAll(':', '-')
+            .split('.')
+            .first;
         String filename = '${email}_${deviceName}_$dateStr.json';
 
         Directory tempDir = await getTemporaryDirectory();
@@ -97,11 +101,13 @@ class _ShareDataPageState extends State<ShareDataPage> {
 
         if (response['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Request accepted. Data sent to server.")),
+            const SnackBar(
+                content: Text("Request accepted. Data sent to server.")),
           );
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Failed to send data: ${response['message']}")),
+            SnackBar(
+                content: Text("Failed to send data: ${response['message']}")),
           );
         }
       } catch (e) {
@@ -201,9 +207,7 @@ class _ShareDataPageState extends State<ShareDataPage> {
                             ),
                           );
 
-                          if (device != null) {
-                            _sendRequest(device);
-                          }
+                          _sendRequest(device);
                         },
                         child: Icon(
                           CupertinoIcons.plus_rectangle,
@@ -242,7 +246,8 @@ class _ShareDataPageState extends State<ShareDataPage> {
                       margin: const EdgeInsets.only(bottom: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(kBorderRadius),
-                        side: BorderSide(color: Colors.grey.withOpacity(0.2)),
+                        side: BorderSide(
+                            color: Colors.grey.withValues(alpha: 0.2)),
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -309,7 +314,7 @@ class _ShareDataPageState extends State<ShareDataPage> {
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
 
                   const SizedBox(height: 48),
                 ],

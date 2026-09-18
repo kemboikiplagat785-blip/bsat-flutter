@@ -826,7 +826,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       status: TransactionStatuses.forwarded,
                                       source: _details['source'],
                                       canRetry: _details['canRetry'] == 1,
-                                      reply: 'Forwarded to ${numb}');
+                                      reply: 'Forwarded to $numb');
 
                                   await showConfirmDeleteDialog(context,
                                           title: 'Delete Transaction?',

@@ -108,7 +108,12 @@ List<Map<String, dynamic>> kSubscriptionTiers = [
       "Calculator (add up unprocessed amounts from a single client)",
     ],
     "plans": [
-      {"plan_id": -1, "durationString": "Free Forever", "durationDays": 36500, "amount": 0},
+      {
+        "plan_id": -1,
+        "durationString": "Free Forever",
+        "durationDays": 36500,
+        "amount": 0
+      },
     ],
     "color": kGrayColor,
   },
@@ -124,8 +129,18 @@ List<Map<String, dynamic>> kSubscriptionTiers = [
     ],
     "plans": [
       {"plan_id": 0, "durationString": "Day", "durationDays": 1, "amount": 10},
-      {"plan_id": 1, "durationString": "5 Days", "durationDays": 5, "amount": 50},
-      {"plan_id": 2, "durationString": "Month", "durationDays": 30, "amount": 300},
+      {
+        "plan_id": 1,
+        "durationString": "5 Days",
+        "durationDays": 5,
+        "amount": 50
+      },
+      {
+        "plan_id": 2,
+        "durationString": "Month",
+        "durationDays": 30,
+        "amount": 300
+      },
     ],
     "tokens": [
       {"token_id": 0, "amount": 100, "value": 15, "details": "10 tokens"},
@@ -145,8 +160,18 @@ List<Map<String, dynamic>> kSubscriptionTiers = [
     ],
     "plans": [
       {"plan_id": 3, "durationString": "Day", "durationDays": 1, "amount": 20},
-      {"plan_id": 4, "durationString": "5 Days", "durationDays": 5, "amount": 100},
-      {"plan_id": 5, "durationString": "Month", "durationDays": 30, "amount": 600},
+      {
+        "plan_id": 4,
+        "durationString": "5 Days",
+        "durationDays": 5,
+        "amount": 100
+      },
+      {
+        "plan_id": 5,
+        "durationString": "Month",
+        "durationDays": 30,
+        "amount": 600
+      },
     ],
     "tokens": [
       {"token_id": 3, "amount": 150, "value": 20, "details": "20 tokens"},
@@ -166,8 +191,18 @@ List<Map<String, dynamic>> kSubscriptionTiers = [
     ],
     "plans": [
       {"plan_id": 6, "durationString": "Day", "durationDays": 1, "amount": 25},
-      {"plan_id": 7, "durationString": "5 Days", "durationDays": 5, "amount": 120},
-      {"plan_id": 8, "durationString": "Month", "durationDays": 30, "amount": 700},
+      {
+        "plan_id": 7,
+        "durationString": "5 Days",
+        "durationDays": 5,
+        "amount": 120
+      },
+      {
+        "plan_id": 8,
+        "durationString": "Month",
+        "durationDays": 30,
+        "amount": 700
+      },
     ],
     "color": kPrimaryColor,
   },
@@ -198,13 +233,10 @@ List<Map<String, dynamic>> kInitialCodes = [
   {'code': '*180*5*2*n*8*1#', 'amount': 55},
   {'code': '*180*5*2*n*8*1#', 'amount': 58},
   {'code': '*180*5*2*n*8*1#', 'amount': 60},
-
   {'code': '*180*5*2*n*7*1#', 'amount': 99},
   {'code': '*180*5*2*n*7*1#', 'amount': 100},
-
   {'code': '*180*5*2*n*6*1#', 'amount': 20},
   {'code': '*180*5*2*n*6*1#', 'amount': 25},
-
   {'code': '*180*5*2*n*5*1#', 'amount': 19},
   {'code': '*180*5*2*n*2*1#', 'amount': 49},
 ];
@@ -246,11 +278,11 @@ List<Color> kSectionColors = [
   kWarningColor,
   kErrorColor,
   kDullColor,
-  kPrimaryColor.withOpacity(0.7),
-  kIndigoColor.withOpacity(0.7),
-  kWarningColor.withOpacity(0.7),
-  kErrorColor.withOpacity(0.7),
-  kDullColor.withOpacity(0.7),
+  kPrimaryColor.withValues(alpha: 0.7),
+  kIndigoColor.withValues(alpha: 0.7),
+  kWarningColor.withValues(alpha: 0.7),
+  kErrorColor.withValues(alpha: 0.7),
+  kDullColor.withValues(alpha: 0.7),
 ];
 
 Future<String> getAppVersion() async {

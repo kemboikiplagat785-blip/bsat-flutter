@@ -55,7 +55,7 @@ class ProfileCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16.0),
             decoration: BoxDecoration(
-              color: kIndigoColor.withOpacity(0.1),
+              color: kIndigoColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Image.asset(

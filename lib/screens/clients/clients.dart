@@ -20,18 +20,18 @@ class ClientsPage extends StatefulWidget {
 class _ClientsPageState extends State<ClientsPage> {
   final _sqliteService = SQLiteService();
   List<Client> _clients = [];
-  List<Client> _filteredClients =[];
+  List<Client> _filteredClients = [];
   bool _isLoading = true;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _sortBy = 'Last Active';
-  final List<String> _sortOptions =[
+  final List<String> _sortOptions = [
     'Last Active',
     'Name',
     'Phone',
     'Purchases'
   ];
-  Set<int> _selectedClientIds = {};
+  final Set<int> _selectedClientIds = {};
   int? _lastSelectedIndex;
   bool _isRangeSelectMode = false;
 
@@ -121,7 +121,7 @@ class _ClientsPageState extends State<ClientsPage> {
       builder: (context) => AlertDialog(
         title: const Text('Delete Clients'),
         content: Text('Delete ${_selectedClientIds.length} client(s)?'),
-        actions:[
+        actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
@@ -160,12 +160,10 @@ class _ClientsPageState extends State<ClientsPage> {
   void _selectRange(int currentIndex) {
     if (_lastSelectedIndex == null) return;
 
-    final start = _lastSelectedIndex! < currentIndex
-        ? _lastSelectedIndex!
-        : currentIndex;
-    final end = _lastSelectedIndex! > currentIndex
-        ? _lastSelectedIndex!
-        : currentIndex;
+    final start =
+        _lastSelectedIndex! < currentIndex ? _lastSelectedIndex! : currentIndex;
+    final end =
+        _lastSelectedIndex! > currentIndex ? _lastSelectedIndex! : currentIndex;
 
     setState(() {
       for (int i = start; i <= end; i++) {
@@ -191,7 +189,7 @@ class _ClientsPageState extends State<ClientsPage> {
           child: const Icon(CupertinoIcons.add),
         ),
         body: Column(
-          children:[
+          children: [
             // Keeping the selection context bar fixed at the top for better UX
             if (_selectedClientIds.isNotEmpty)
               Container(
@@ -200,7 +198,7 @@ class _ClientsPageState extends State<ClientsPage> {
                     horizontal: kPagePadding, vertical: kPagePadding / 2),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children:[
+                  children: [
                     Text(
                       _isRangeSelectMode
                           ? 'Select range: tap another item'
@@ -212,7 +210,7 @@ class _ClientsPageState extends State<ClientsPage> {
                       ),
                     ),
                     Row(
-                      children:[
+                      children: [
                         if (!_isRangeSelectMode) ...[
                           TextButton(
                             onPressed: () {
@@ -229,8 +227,9 @@ class _ClientsPageState extends State<ClientsPage> {
                           const SizedBox(width: 8),
                         ],
                         IconButton(
-                          onPressed:
-                              _isRangeSelectMode ? null : _sendMessageToSelected,
+                          onPressed: _isRangeSelectMode
+                              ? null
+                              : _sendMessageToSelected,
                           icon: Icon(
                             CupertinoIcons.mail,
                             color: Colors.white,
@@ -238,8 +237,9 @@ class _ClientsPageState extends State<ClientsPage> {
                         ),
                         const SizedBox(width: 8),
                         IconButton(
-                          onPressed:
-                              _isRangeSelectMode ? null : _deleteSelectedClients,
+                          onPressed: _isRangeSelectMode
+                              ? null
+                              : _deleteSelectedClients,
                           icon: Icon(
                             CupertinoIcons.trash,
                             color: kErrorColor,
@@ -269,11 +269,11 @@ class _ClientsPageState extends State<ClientsPage> {
               // Wrapped with CustomScrollView so the WHOLE page acts as one scrolling body
               child: ScrollbarTheme(
                 data: ScrollbarThemeData(
-                    thumbVisibility: const WidgetStatePropertyAll(true),
-                    thickness: const WidgetStatePropertyAll(10),
+                  thumbVisibility: const WidgetStatePropertyAll(true),
+                  thickness: const WidgetStatePropertyAll(10),
                   radius: const Radius.circular(12),
-                    trackVisibility: const WidgetStatePropertyAll(true),
-                    thumbColor: WidgetStatePropertyAll(
+                  trackVisibility: const WidgetStatePropertyAll(true),
+                  thumbColor: WidgetStatePropertyAll(
                     kPrimaryColor.withValues(alpha: 0.7),
                   ),
                 ),
@@ -286,7 +286,7 @@ class _ClientsPageState extends State<ClientsPage> {
                   trackVisibility: true,
                   child: CustomScrollView(
                     controller: _scrollController,
-                    slivers:[
+                    slivers: [
                       SliverToBoxAdapter(
                         child: header(context, "Clients"),
                       ),
@@ -297,13 +297,14 @@ class _ClientsPageState extends State<ClientsPage> {
                             padding: const EdgeInsets.all(kPagePadding),
                             decoration: BoxDecoration(
                               color: Theme.of(context).cardColor,
-                              borderRadius: BorderRadius.circular(kBorderRadius),
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
                                 Column(
-                                  children:[
+                                  children: [
                                     Text(
                                       _clients.length.toString(),
                                       style: const TextStyle(
@@ -316,7 +317,7 @@ class _ClientsPageState extends State<ClientsPage> {
                                   ],
                                 ),
                                 Column(
-                                  children:[
+                                  children: [
                                     Text(
                                       _clients
                                           .fold<int>(
@@ -342,7 +343,8 @@ class _ClientsPageState extends State<ClientsPage> {
                         child: buttonDescriptive(
                           context,
                           title: 'Sync client data',
-                          subtitle: 'Import/export all clients and contacts data',
+                          subtitle:
+                              'Import/export all clients and contacts data',
                           onTap: () async {
                             await Navigator.of(context).push(
                               MaterialPageRoute(
@@ -362,7 +364,7 @@ class _ClientsPageState extends State<ClientsPage> {
                           padding: const EdgeInsets.fromLTRB(
                               kPagePadding, 0, kPagePadding, kPagePadding),
                           child: Column(
-                            children:[
+                            children: [
                               const SizedBox(height: kPagePadding),
                               TextField(
                                 controller: _searchController,
@@ -389,8 +391,9 @@ class _ClientsPageState extends State<ClientsPage> {
                               ),
                               const SizedBox(height: 10),
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children:[
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
                                   const Text(
                                     'Sort by:',
                                     style: TextStyle(
@@ -435,7 +438,7 @@ class _ClientsPageState extends State<ClientsPage> {
                           child: Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
-                              children:[
+                              children: [
                                 const Icon(
                                   CupertinoIcons.person_2,
                                   size: 64,
@@ -472,13 +475,16 @@ class _ClientsPageState extends State<ClientsPage> {
                                       _selectRange(index);
                                       _lastSelectedIndex = index;
                                     } else if (_selectedClientIds.isEmpty) {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => SingleClientPage(
-                                            id: client.id!,
-                                          ),
-                                        ),
-                                      ).then((_) => _getClients());
+                                      Navigator.of(context)
+                                          .push(
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  SingleClientPage(
+                                                id: client.id!,
+                                              ),
+                                            ),
+                                          )
+                                          .then((_) => _getClients());
                                     } else {
                                       setState(() {
                                         if (isSelected) {
@@ -518,10 +524,10 @@ class _ClientsPageState extends State<ClientsPage> {
                                     child: Padding(
                                       padding: const EdgeInsets.all(12.0),
                                       child: Row(
-                                        children:[
+                                        children: [
                                           CircleAvatar(
-                                            backgroundColor:
-                                                kPrimaryColor.withValues(alpha: 0.1),
+                                            backgroundColor: kPrimaryColor
+                                                .withValues(alpha: 0.1),
                                             child: Text(
                                               client.firstName.isNotEmpty
                                                   ? client.firstName[0]
@@ -538,7 +544,7 @@ class _ClientsPageState extends State<ClientsPage> {
                                             child: Column(
                                               crossAxisAlignment:
                                                   CrossAxisAlignment.start,
-                                              children:[
+                                              children: [
                                                 Text(
                                                   client.fullName.isNotEmpty
                                                       ? client.fullName
@@ -555,7 +561,7 @@ class _ClientsPageState extends State<ClientsPage> {
                                           Column(
                                             crossAxisAlignment:
                                                 CrossAxisAlignment.end,
-                                            children:[
+                                            children: [
                                               Text(
                                                 "${client.noOfPurchases} Purchases",
                                                 style: TextStyle(

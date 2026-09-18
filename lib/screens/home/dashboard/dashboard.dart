@@ -123,7 +123,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${getGreeting(withEmoji: true)}',
+                              getGreeting(withEmoji: true),
                               style: const TextStyle(fontSize: 14),
                             ),
                             Text(
@@ -239,7 +239,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                         decoration: BoxDecoration(
                                           color: Theme.of(context)
                                               .scaffoldBackgroundColor
-                                              .withOpacity(0.8),
+                                              .withValues(alpha: 0.8),
                                           borderRadius:
                                               BorderRadius.circular(500),
                                           border: Border.all(
@@ -298,7 +298,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                       decoration: BoxDecoration(
                                           color: Theme.of(context)
                                               .scaffoldBackgroundColor
-                                              .withOpacity(0.8),
+                                              .withValues(alpha: 0.8),
                                           borderRadius:
                                               BorderRadius.circular(500)),
                                       child: GestureDetector(
@@ -352,7 +352,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                     decoration: BoxDecoration(
                                       color: Theme.of(context)
                                           .scaffoldBackgroundColor
-                                          .withOpacity(0.8),
+                                          .withValues(alpha: 0.8),
                                       borderRadius: BorderRadius.circular(500),
                                       border: Border.all(
                                         color: Theme.of(context).cardColor,
@@ -467,7 +467,9 @@ class _DashBoardPageState extends State<DashBoardPage>
                       // color: Theme.of(context).cardColor,
                       borderRadius: BorderRadius.circular(kBorderRadius),
                       border: Border.all(
-                        color: Theme.of(context).primaryColor.withOpacity(.2),
+                        color: Theme.of(context)
+                            .primaryColor
+                            .withValues(alpha: .2),
                         width: 1,
                       ),
                     ),
@@ -575,7 +577,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                               },
                               {
                                 'count': vm.maskedCount,
-                                'icon': const Icon(Icons.masks, color: kDullColor, size: 14),
+                                'icon': const Icon(Icons.masks,
+                                    color: kDullColor, size: 14),
                                 'query': TransactionStatuses.masked,
                                 'label': 'masked',
                                 'accentColor': kErrorColor,
@@ -624,7 +627,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 accentColor: filter['accentColor'] as Color?,
                                 borderColor: filter['accentColor'] as Color?,
                               );
-                            }).toList()
+                            })
                           ],
                         ),
                         const SizedBox(height: kPagePadding),

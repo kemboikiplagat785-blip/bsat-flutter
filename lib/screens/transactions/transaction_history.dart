@@ -71,7 +71,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   String query = "";
   Timer? _debounce; // Performance Fix: For search
   var databaseHelper = SQLiteService();
-  bool _isScrollingDown = false;
+  final bool _isScrollingDown = false;
 
   @override
   void initState() {
@@ -128,7 +128,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       databaseHelper.getCount('transactions',
           appendQuery:
               "WHERE status = '${TransactionStatuses.masked}' AND date = '$dateStr'"),
-
     ]);
 
     if (!mounted) return;
@@ -295,14 +294,17 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               if (allVisibleSelected) {
                                 _clearSelectionState();
                               } else {
-                                _selectedTransactionIds = (_pagingController.itemList ??
-                                        [])
-                                    .map((e) => e['id'] as int)
-                                    .toSet();
-                                _selectionMode = _selectedTransactionIds.isNotEmpty;
+                                _selectedTransactionIds =
+                                    (_pagingController.itemList ?? [])
+                                        .map((e) => e['id'] as int)
+                                        .toSet();
+                                _selectionMode =
+                                    _selectedTransactionIds.isNotEmpty;
                                 _isRangeSelectMode = false;
                                 _lastSelectedVisibleIndex =
-                                    _selectedTransactionIds.isNotEmpty ? 0 : null;
+                                    _selectedTransactionIds.isNotEmpty
+                                        ? 0
+                                        : null;
                               }
                             });
                           },
@@ -396,7 +398,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                             },
                             child: Container(
                               color: isSelected
-                                  ? Colors.blue.withOpacity(0.2)
+                                  ? Colors.blue.withValues(alpha: 0.2)
                                   : null,
                               child: Row(
                                 children: [
@@ -413,7 +415,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                             if (checked == true) {
                                               _lastSelectedVisibleIndex = index;
                                             }
-                                            if (_selectedTransactionIds.isEmpty) {
+                                            if (_selectedTransactionIds
+                                                .isEmpty) {
                                               _clearSelectionState();
                                             }
                                           });
@@ -586,8 +589,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
     String? number = await showForwardTextDialog(context, 0);
 
-
-
     try {
       final transactions = await _getSelectedTransactions();
 
@@ -638,7 +639,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     _resetSelectionState();
     reloadForNewDate();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Forwarded $forwarded transaction(s). Skipped $skipped.')),
+      SnackBar(
+          content:
+              Text('Forwarded $forwarded transaction(s). Skipped $skipped.')),
     );
   }
 
@@ -678,7 +681,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         }
 
         try {
-
           int? txId = await TransactionController().dontProcess(
             message,
             (transaction['transactionId'] ?? '').toString(),
@@ -730,7 +732,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     _resetSelectionState();
     reloadForNewDate();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Forwarded $forwarded transaction(s). Failed $failed.')),
+      SnackBar(
+          content:
+              Text('Forwarded $forwarded transaction(s). Failed $failed.')),
     );
   }
 
@@ -841,7 +845,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               _failedCount,
               kErrorColor,
               'Error'),
-        const SizedBox(width: 8),
+          const SizedBox(width: 8),
           _tool(
               TransactionStatuses.masked,
               const Icon(Icons.masks, color: kErrorColor, size: 14),
@@ -1473,7 +1477,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         const SizedBox(width: kPagePadding),
                         Expanded(
                           child: ElevatedButton(
-                            child: const Text('Delete'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: kErrorColor,
                             ),
@@ -1587,6 +1590,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                 }
                               }
                             },
+                            child: const Text('Delete'),
                           ),
                         ),
                       ],

@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/payments.dart';
@@ -7,8 +6,16 @@ import 'loading_dialog.dart';
 import 'show_error_dialog.dart';
 import 'success_dialog.dart';
 
-Future<bool?> proceedToPayDialog(BuildContext context, int amount, int days,
-    int subId, String name, String expiryDate, int planId, String tier,) {
+Future<bool?> proceedToPayDialog(
+  BuildContext context,
+  int amount,
+  int days,
+  int subId,
+  String name,
+  String expiryDate,
+  int planId,
+  String tier,
+) {
   var textTheme = Theme.of(context).textTheme;
   return showDialog<bool>(
     barrierDismissible: false,
@@ -65,8 +72,8 @@ Future<bool?> proceedToPayDialog(BuildContext context, int amount, int days,
                   );
                   // showSuccessDialog(context, "Payment made successfully.");
                 } else {
-                  showSuccessDialog(
-                      context, text: "Payment of KSH $amount made successfully.");
+                  showSuccessDialog(context,
+                      text: "Payment of KSH $amount made successfully.");
                 }
               });
             },

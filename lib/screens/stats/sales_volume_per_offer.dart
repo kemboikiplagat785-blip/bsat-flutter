@@ -22,7 +22,7 @@ class SalesVolumePerOfferState extends State<SalesVolumePerOffer> {
 
   // Example data: each map contains 'label' and 'value'
   final List<Map<String, dynamic>> offerVolumes = [];
-  SQLiteService _sqliteService = SQLiteService();
+  final SQLiteService _sqliteService = SQLiteService();
 
   List salesDay = [];
   List salesYesterday = [];
@@ -166,7 +166,7 @@ class SalesVolumePerOfferState extends State<SalesVolumePerOffer> {
         DropdownButtonFormField<String>(
           iconSize: 12,
           padding: const EdgeInsets.all(0),
-          value: _selectedTimeframe,
+          initialValue: _selectedTimeframe,
           items: const [
             DropdownMenuItem(value: 'week', child: Text('Week')),
             DropdownMenuItem(value: 'month', child: Text('Month')),

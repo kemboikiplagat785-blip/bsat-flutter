@@ -1,4 +1,3 @@
-import 'package:bsat/components/dialogs/forward_text.dart';
 import 'package:bsat/screens/dialpad.dart';
 import 'package:bsat/screens/foward_sms.dart';
 import 'package:bsat/screens/online_management/online_management.dart';

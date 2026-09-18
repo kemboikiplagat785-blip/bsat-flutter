@@ -70,7 +70,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
       return;
     }
 
-
     if (myDeviceName == "Loading..." || myDeviceName == "Unknown") {
       showErrorDialog(
           context, "Error", "Could not determine your device name.");
@@ -87,7 +86,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
         'myDeviceName': myDeviceName,
         'targetDeviceName': _targetDeviceController.text,
       });
-
 
       // Hide loading dialog
       if (mounted) Navigator.pop(context);
@@ -189,14 +187,14 @@ class _PairDevicePageState extends State<PairDevicePage> {
       padding: const EdgeInsets.all(kPagePadding),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [kPrimaryColor, kPrimaryColor.withOpacity(0.7)],
+          colors: [kPrimaryColor, kPrimaryColor.withValues(alpha: 0.7)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(kBorderRadius),
         boxShadow: [
           BoxShadow(
-            color: kPrimaryColor.withOpacity(0.3),
+            color: kPrimaryColor.withValues(alpha: 0.3),
             blurRadius: 20,
             offset: const Offset(0, 8),
           ),
@@ -226,7 +224,7 @@ class _PairDevicePageState extends State<PairDevicePage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
+              color: Colors.white.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(kBorderRadius),
             ),
             child: const Row(
@@ -264,7 +262,7 @@ class _PairDevicePageState extends State<PairDevicePage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 15,
             offset: const Offset(0, 4),
           ),
@@ -275,13 +273,13 @@ class _PairDevicePageState extends State<PairDevicePage> {
         style: const TextStyle(fontWeight: FontWeight.w600),
         decoration: InputDecoration(
           hintText: "Enter device name...",
-          hintStyle: TextStyle(color: theme.hintColor.withOpacity(0.4)),
+          hintStyle: TextStyle(color: theme.hintColor.withValues(alpha: 0.4)),
           prefixIcon:
               const Icon(CupertinoIcons.device_phone_portrait, size: 20),
           suffixIcon: Container(
             margin: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: kPrimaryColor.withOpacity(0.1),
+              color: kPrimaryColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
             child: IconButton(
@@ -306,7 +304,7 @@ class _PairDevicePageState extends State<PairDevicePage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: kPrimaryColor.withOpacity(0.3),
+            color: kPrimaryColor.withValues(alpha: 0.3),
             blurRadius: 15,
             offset: const Offset(0, 10),
           ),
@@ -333,9 +331,9 @@ class _PairDevicePageState extends State<PairDevicePage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.amber.withOpacity(0.05),
+        color: Colors.amber.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.amber.withOpacity(0.2)),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [

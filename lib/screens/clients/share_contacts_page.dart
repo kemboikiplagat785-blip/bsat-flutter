@@ -59,7 +59,7 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
           _pairedDevices = list;
           if (_selectedDeviceName != null &&
               !_pairedDevices.any(
-                    (d) => d['device_name']?.toString() == _selectedDeviceName,
+                (d) => d['device_name']?.toString() == _selectedDeviceName,
               )) {
             _selectedDeviceName = null;
           }
@@ -111,7 +111,7 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
 
     try {
       final transferId =
-      await ContactsService().startContactsTransfer(_selectedDeviceName!);
+          await ContactsService().startContactsTransfer(_selectedDeviceName!);
 
       if (!mounted) return;
       Navigator.of(context).pop(); // close loading dialog
@@ -120,7 +120,7 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
         await showSuccessDialog(
           context,
           text:
-          "Contacts transfer started successfully.\nTransfer ID: $transferId",
+              "Contacts transfer started successfully.\nTransfer ID: $transferId",
         );
       } else {
         showErrorDialog(
@@ -146,7 +146,8 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
   Widget _buildPairedDeviceTile(Map<String, dynamic> device) {
     final deviceName = device['device_name']?.toString() ?? 'Unknown Device';
     final ownerEmail = device['owner_email']?.toString() ?? '';
-    final subtitle = ownerEmail.isNotEmpty ? ownerEmail : 'Accepted / whitelisted';
+    final subtitle =
+        ownerEmail.isNotEmpty ? ownerEmail : 'Accepted / whitelisted';
 
     return Card(
       elevation: 0,
@@ -156,7 +157,7 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
         side: BorderSide(
           color: _selectedDeviceName == deviceName
               ? kPrimaryColor
-              : Colors.grey.withOpacity(0.2),
+              : Colors.grey.withValues(alpha: 0.2),
           width: _selectedDeviceName == deviceName ? 1.5 : 1,
         ),
       ),
@@ -201,14 +202,13 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
                       style: TextStyle(color: Colors.grey[600]),
                     ),
                     const SizedBox(height: kPagePadding),
-
                     Container(
                       padding: const EdgeInsets.all(kPagePadding),
                       decoration: BoxDecoration(
                         color: Theme.of(context).cardColor,
                         borderRadius: BorderRadius.circular(kBorderRadius),
                         border: Border.all(
-                          color: Colors.grey.withOpacity(0.15),
+                          color: Colors.grey.withValues(alpha: 0.15),
                         ),
                       ),
                       child: Column(
@@ -238,9 +238,7 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
                         ],
                       ),
                     ),
-
                     const SizedBox(height: kPagePadding * 1.5),
-
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -258,9 +256,7 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 8),
-
                     if (_isLoadingDevices)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 24),
@@ -292,9 +288,7 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
                       )
                     else
                       ..._pairedDevices.map(_buildPairedDeviceTile),
-
                     const SizedBox(height: kPagePadding),
-
                     ElevatedButton(
                       onPressed: _isSending ? null : _sendContacts,
                       style: ElevatedButton.styleFrom(
@@ -307,17 +301,16 @@ class _ShareContactsPageState extends State<ShareContactsPage> {
                       ),
                       child: _isSending
                           ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor:
+                                    AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
                           : const Text("Send contacts"),
                     ),
-
                     const SizedBox(height: kPagePadding * 2),
                   ],
                 ),

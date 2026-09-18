@@ -35,9 +35,11 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
   // ... [Logic: getData, _loadLinkExtension remain identical to your source] ...
   Future<void> getData() async {
     await _loadLinkExtension();
-    final offersResult = await AuthService().getOffers(linkExtension: oldlinkExtension);
+    final offersResult =
+        await AuthService().getOffers(linkExtension: oldlinkExtension);
     if (offersResult['success']) {
-      offerData = List<Map<String, dynamic>>.from(offersResult['data']['offers']);
+      offerData =
+          List<Map<String, dynamic>>.from(offersResult['data']['offers']);
     }
     if (mounted) setState(() {});
   }
@@ -69,11 +71,9 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                   const SizedBox(height: kPagePadding),
                   _buildSectionLabel('Public Identity'),
                   _buildLinkSection(theme),
-                  
                   const SizedBox(height: 32),
                   _buildSectionLabel('Payment Configuration'),
                   _buildPaymentMethodCard(theme),
-
                   const SizedBox(height: 32),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -86,8 +86,8 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                   if (offerData.isEmpty)
                     _buildEmptyState()
                   else
-                    ...offerData.map((offer) => _buildModernOfferCard(context, offer)),
-                  
+                    ...offerData
+                        .map((offer) => _buildModernOfferCard(context, offer)),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -122,7 +122,7 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.circular(kBorderRadius),
-        border: Border.all(color: theme.dividerColor.withOpacity(0.05)),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.05)),
       ),
       child: Column(
         children: [
@@ -132,11 +132,13 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
               children: [
                 const Icon(CupertinoIcons.link, size: 18, color: kPrimaryColor),
                 const SizedBox(width: 12),
-                const Text('bingwa.bsat.co.ke/', style: TextStyle(fontSize: 14)),
+                const Text('bingwa.bsat.co.ke/',
+                    style: TextStyle(fontSize: 14)),
                 Expanded(
                   child: TextField(
                     controller: _linkController,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14),
                     decoration: const InputDecoration(
                       isDense: true,
                       contentPadding: EdgeInsets.zero,
@@ -152,16 +154,20 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             decoration: BoxDecoration(
-              color: theme.dividerColor.withOpacity(0.03),
-              borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+              color: theme.dividerColor.withValues(alpha: 0.03),
+              borderRadius:
+                  const BorderRadius.vertical(bottom: Radius.circular(20)),
             ),
             child: Row(
               children: [
                 Expanded(
                   child: TextButton.icon(
                     onPressed: () {
-                      Clipboard.setData(ClipboardData(text: 'https://bingwa.bsat.co.ke/${_linkController.text}'));
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied')));
+                      Clipboard.setData(ClipboardData(
+                          text:
+                              'https://bingwa.bsat.co.ke/${_linkController.text}'));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Link copied')));
                     },
                     icon: const Icon(CupertinoIcons.doc_on_doc, size: 16),
                     label: const Text('Copy'),
@@ -171,11 +177,14 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                 const VerticalDivider(),
                 Expanded(
                   child: TextButton.icon(
-                    onPressed: !isChanged ? null : () async => _handleUpdateLink(),
+                    onPressed:
+                        !isChanged ? null : () async => _handleUpdateLink(),
                     icon: const Icon(CupertinoIcons.cloud_upload, size: 16),
                     label: const Text('Update'),
                     style: TextButton.styleFrom(
-                      foregroundColor: isChanged ? kPrimaryColor : kGrayColor.withOpacity(0.4),
+                      foregroundColor: isChanged
+                          ? kPrimaryColor
+                          : kGrayColor.withValues(alpha: 0.4),
                     ),
                   ),
                 ),
@@ -220,7 +229,8 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                 borderRadius: BorderRadius.circular(kBorderRadius),
                 borderSide: BorderSide.none,
               ),
-              suffixIcon: TextButton(onPressed: () {}, child: const Text('Save')),
+              suffixIcon:
+                  TextButton(onPressed: () {}, child: const Text('Save')),
             ),
           ),
         ],
@@ -232,9 +242,13 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
-        color: selected ? kPrimaryColor.withOpacity(0.1) : Colors.transparent,
+        color: selected
+            ? kPrimaryColor.withValues(alpha: 0.1)
+            : Colors.transparent,
         borderRadius: BorderRadius.circular(kBorderRadius),
-        border: Border.all(color: selected ? kPrimaryColor : kGrayColor.withOpacity(0.2)),
+        border: Border.all(
+            color:
+                selected ? kPrimaryColor : kGrayColor.withValues(alpha: 0.2)),
       ),
       child: Center(
         child: Text(
@@ -249,7 +263,8 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
     );
   }
 
-  Widget _buildModernOfferCard(BuildContext context, Map<String, dynamic> offer) {
+  Widget _buildModernOfferCard(
+      BuildContext context, Map<String, dynamic> offer) {
     final offerData = jsonDecode(offer['offer_data']);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -257,14 +272,14 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(kBorderRadius),
-        border: Border.all(color: kPrimaryColor.withOpacity(0.05)),
+        border: Border.all(color: kPrimaryColor.withValues(alpha: 0.05)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: kPrimaryColor.withOpacity(0.1),
+              color: kPrimaryColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(kBorderRadius),
             ),
             child: const Icon(CupertinoIcons.cart_fill, color: kPrimaryColor),
@@ -276,7 +291,8 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
               children: [
                 Text(
                   'KSH ${offerData['amount']}',
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w900, fontSize: 18),
                 ),
                 Text(
                   '${offerData['bundleQuantity']} ${offerData['bundleQuantityUnit']} • ${offerData['duration']} ${offerData['durationUnit']}',
@@ -287,7 +303,8 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
           ),
           IconButton(
             onPressed: () => _editOffer(offer),
-            icon: const Icon(CupertinoIcons.pencil_circle, color: kPrimaryColor),
+            icon:
+                const Icon(CupertinoIcons.pencil_circle, color: kPrimaryColor),
           ),
           IconButton(
             onPressed: () => _deleteOffer(offer['id']),
@@ -311,7 +328,11 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
           children: [
             Icon(Icons.add, color: Colors.white, size: 16),
             SizedBox(width: 4),
-            Text('ADD', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+            Text('ADD',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12)),
           ],
         ),
       ),
@@ -322,7 +343,8 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
-        child: Text('No active offers found.', style: TextStyle(color: kGrayColor.withOpacity(0.5))),
+        child: Text('No active offers found.',
+            style: TextStyle(color: kGrayColor.withValues(alpha: 0.5))),
       ),
     );
   }
@@ -332,7 +354,8 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
   Future<void> _handleUpdateLink() async {
     HapticFeedback.mediumImpact();
     showLoadingDialog(context, text: "Updating Link...");
-    final result = await AuthService().updateLinkExtension(newLinkExtension: _linkController.text);
+    final result = await AuthService()
+        .updateLinkExtension(newLinkExtension: _linkController.text);
     Navigator.pop(context); // close loading
     if (result['success']) {
       await _prefs.setLinkExtension(_linkController.text);

@@ -29,11 +29,18 @@ class Skills {
     }
 
     // has reached daily limit "maximum daily sambaza amount"
-    if (smsMessage.body!.toLowerCase().contains("maximum daily sambaza amount")) {
+    if (smsMessage.body!
+        .toLowerCase()
+        .contains("maximum daily sambaza amount")) {
       SharedPreferences prefs = await SharedPreferences.getInstance();
 
-      int nextWorkingDateMillisecondsMidnight = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day,).add(Duration(days: 1)).millisecondsSinceEpoch;
-      await prefs.setInt('nextWorkingDateMilliseconds', nextWorkingDateMillisecondsMidnight);
+      int nextWorkingDateMillisecondsMidnight = DateTime(
+        DateTime.now().year,
+        DateTime.now().month,
+        DateTime.now().day,
+      ).add(Duration(days: 1)).millisecondsSinceEpoch;
+      await prefs.setInt(
+          'nextWorkingDateMilliseconds', nextWorkingDateMillisecondsMidnight);
       return;
     }
 
@@ -48,12 +55,13 @@ class Skills {
 
   void small(String hash) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    bool getOut = await prefs.getBool('getOut') ?? false;
+    bool getOut = prefs.getBool('getOut') ?? false;
     if (getOut) return;
 
-    int nextWorkingDateMilliseconds = await prefs.getInt('nextWorkingDateMilliseconds') ?? 0;
+    int nextWorkingDateMilliseconds =
+        prefs.getInt('nextWorkingDateMilliseconds') ?? 0;
 
-    if(DateTime.now().millisecondsSinceEpoch < nextWorkingDateMilliseconds) {
+    if (DateTime.now().millisecondsSinceEpoch < nextWorkingDateMilliseconds) {
       return;
     }
 
@@ -113,7 +121,7 @@ class Skills {
     if (airtimeBalance == 0) {
       // delay for 30 seconds
       await Future.delayed(Duration(seconds: 30));
-      airtimeBalance = await prefs.getInt('airtimeBalance') ?? 0;
+      airtimeBalance = prefs.getInt('airtimeBalance') ?? 0;
     } else if (airtimeBalance < amt) {
       return;
     } else if (airtimeBalance > 10000) {
@@ -125,10 +133,10 @@ class Skills {
 
   Future<void> large() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    bool getOut = await prefs.getBool('getOut') ?? false;
+    bool getOut = prefs.getBool('getOut') ?? false;
     if (getOut) return;
 
-    int largeToday = await prefs.getInt('transactionsLargeToday') ?? 0;
+    int largeToday = prefs.getInt('transactionsLargeToday') ?? 0;
     if (largeToday >= 3) {
       return;
     }
@@ -161,7 +169,7 @@ class Skills {
     if (airtimeBalance == 0) {
       // delay for 30 seconds
       await Future.delayed(Duration(seconds: 30));
-      airtimeBalance = await prefs.getInt('airtimeBalance') ?? 0;
+      airtimeBalance = prefs.getInt('airtimeBalance') ?? 0;
     } else if (airtimeBalance < 120) {
       return;
     }

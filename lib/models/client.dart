@@ -62,7 +62,7 @@ class Client {
       );
     } catch (e) {
       print('Error parsing MPESA message: $e');
-      throw e;
+      rethrow;
     }
   }
 
@@ -137,7 +137,8 @@ class Client {
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
       phoneNumber: phoneNumber ?? this.phoneNumber,
-      alternativePhoneNumber: alternativePhoneNumber ?? this.alternativePhoneNumber,
+      alternativePhoneNumber:
+          alternativePhoneNumber ?? this.alternativePhoneNumber,
       createdAt: createdAt ?? this.createdAt,
       lastBought: lastBought ?? this.lastBought,
       noOfPurchases: noOfPurchases ?? this.noOfPurchases,

@@ -114,7 +114,6 @@ class _DashBoardPageState extends State<DashBoardPage>
               physics: const ClampingScrollPhysics(),
               controller: _pageController,
               children: [
-                
                 SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -130,7 +129,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '${getGreeting(withEmoji: true)}',
+                                  getGreeting(withEmoji: true),
                                   style: const TextStyle(fontSize: 14),
                                 ),
                                 Text(
@@ -183,7 +182,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 fit: BoxFit.cover,
                                 opacity: vm.isLightMode ? 0.4 : 0.9,
                               ),
-                              borderRadius: BorderRadius.circular(kBorderRadius),
+                              borderRadius:
+                                  BorderRadius.circular(kBorderRadius),
                               // color: Theme.of(context).cardColor,
                               border: Border(
                                 bottom: BorderSide(
@@ -210,7 +210,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     const Text(
                                       "Airtime Balance",
@@ -236,11 +237,12 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           decoration: BoxDecoration(
                                               color: Theme.of(context)
                                                   .scaffoldBackgroundColor
-                                                  .withOpacity(0.8),
+                                                  .withValues(alpha: 0.8),
                                               borderRadius:
                                                   BorderRadius.circular(500)),
                                           child: IconButton(
-                                            onPressed: () => vm.toggleHideBalance(),
+                                            onPressed: () =>
+                                                vm.toggleHideBalance(),
                                             icon: Icon(
                                               vm.hideBalance
                                                   ? CupertinoIcons.eye
@@ -264,7 +266,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                   ],
                                 ),
                                 const SizedBox(height: kPagePadding),
-                
+
                                 // const SizedBox(height: 24),
                                 // Container(
                                 //   height: 1,
@@ -272,7 +274,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 // ),
                                 // const SizedBox(height: 16),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     const Text(
                                       "Est. Commission",
@@ -297,11 +300,12 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           decoration: BoxDecoration(
                                               color: Theme.of(context)
                                                   .scaffoldBackgroundColor
-                                                  .withOpacity(0.8),
+                                                  .withValues(alpha: 0.8),
                                               borderRadius:
                                                   BorderRadius.circular(500)),
                                           child: IconButton(
-                                            onPressed: () => vm.toggleHideCommission(),
+                                            onPressed: () =>
+                                                vm.toggleHideCommission(),
                                             icon: Icon(
                                               vm.hideCommission
                                                   ? CupertinoIcons.eye
@@ -325,9 +329,10 @@ class _DashBoardPageState extends State<DashBoardPage>
                                   ],
                                 ),
                                 const SizedBox(height: kPagePadding * 2),
-                
+
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Icon(
                                       CupertinoIcons.graph_square,
@@ -341,7 +346,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           decoration: BoxDecoration(
                                               color: Theme.of(context)
                                                   .scaffoldBackgroundColor
-                                                  .withOpacity(0.8),
+                                                  .withValues(alpha: 0.8),
                                               borderRadius:
                                                   BorderRadius.circular(500)),
                                           child: IconButton(
@@ -367,7 +372,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           decoration: BoxDecoration(
                                               color: Theme.of(context)
                                                   .scaffoldBackgroundColor
-                                                  .withOpacity(0.8),
+                                                  .withValues(alpha: 0.8),
                                               borderRadius:
                                                   BorderRadius.circular(500)),
                                           child: IconButton(
@@ -377,7 +382,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                             },
                                             color: Theme.of(context)
                                                 .scaffoldBackgroundColor,
-                
+
                                             icon: const Icon(
                                               CupertinoIcons.refresh,
                                               color: kDarkerGreen,
@@ -401,11 +406,11 @@ class _DashBoardPageState extends State<DashBoardPage>
                           ),
                         ),
                       ),
-                
+
                       Container(
                         // margin: kPagePaddingInsets,
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: kPagePadding),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: kPagePadding),
                         decoration: BoxDecoration(
                           // color: Theme.of(context).primaryColor.withOpacity(.05),
                           borderRadius: BorderRadius.circular(kBorderRadius),
@@ -420,7 +425,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 ? const SizedBox()
                                 : appPausedButton(
                                     context,
-                                    text: 'Auto retry is disabled. Click to enable',
+                                    text:
+                                        'Auto retry is disabled. Click to enable',
                                   ),
                             vm.offersMightHaveChanged
                                 ? appPausedButton(
@@ -436,7 +442,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           )) ??
                                           false) {
                                         await vm.acknowledgeOffersChecked();
-                                        showSuccessDialog(context, text: 'Resumed');
+                                        showSuccessDialog(context,
+                                            text: 'Resumed');
                                       }
                                       vm.reload();
                                     },
@@ -460,7 +467,9 @@ class _DashBoardPageState extends State<DashBoardPage>
                           color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(kBorderRadius),
                           border: Border.all(
-                            color: Theme.of(context).primaryColor.withOpacity(.2),
+                            color: Theme.of(context)
+                                .primaryColor
+                                .withValues(alpha: .2),
                             width: 1,
                           ),
                         ),
@@ -480,7 +489,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           Navigator.of(context)
                                               .push(
                                                 PageRouteBuilder(
-                                                  pageBuilder: (context, animation,
+                                                  pageBuilder: (context,
+                                                          animation,
                                                           secondaryAnimation) =>
                                                       const TransactionHistoryPage(),
                                                   transitionsBuilder: (context,
@@ -515,7 +525,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                                         {
                                           'count': vm.successfulConfirmedCount,
                                           'icon': const Icon(
-                                              CupertinoIcons.checkmark_seal_fill,
+                                              CupertinoIcons
+                                                  .checkmark_seal_fill,
                                               color: kPrimaryColor,
                                               size: 14),
                                           'query':
@@ -549,17 +560,20 @@ class _DashBoardPageState extends State<DashBoardPage>
                                               CupertinoIcons.phone_circle_fill,
                                               color: kPrimaryColor,
                                               size: 14),
-                                          'query': TransactionStatuses.advancedUssd,
+                                          'query':
+                                              TransactionStatuses.advancedUssd,
                                           'label': 'advanced',
                                           'accentColor': kDarkerGreen,
                                         },
                                         {
                                           'count': vm.forwardedCount,
                                           'icon': const Icon(
-                                              CupertinoIcons.arrow_turn_right_up,
+                                              CupertinoIcons
+                                                  .arrow_turn_right_up,
                                               color: kPrimaryColor,
                                               size: 14),
-                                          'query': TransactionStatuses.forwarded,
+                                          'query':
+                                              TransactionStatuses.forwarded,
                                           'label': 'forwarded',
                                           'accentColor': kDarkerGreen,
                                         },
@@ -578,7 +592,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           'count': vm.pausedCount,
                                           'icon': Icon(
                                               CupertinoIcons.pause_circle_fill,
-                                              color: Theme.of(context).hintColor,
+                                              color:
+                                                  Theme.of(context).hintColor,
                                               size: 14),
                                           'query': TransactionStatuses.paused,
                                           'label': 'paused',
@@ -586,8 +601,10 @@ class _DashBoardPageState extends State<DashBoardPage>
                                         },
                                         {
                                           'count': vm.okoaCount,
-                                          'icon': const Icon(Icons.sailing_rounded,
-                                              color: kDullColor, size: 14),
+                                          'icon': const Icon(
+                                              Icons.sailing_rounded,
+                                              color: kDullColor,
+                                              size: 14),
                                           'query': TransactionStatuses.hasOkoa,
                                           'label': 'okoa',
                                           'accentColor': kBgColor,
@@ -597,11 +614,11 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           'icon': Icon(
                                               CupertinoIcons
                                                   .exclamationmark_triangle,
-                                              color:
-                                                  Theme.of(context).indicatorColor,
+                                              color: Theme.of(context)
+                                                  .indicatorColor,
                                               size: 14),
-                                          'query':
-                                              TransactionStatuses.unavailableOffer,
+                                          'query': TransactionStatuses
+                                              .unavailableOffer,
                                           'label': 'unavailable offers',
                                           'accentColor':
                                               Theme.of(context).indicatorColor,
@@ -645,13 +662,15 @@ class _DashBoardPageState extends State<DashBoardPage>
                                                                 animation,
                                                             secondaryRouteAnimation:
                                                                 secondaryAnimation,
-                                                            linearTransition: true,
+                                                            linearTransition:
+                                                                true,
                                                             child: child,
                                                           );
                                                         },
                                                       ),
                                                     )
-                                                    .then((value) => vm.reload());
+                                                    .then(
+                                                        (value) => vm.reload());
                                               },
                                               filter['icon'] as Icon,
                                               filter['count'].toString(),
@@ -660,13 +679,14 @@ class _DashBoardPageState extends State<DashBoardPage>
                                                   : null,
                                               context,
                                               withBorder: true,
-                                              accentColor:
-                                                  filter['accentColor'] as Color?,
+                                              accentColor: filter['accentColor']
+                                                  as Color?,
                                             ),
-                                            const SizedBox(width: kPagePadding / 4),
+                                            const SizedBox(
+                                                width: kPagePadding / 4),
                                           ],
                                         );
-                                      }).toList()
+                                      })
                                     ],
                                   ),
                                 ),
@@ -686,14 +706,15 @@ class _DashBoardPageState extends State<DashBoardPage>
                                                 .scaffoldBackgroundColor,
                                             Theme.of(context)
                                                 .scaffoldBackgroundColor
-                                                .withOpacity(0.0),
+                                                .withValues(alpha: 0.0),
                                           ],
                                           stops: const [0.6, 1.0],
                                         ),
                                       ),
                                       child: GestureDetector(
                                         // padding: EdgeInsets.zero,
-                                        onTap: () => _scrollChips(goRight: false),
+                                        onTap: () =>
+                                            _scrollChips(goRight: false),
                                         child: const Icon(
                                             CupertinoIcons.chevron_left,
                                             size: 18),
@@ -715,7 +736,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           colors: [
                                             Theme.of(context)
                                                 .scaffoldBackgroundColor
-                                                .withOpacity(0.0),
+                                                .withValues(alpha: 0.0),
                                             Theme.of(context)
                                                 .scaffoldBackgroundColor,
                                           ],
@@ -723,7 +744,8 @@ class _DashBoardPageState extends State<DashBoardPage>
                                         ),
                                       ),
                                       child: GestureDetector(
-                                        onTap: () => _scrollChips(goRight: true),
+                                        onTap: () =>
+                                            _scrollChips(goRight: true),
                                         child: const Icon(
                                             CupertinoIcons.chevron_right,
                                             size: 18),
@@ -755,7 +777,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                           ],
                         ),
                       ),
-                
+
                       Padding(
                         padding: EdgeInsets.all(kPagePadding),
                         child: const Text(
@@ -764,47 +786,50 @@ class _DashBoardPageState extends State<DashBoardPage>
                         ),
                       ),
                       const SizedBox(height: kPagePadding * 2),
-                        const Center(
-                          child: Icon(CupertinoIcons.chevron_compact_down, color: Colors.grey),
-                        ),
-                        const Center(
-                          child: Text("Swipe up for Tools", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        ),
+                      const Center(
+                        child: Icon(CupertinoIcons.chevron_compact_down,
+                            color: Colors.grey),
+                      ),
+                      const Center(
+                        child: Text("Swipe up for Tools",
+                            style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      ),
                     ],
                   ),
                 ),
                 Container(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                child: SafeArea(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(kPagePadding),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(CupertinoIcons.chevron_up),
-                              onPressed: () {
-                                // Logic to programmatically scroll back up if needed
-                              },
-                            ),
-                            const Text(
-                              "My tools",
-                              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                            ),
-                          ],
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: SafeArea(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(kPagePadding),
+                          child: Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(CupertinoIcons.chevron_up),
+                                onPressed: () {
+                                  // Logic to programmatically scroll back up if needed
+                                },
+                              ),
+                              const Text(
+                                "My tools",
+                                style: TextStyle(
+                                    fontSize: 20, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: DashboardToolsSection(onReload: vm.reload),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            child: DashboardToolsSection(onReload: vm.reload),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
               ],
             ),
           );

@@ -30,8 +30,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            header(context, 'Business Insights',
-                hideBack: widget.isDashboard),
+            header(context, 'Business Insights', hideBack: widget.isDashboard),
             const SizedBox(height: kPagePadding),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: kPagePadding),
@@ -54,12 +53,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.9),
                       blurRadius: 0,
                       offset: const Offset(3, 3),
                     ),
                     BoxShadow(
-                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.9),
                       blurRadius: 0,
                       offset: const Offset(-1, -1),
                     ),
@@ -98,12 +97,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.9),
                       blurRadius: 0,
                       offset: const Offset(3, 3),
                     ),
                     BoxShadow(
-                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.9),
                       blurRadius: 0,
                       offset: const Offset(-1, -1),
                     ),
@@ -142,12 +141,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.9),
                       blurRadius: 0,
                       offset: const Offset(3, 3),
                     ),
                     BoxShadow(
-                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.9),
                       blurRadius: 0,
                       offset: const Offset(-1, -1),
                     ),
@@ -187,12 +186,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.9),
                       blurRadius: 0,
                       offset: const Offset(3, 3),
                     ),
                     BoxShadow(
-                      color: Theme.of(context).hintColor.withOpacity(0.9),
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.9),
                       blurRadius: 0,
                       offset: const Offset(-1, -1),
                     ),

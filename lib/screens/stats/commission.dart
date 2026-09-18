@@ -236,7 +236,7 @@ class _CommissionGraphState extends State<CommissionGraph> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8.0),
           child: DropdownButtonFormField<String>(
-            value: _selectedTimeframe,
+            initialValue: _selectedTimeframe,
             items: const [
               DropdownMenuItem(value: 'week', child: Text('Week')),
               DropdownMenuItem(value: 'month', child: Text('Month')),
@@ -367,7 +367,7 @@ class _CommissionGraphState extends State<CommissionGraph> {
                 ),
                 children: [
                   TextSpan(
-                    text: '${(spot.y as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                    text: (spot.y as num?)?.toStringAsFixed(2) ?? '0.00',
                     style: const TextStyle(
                         color: Colors.yellow, fontWeight: FontWeight.bold),
                   ),
@@ -382,13 +382,13 @@ class _CommissionGraphState extends State<CommissionGraph> {
         horizontalLines: [
           HorizontalLine(
             y: highestCommission > 0 ? highestCommission : 1,
-            color: Colors.red.withOpacity(0.5),
+            color: Colors.red.withValues(alpha: 0.5),
             strokeWidth: 1,
             dashArray: [5, 5],
           ),
           HorizontalLine(
             y: avgCommission > 0 ? avgCommission : 1,
-            color: Colors.green.withOpacity(0.5),
+            color: Colors.green.withValues(alpha: 0.5),
             strokeWidth: 1,
             dashArray: [5, 5],
           ),
@@ -463,7 +463,7 @@ class _CommissionGraphState extends State<CommissionGraph> {
             show: true,
             gradient: LinearGradient(
               colors: gradientColors
-                  .map((color) => color.withOpacity(0.3))
+                  .map((color) => color.withValues(alpha: 0.3))
                   .toList(),
             ),
           ),

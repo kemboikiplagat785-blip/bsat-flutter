@@ -1,9 +1,7 @@
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../../screens/onboarding/permissions.dart';
 import 'loading_dialog.dart';
 import 'success_dialog.dart';
 

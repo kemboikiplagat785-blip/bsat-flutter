@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class BlacklistPage extends StatefulWidget {
+  const BlacklistPage({super.key});
+
   @override
   _BlacklistPageState createState() => _BlacklistPageState();
 }
@@ -51,11 +53,11 @@ class _BlacklistPageState extends State<BlacklistPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            header(context, 'Blacklst'),  
+            header(context, 'Blacklst'),
             Padding(
               padding: kPagePaddingInsets,
               child: TextField(
-              // keyboardType: TextInputType.number,
+                // keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   hintText: 'Search numbers...',
                   prefixIcon: Icon(Icons.search),
@@ -135,5 +137,3 @@ class _BlacklistPageState extends State<BlacklistPage> {
     );
   }
 }
-
-

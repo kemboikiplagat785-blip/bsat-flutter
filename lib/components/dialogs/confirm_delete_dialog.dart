@@ -16,7 +16,7 @@ Future<bool?> showConfirmDeleteDialog(BuildContext context,
         ElevatedButton(
           onPressed: () => Navigator.of(context).pop(true),
           style: ElevatedButton.styleFrom(
-            backgroundColor: kErrorColor.withOpacity(.1),
+            backgroundColor: kErrorColor.withValues(alpha: .1),
           ),
           child: Text(
             btnText ?? 'Ok',

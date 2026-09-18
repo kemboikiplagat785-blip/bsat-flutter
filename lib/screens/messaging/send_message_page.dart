@@ -16,16 +16,13 @@ class SendMessagePage extends StatefulWidget {
 class _SendMessagePageState extends State<SendMessagePage> {
   final _titleController = TextEditingController();
   final _bodyController = TextEditingController();
-  bool _isLoading = false;
+  final bool _isLoading = false;
 
   void _handleSend() async {
-    final BackendService _backendService = BackendService();
-    
-    final result = await _backendService.sendMessage(
-    title: "Hello",
-    body: "World",
-    topic: "general"
-  );
+    final BackendService backendService = BackendService();
+
+    final result = await backendService.sendMessage(
+        title: "Hello", body: "World", topic: "general");
 
     debugPrint("Send Message Result: $result");
     // if (_titleController.text.isEmpty || _bodyController.text.isEmpty) {
@@ -47,9 +44,9 @@ class _SendMessagePageState extends State<SendMessagePage> {
     //   // Use `http://10.0.2.2:3000/send` for Android Emulator
     //   // Use `http://localhost:3000/send` for iOS Simulator
     //   // Use `http://192.168.x.x:3000/send` for real device over Wi-Fi
-      
+
     //   // We'll assume successful ADB reverse mapping for real Android devices
-    //   const String serverUrl = 'http://api.bsat.co.ke/api/fcm/send'; 
+    //   const String serverUrl = 'http://api.bsat.co.ke/api/fcm/send';
 
     //   final response = await http.post(
     //     Uri.parse(serverUrl),
@@ -121,7 +118,11 @@ class _SendMessagePageState extends State<SendMessagePage> {
     return Scaffold(
       backgroundColor: kBgColor,
       appBar: AppBar(
-        title: const Text("Send Message", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black)),
+        title: const Text("Send Message",
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Colors.black)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
@@ -135,11 +136,14 @@ class _SendMessagePageState extends State<SendMessagePage> {
         child: Column(
           children: [
             // Title Input
-            _buildInputGroup('Title', 'Enter notification title', _titleController),
+            _buildInputGroup(
+                'Title', 'Enter notification title', _titleController),
             const SizedBox(height: 24),
-            
+
             // Body Input using multiline
-            _buildInputGroup('Message', 'Type your message here...', _bodyController, maxLines: 5),
+            _buildInputGroup(
+                'Message', 'Type your message here...', _bodyController,
+                maxLines: 5),
             const SizedBox(height: 32),
 
             // Send Button
@@ -152,7 +156,7 @@ class _SendMessagePageState extends State<SendMessagePage> {
                   backgroundColor: kPrimaryColor,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  shadowColor: kPrimaryColor.withOpacity(0.4),
+                  shadowColor: kPrimaryColor.withValues(alpha: 0.4),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -174,7 +178,9 @@ class _SendMessagePageState extends State<SendMessagePage> {
     );
   }
 
-  Widget _buildInputGroup(String label, String hint, TextEditingController controller, {int maxLines = 1}) {
+  Widget _buildInputGroup(
+      String label, String hint, TextEditingController controller,
+      {int maxLines = 1}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -193,7 +199,7 @@ class _SendMessagePageState extends State<SendMessagePage> {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),

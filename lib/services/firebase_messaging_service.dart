@@ -13,7 +13,7 @@ import 'package:bsat/services/sqlite_service.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:bsat/services/phone_service.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/cupertino.dart';
@@ -224,8 +224,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
                 if (kDebugMode && resp['success'] == false) {}
               }
             } catch (e) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print('Failed to send subscription error response: $e');
+              }
             }
           }
           return; // Don't proceed with data request handling
@@ -261,8 +262,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
                 if (kDebugMode && resp['success'] == false) {}
               }
             } catch (e) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print('Failed to send subscription error response: $e');
+              }
             }
           }
           return; // Don't proceed with generic data request handling
@@ -298,8 +300,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
                 if (kDebugMode && resp['success'] == false) {}
               }
             } catch (e) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print('Failed to send subscription error response: $e');
+              }
             }
           }
           return;
@@ -385,8 +388,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
                 if (kDebugMode && resp['success'] == false) {}
               }
             } catch (e) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print('Failed to send subscription error response: $e');
+              }
             }
           }
           return; // Don't proceed with offer update handling
@@ -422,8 +426,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
                 if (kDebugMode && resp['success'] == false) {}
               }
             } catch (e) {
-              if (kDebugMode)
+              if (kDebugMode) {
                 print('Failed to send subscription error response: $e');
+              }
             }
           }
           return; // Don't proceed with retry transaction handling
@@ -460,12 +465,14 @@ Future<void> _sendImmediateAck(
 
   // Prefer the locally configured device name for the sender; fall back to any
   // names included in the incoming message data.
-  String senderDeviceName = (await SharedPreferencesService().getDeviceName()) ?? '';
+  String senderDeviceName =
+      (await SharedPreferencesService().getDeviceName()) ?? '';
   if (senderDeviceName.isEmpty) {
     senderDeviceName = message.data['recipientDeviceName']?.toString() ?? '';
   }
 
-  String recipientDeviceName = message.data['senderDeviceName']?.toString() ?? '';
+  String recipientDeviceName =
+      message.data['senderDeviceName']?.toString() ?? '';
 
   final payload = {
     'type': 'MESSAGE_ACK',
@@ -537,8 +544,8 @@ Future<bool> _processIncomingAcknowledgement(
     switch (originalType) {
       case 'PROCESS_ALT_REQUEST':
       case 'FORWARDED_SMS':
-      await _handleProcessAltRequestAck(message);
-      break;
+        await _handleProcessAltRequestAck(message);
+        break;
       case 'REQUEST_CONTACTS_FROM_DEVICE':
         await _handleForwardedSmsAck(message);
         break;
@@ -660,7 +667,6 @@ Future<void> _handlePingAck(RemoteMessage message) async {
 }
 
 Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
-
   String transactionId = message.data['transactionId'] ?? '';
 
   print("TransactionId = $transactionId");
@@ -846,7 +852,7 @@ Future<void> _handleEditOffer(RemoteMessage message) async {
       offer = {};
     }
   } else if (rawOffer is Map) {
-    offer = Map<String, dynamic>.from(rawOffer as Map);
+    offer = Map<String, dynamic>.from(rawOffer);
   }
 
   int? id = offer['id'] != null ? int.tryParse(offer['id'].toString()) : null;
@@ -888,22 +894,19 @@ Future<void> _handleRetryTransaction(RemoteMessage message) async {
     // Fetch transaction by ID if needed or just use logic
     final db = SQLiteService();
     var transaction = await db.queryOne('transactions', id);
-    if (transaction != null) {
-      // Re-trigger transaction logic
-      // Assuming TransactionController has a method for this, otherwise we might need to recreate the request
-      // For simplicity, we'll try to re-process if we have the SMS body/context
-      // Or if it's a specific USSD:
-      if (transaction['ussdDialed'] != null &&
-          transaction['simSubId'] != null) {
-        // This is simplified; retry usually requires context
-        TransactionController().transactGivenUssdAndDialSim(
-          transaction['ussdDialed'],
-          transaction['simSubId'],
-          transaction['amount'],
-          false, // IsAdvanced not always stored, might need to fetch from offer or guess
-          transaction['number'],
-        );
-      }
+    // Re-trigger transaction logic
+    // Assuming TransactionController has a method for this, otherwise we might need to recreate the request
+    // For simplicity, we'll try to re-process if we have the SMS body/context
+    // Or if it's a specific USSD:
+    if (transaction['ussdDialed'] != null && transaction['simSubId'] != null) {
+      // This is simplified; retry usually requires context
+      TransactionController().transactGivenUssdAndDialSim(
+        transaction['ussdDialed'],
+        transaction['simSubId'],
+        transaction['amount'],
+        false, // IsAdvanced not always stored, might need to fetch from offer or guess
+        transaction['number'],
+      );
     }
   }
 }
@@ -925,25 +928,28 @@ Future<void> _handleGenericDataRequest(RemoteMessage message) async {
   List<Map<String, dynamic>> sims = [];
   try {
     // Use sim_data to get sim metadata
-    final simData = await SimDataPlugin.getSimData();
-    for (var card in simData.cards) {
+    final simData = await Telephony.instance.getSubscriptionList();
+    for (var card in simData) {
       int? subId = card.subscriptionId;
       String displayName = card.displayName ?? card.carrierName ?? '';
       int balance = 0;
       int number = 0;
 
       try {
-        balance = await PhoneService().getAirtimeBalance(subscriptionId: subId);
-        number = extract9DigitNumber(
-            (await PhoneService().makeMyRequest("*100*4*1#", subId)).first ??
-                "");
+        if (subId != null) {
+          balance =
+              await PhoneService().getAirtimeBalance(subscriptionId: subId);
+          number = extract9DigitNumber(
+              (await PhoneService().makeMyRequest("*100*4*1#", subId)).first ??
+                  "");
+        }
       } catch (e) {
         if (kDebugMode) print('Failed to get balance for sim $subId: $e');
       }
       sims.add({
         'subscriptionId': subId,
         'displayName': displayName,
-        'slotIndex': card.slotIndex,
+        'slotIndex': card.simSlotIndex,
         'carrierName': card.carrierName,
         'balance': balance,
         'number': number,

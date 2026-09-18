@@ -3,7 +3,7 @@ import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 import 'package:ussd_service/ussd_service.dart';
 
 import '../models/code_signature.dart';
@@ -93,8 +93,9 @@ class PhoneService {
           return [res, TransactionStatuses.error];
         }
 
-        if (res.contains(
-            RegExp(r'Offer might have changed|Invalid choice|Try again', caseSensitive: false))) {
+        if (res.contains(RegExp(
+            r'Offer might have changed|Invalid choice|Try again',
+            caseSensitive: false))) {
           return [res, TransactionStatuses.paused];
         }
 
@@ -182,8 +183,12 @@ class PhoneService {
   }
 
   Future<List<int>> getAllSimSubids() async {
-    return await SimDataPlugin.getSimData().then(
-        (simData) => simData.cards.map((card) => card.subscriptionId).toList());
+    final subscriptions = await Telephony.instance.getSubscriptionList();
+
+    return subscriptions
+        .map((subscription) => subscription.subscriptionId)
+        .whereType<int>()
+        .toList();
   }
 
   int airtimeBalExtract(String leString) {

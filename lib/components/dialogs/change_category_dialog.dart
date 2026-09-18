@@ -5,7 +5,8 @@ import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
 import '../tool_button.dart';
 
-Future<String?> showChangeCategoryDialog(BuildContext context, {int transactionCount = 1}) {
+Future<String?> showChangeCategoryDialog(BuildContext context,
+    {int transactionCount = 1}) {
   return showDialog<String>(
     barrierDismissible: false,
     context: context,
@@ -21,7 +22,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context, {int transactionC
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Change the category of ${transactionCount} transaction(s) to:'),
+            Text('Change the category of $transactionCount transaction(s) to:'),
             const SizedBox(height: kPagePadding / 2),
             Wrap(
               spacing: 10,
@@ -240,7 +241,7 @@ Future<String?> showChangeCategoryDialog(BuildContext context, {int transactionC
                     if ((await showConfirmDeleteDialog(context,
                             message: 'Change category to Error?')) ??
                         false) {
-                          // await SQLiteService().updateStuff({'status': }, where, whereArgs, table)
+                      // await SQLiteService().updateStuff({'status': }, where, whereArgs, table)
                       Navigator.of(context).pop(TransactionStatuses.error);
                     }
                   },
@@ -277,7 +278,6 @@ Future<String?> showChangeCategoryDialog(BuildContext context, {int transactionC
                 //   textSize: 12,
                 //   accentColor: kIndigoColor,
                 // ),
-
               ],
             )
           ],

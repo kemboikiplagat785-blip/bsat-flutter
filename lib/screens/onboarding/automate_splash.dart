@@ -1,12 +1,9 @@
 import 'package:bsat/components/hero.dart';
 import 'package:bsat/screens/onboarding/updated_toolkit.dart';
-import 'package:bsat/screens/stats/statistics.dart';
-import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../utils/constants.dart';
-import '../home/dashboard/dashboard.dart';
 
 class AutomatePageSplash extends StatefulWidget {
   const AutomatePageSplash({super.key});
@@ -16,7 +13,6 @@ class AutomatePageSplash extends StatefulWidget {
 }
 
 class AutomatePageSplashState extends State<AutomatePageSplash> {
-
   @override
   Widget build(BuildContext context) {
     var size = MediaQuery.of(context).size;

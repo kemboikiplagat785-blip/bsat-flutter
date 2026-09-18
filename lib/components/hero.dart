@@ -10,12 +10,12 @@ class MyHeroWidget extends StatefulWidget {
   State<MyHeroWidget> createState() => _MyHeroWidgetState();
 }
 
-class _MyHeroWidgetState extends State<MyHeroWidget> with TickerProviderStateMixin {
+class _MyHeroWidgetState extends State<MyHeroWidget>
+    with TickerProviderStateMixin {
   late AnimationController _floatController;
   late AnimationController _rotateController;
   late Animation<double> _floatingAnim;
 
-  
   String appVersion = '';
 
   @override
@@ -23,7 +23,7 @@ class _MyHeroWidgetState extends State<MyHeroWidget> with TickerProviderStateMix
     super.initState();
 
     getAppVersion().then((value) => setState(() => appVersion = value));
-    
+
     // Continuous Floating Animation
     _floatController = AnimationController(
       duration: const Duration(seconds: 3),
@@ -71,16 +71,20 @@ class _MyHeroWidgetState extends State<MyHeroWidget> with TickerProviderStateMix
               clipBehavior: Clip.none,
               children: [
                 // Floating Tool Icons
-                _buildFloatingIcon(CupertinoIcons.settings, top: -10, left: -40, delay: 0.0),
-                _buildFloatingIcon(CupertinoIcons.wrench, bottom: 20, right: -45, delay: 0.5),
-                _buildFloatingIcon(CupertinoIcons.hammer_fill, top: 30, left: -50, delay: 0.2),
+                _buildFloatingIcon(CupertinoIcons.settings,
+                    top: -10, left: -40, delay: 0.0),
+                _buildFloatingIcon(CupertinoIcons.wrench,
+                    bottom: 20, right: -45, delay: 0.5),
+                _buildFloatingIcon(CupertinoIcons.hammer_fill,
+                    top: 30, left: -50, delay: 0.2),
 
                 // Main Logo with Dual Animation (Scale + Rotation)
                 ScaleTransition(
                   scale: Tween(begin: 1.0, end: 1.05).animate(_floatingAnim),
                   child: RotationTransition(
                     turns: Tween(begin: 0.0, end: 1.0).animate(
-                      CurvedAnimation(parent: _rotateController, curve: Curves.elasticOut),
+                      CurvedAnimation(
+                          parent: _rotateController, curve: Curves.elasticOut),
                     ),
                     child: Container(
                       padding: const EdgeInsets.all(22),
@@ -89,7 +93,7 @@ class _MyHeroWidgetState extends State<MyHeroWidget> with TickerProviderStateMix
                         borderRadius: BorderRadius.circular(32),
                         boxShadow: [
                           BoxShadow(
-                            color: primary.withOpacity(0.1),
+                            color: primary.withValues(alpha: 0.1),
                             blurRadius: 30,
                             offset: const Offset(0, 15),
                           ),
@@ -106,9 +110,9 @@ class _MyHeroWidgetState extends State<MyHeroWidget> with TickerProviderStateMix
               ],
             ),
           ),
-          
+
           const SizedBox(height: 32),
-          
+
           // Typography
           Text(
             'BSAT',
@@ -119,19 +123,20 @@ class _MyHeroWidgetState extends State<MyHeroWidget> with TickerProviderStateMix
               // color: theme.textTheme.displayLarge?.color,
             ),
           ),
-          
+
           const SizedBox(height: 12),
 
           // Version Badge (Pill Style)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: primary.withOpacity(0.1),
+              color: primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: primary.withOpacity(0.2), width: 1),
+              border:
+                  Border.all(color: primary.withValues(alpha: 0.2), width: 1),
             ),
             child: Text(
-              'VERSION ${appVersion}',
+              'VERSION $appVersion',
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w900,
@@ -145,17 +150,27 @@ class _MyHeroWidgetState extends State<MyHeroWidget> with TickerProviderStateMix
     );
   }
 
-  Widget _buildFloatingIcon(IconData icon, {double? top, double? bottom, double? left, double? right, required double delay}) {
+  Widget _buildFloatingIcon(IconData icon,
+      {double? top,
+      double? bottom,
+      double? left,
+      double? right,
+      required double delay}) {
     return Positioned(
-      top: top, bottom: bottom, left: left, right: right,
+      top: top,
+      bottom: bottom,
+      left: left,
+      right: right,
       child: FadeTransition(
         opacity: Tween(begin: 0.3, end: 0.7).animate(_floatingAnim),
         child: SlideTransition(
           position: Tween<Offset>(
             begin: Offset.zero,
-            end: Offset(0, 0.12 + (delay * 0.1)), 
+            end: Offset(0, 0.12 + (delay * 0.1)),
           ).animate(_floatingAnim),
-          child: Icon(icon, size: 24, color: Theme.of(context).primaryColor.withOpacity(0.2)),
+          child: Icon(icon,
+              size: 24,
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.2)),
         ),
       ),
     );

@@ -1,19 +1,15 @@
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/hero.dart';
-import 'package:bsat/screens/home/dashboard/dashboard.dart';
-import 'package:bsat/services/shared_preferences_service.dart';
 import './otp.dart';
 import 'package:bsat/screens/online_management/register_device.dart';
 import 'package:bsat/screens/online_management/reset_password.dart';
 import './signup.dart';
-import 'package:bsat/screens/online_management/online_management.dart';
 // import 'package:bsat/services/supabase_auth.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../components/dialogs/ask_device_name_dialog.dart';
 import '../../services/auth_service.dart';
 // import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -111,7 +107,6 @@ class _LoginPageState extends State<LoginPage> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            
                             style: ElevatedButton.styleFrom(
                               elevation: 0,
                               padding: kPagePaddingInsets,

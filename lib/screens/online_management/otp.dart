@@ -1,9 +1,7 @@
 // import 'package:bsat/services/supabase_auth.dart';
 import 'package:bsat/components/header.dart';
 import 'package:flutter/material.dart';
-import 'package:bsat/components/hero.dart';
 import 'package:bsat/utils/constants.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_otp_text_field/flutter_otp_text_field.dart';
 
 // import 'package:supabase_flutter/supabase_flutter.dart';

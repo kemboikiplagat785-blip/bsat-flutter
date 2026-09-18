@@ -1,13 +1,11 @@
 import 'package:bsat/screens/home/home.dart';
 import 'package:bsat/screens/onboarding/automate_splash.dart';
-import 'package:bsat/screens/stats/statistics.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../components/hero.dart';
 import '../../utils/constants.dart';
-import '../home/dashboard/dashboard.dart';
 
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({super.key});

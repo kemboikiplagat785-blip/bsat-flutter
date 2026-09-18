@@ -1,12 +1,9 @@
 import 'package:bsat/screens/onboarding/permissions.dart';
-import 'package:bsat/screens/stats/statistics.dart';
-import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../components/hero.dart';
 import '../../utils/constants.dart';
-import '../home/dashboard/dashboard.dart';
 
 class UpdatedToolkitPageSplash extends StatefulWidget {
   const UpdatedToolkitPageSplash({super.key});

@@ -3,12 +3,12 @@ import 'dart:io';
 void main() {
   var file = File('lib/screens/clients/single_client.dart');
   var content = file.readAsStringSync();
-  
+
   if (content.contains('_showEditClientDialog')) return;
 
   var insertMethodPos = content.lastIndexOf('}');
-  content = content.substring(0, insertMethodPos) + '''
-  Future<void> _showEditClientDialog(BuildContext context) async {
+  content =
+      '''${content.substring(0, insertMethodPos)}  Future<void> _showEditClientDialog(BuildContext context) async {
     final firstNameController = TextEditingController(text: _client!.firstName);
     final lastNameController = TextEditingController(text: _client!.lastName);
     final phoneController = TextEditingController(text: _client!.phoneNumber);
@@ -108,7 +108,9 @@ void main() {
                                       ),
                                       // Edit and delete could act here if controllers/dialogs existed''';
 
-  content = content.replaceAll('// Edit and delete could act here if controllers/dialogs existed', editButtonCode);
+  content = content.replaceAll(
+      '// Edit and delete could act here if controllers/dialogs existed',
+      editButtonCode);
 
   file.writeAsStringSync(content);
   // print('Injected Edit to single_client.dart');

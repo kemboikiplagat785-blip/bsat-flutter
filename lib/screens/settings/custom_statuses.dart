@@ -66,7 +66,8 @@ class _CustomStatusesPageState extends State<CustomStatusesPage> {
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    value: selectedStatus.isEmpty ? null : selectedStatus,
+                    initialValue:
+                        selectedStatus.isEmpty ? null : selectedStatus,
                     items: _statusOptions
                         .map(
                           (s) => DropdownMenuItem<String>(

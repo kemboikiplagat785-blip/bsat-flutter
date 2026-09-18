@@ -8,7 +8,7 @@ import 'package:bsat/components/header.dart'; // Assuming header is here based o
 import 'package:bsat/utils/constants.dart'; // Assuming constants are here
 
 class ApkDownloaderPage extends StatefulWidget {
-  const ApkDownloaderPage({Key? key}) : super(key: key);
+  const ApkDownloaderPage({super.key});
 
   @override
   State<ApkDownloaderPage> createState() => _ApkDownloaderPageState();

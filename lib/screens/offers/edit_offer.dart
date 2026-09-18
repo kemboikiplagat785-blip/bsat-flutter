@@ -7,7 +7,7 @@ import 'package:bsat/screens/online_management/search_device.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../../components/device_card.dart';
 import '../../components/dialogs/accessibility_permission.dart';
@@ -39,8 +39,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
   final TextEditingController _bongaPointsPerTransactionTextController =
       TextEditingController();
   final TextEditingController _offerNameController = TextEditingController();
-  List<Map<String, dynamic>> _codeEntries = [];
-  Set<String> _originalCodes = {};
+  final List<Map<String, dynamic>> _codeEntries = [];
+  final Set<String> _originalCodes = {};
   final TextEditingController signatureTestNumberController =
       TextEditingController();
 
@@ -85,14 +85,13 @@ class _EditOfferPageState extends State<EditOfferPage> {
   );
 
   void getAndProcessCards() async {
-    await SimDataPlugin.getSimData().then((value) {
-      if (mounted) {
-        setState(() {
-          sims = value.cards;
-        });
-      }
-      // debugPrint("Got cards");
-    });
+    final value = await Telephony.instance.getSubscriptionList();
+    if (mounted) {
+      setState(() {
+        sims = value;
+      });
+    }
+    // debugPrint("Got cards");
   }
 
   void getDevices() async {
@@ -493,7 +492,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
     _offerNameController.clear();
     // save variants: delete existing and insert new ones
     try {
-      await _sqliteService.deleteWhere('ussdCodeVariants', 'ussdCodeId = ?', [codeId]);
+      await _sqliteService
+          .deleteWhere('ussdCodeVariants', 'ussdCodeId = ?', [codeId]);
     } catch (e) {}
 
     // prepare new variants list to insert
@@ -508,7 +508,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
         'start': s,
         'end': e,
         'hasAlternativeCode': entry['hasAlternativeCode'] == true,
-        'alternativeUssdCode': _entryController(entry, 'alternativeUssdCode').text,
+        'alternativeUssdCode':
+            _entryController(entry, 'alternativeUssdCode').text,
         'runAltOn': _entryController(entry, 'runAltOn').text,
         'altIsAdvanced': entry['altIsAdvanced'] == true,
         'altDelayMinutes':
@@ -574,7 +575,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
         // replace their variants with the newVariants (keeping their amount unchanged)
         try {
-          await _sqliteService.deleteWhere('ussdCodeVariants', 'ussdCodeId = ?', [otherId]);
+          await _sqliteService
+              .deleteWhere('ussdCodeVariants', 'ussdCodeId = ?', [otherId]);
         } catch (e) {}
 
         for (var nv in newVariants) {
@@ -586,9 +588,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 'startTime': nv['start']!.isNotEmpty ? nv['start'] : null,
                 'endTime': nv['end']!.isNotEmpty ? nv['end'] : null,
                 'alternativeUssdCode': (nv['hasAlternativeCode'] == true &&
-                        (nv['alternativeUssdCode'] ?? '')
-                            .toString()
-                            .isNotEmpty)
+                        (nv['alternativeUssdCode'] ?? '').toString().isNotEmpty)
                     ? nv['alternativeUssdCode']
                     : null,
                 'runAltOn': (nv['hasAlternativeCode'] == true &&
@@ -627,7 +627,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
     ))
         .first;
     _amountTextController.text = thisData['amount'].toString();
-    _offerNameController.text = thisData['offerName'] ?? 'Ksh ${thisData['amount']}';
+    _offerNameController.text =
+        thisData['offerName'] ?? 'Ksh ${thisData['amount']}';
     // load variants for this ussd code row
     _clearCodeEntries();
     List<Map<String, dynamic>> variants = [];
@@ -647,9 +648,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
           altIsAdvanced: (thisData['altIsAdvanced'] != null)
               ? thisData['altIsAdvanced'] == 1
               : false,
-          hasAlternativeCode: (thisData['alternativeUssdCode'] ?? '')
-              .toString()
-              .isNotEmpty,
+          hasAlternativeCode:
+              (thisData['alternativeUssdCode'] ?? '').toString().isNotEmpty,
           altDelayMinutes: (thisData['altDelayMinutes'] ?? 0).toString(),
         ),
       );
@@ -662,12 +662,10 @@ class _EditOfferPageState extends State<EditOfferPage> {
             end: v['endTime'] ?? '',
             alternativeUssdCode: v['alternativeUssdCode'] ?? '',
             runAltOn: v['runAltOn'] ?? '',
-            hasAlternativeCode: (v['alternativeUssdCode'] ?? '')
-                .toString()
-                .isNotEmpty,
-            altIsAdvanced: (v['altIsAdvanced'] != null)
-                ? v['altIsAdvanced'] == 1
-                : false,
+            hasAlternativeCode:
+                (v['alternativeUssdCode'] ?? '').toString().isNotEmpty,
+            altIsAdvanced:
+                (v['altIsAdvanced'] != null) ? v['altIsAdvanced'] == 1 : false,
             altDelayMinutes: (v['altDelayMinutes'] ?? 0).toString(),
           ),
         );
@@ -878,14 +876,17 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 ),
                 // Multiple USSD codes with per-code start/end times
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('USSD Codes', style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text('USSD Codes',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
                       const SizedBox(height: 8),
                       if (_errorUSSDCode.isNotEmpty)
-                        Text(_errorUSSDCode, style: const TextStyle(color: Colors.red)),
+                        Text(_errorUSSDCode,
+                            style: const TextStyle(color: Colors.red)),
                       const SizedBox(height: 8),
                       ..._codeEntries.asMap().entries.map((e) {
                         final idx = e.key;
@@ -903,7 +904,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                 children: [
                                   Expanded(
                                     child: TextField(
-                                      controller: _entryController(entry, 'code'),
+                                      controller:
+                                          _entryController(entry, 'code'),
                                       decoration: InputDecoration(
                                         labelText: 'USSD Code',
                                         hintText: '*180*5*2*n#',
@@ -912,7 +914,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                     ),
                                   ),
                                   IconButton(
-                                    icon: const Icon(CupertinoIcons.trash, color: kErrorColor),
+                                    icon: const Icon(CupertinoIcons.trash,
+                                        color: kErrorColor),
                                     onPressed: () {
                                       _removeCodeEntry(idx);
                                     },
@@ -922,9 +925,17 @@ class _EditOfferPageState extends State<EditOfferPage> {
                               const SizedBox(height: 8),
                               Row(
                                 children: [
-                                  Expanded(child: _buildTimeTile(label: 'Start', controller: _entryController(entry, 'start'))),
+                                  Expanded(
+                                      child: _buildTimeTile(
+                                          label: 'Start',
+                                          controller: _entryController(
+                                              entry, 'start'))),
                                   const SizedBox(width: 8),
-                                  Expanded(child: _buildTimeTile(label: 'End', controller: _entryController(entry, 'end'))),
+                                  Expanded(
+                                      child: _buildTimeTile(
+                                          label: 'End',
+                                          controller:
+                                              _entryController(entry, 'end'))),
                                 ],
                               ),
                               const SizedBox(height: 8),
@@ -941,18 +952,21 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                 ),
                                 _buildInputTile(
                                   label: 'Alternative USSD Code',
-                                  controller: _entryController(entry, 'alternativeUssdCode'),
+                                  controller: _entryController(
+                                      entry, 'alternativeUssdCode'),
                                   hint: '*180*5*2*n#',
                                   icon: CupertinoIcons.number,
                                 ),
                                 _buildSwitchTile(
                                   label: 'Alternative Code is Advanced',
                                   value: entry['altIsAdvanced'] == true,
-                                  onChanged: (val) => _setEntryAltAdvanced(entry, val),
+                                  onChanged: (val) =>
+                                      _setEntryAltAdvanced(entry, val),
                                 ),
                                 _buildInputTile(
                                   label: 'Run Alternative After (minutes)',
-                                  controller: _entryController(entry, 'altDelayMinutes'),
+                                  controller: _entryController(
+                                      entry, 'altDelayMinutes'),
                                   hint: '0 = run immediately on failure',
                                   keyboardType: TextInputType.number,
                                   icon: CupertinoIcons.timer,
@@ -962,7 +976,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                             ],
                           ),
                         );
-                      }).toList(),
+                      }),
                       Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
@@ -1132,7 +1146,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                             ],
                                           ),
                                         );
-                                      }).toList(),
+                                      }),
                                     ],
                                   ),
                                 ),
@@ -1146,8 +1160,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
                           // color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(kBorderRadius),
                           border: Border.all(
-                            color:
-                                Theme.of(context).dividerColor.withOpacity(0.1),
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withValues(alpha: 0.1),
                           ),
                         ),
                         child: toolButton(
@@ -1271,8 +1286,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(20),
-        border:
-            Border.all(color: Theme.of(context).dividerColor.withOpacity(0.05)),
+        border: Border.all(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.05)),
       ),
       child: Column(children: children),
     );
@@ -1306,7 +1321,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
     );
   }
 
-  Widget _buildTimeTile({required String label, required TextEditingController controller}) {
+  Widget _buildTimeTile(
+      {required String label, required TextEditingController controller}) {
     return InkWell(
       onTap: () async {
         // parse current value
@@ -1326,7 +1342,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
           context: context,
           isScrollControlled: false,
           backgroundColor: Theme.of(context).cardColor,
-
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
           ),
@@ -1336,7 +1351,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1350,11 +1366,14 @@ class _EditOfferPageState extends State<EditOfferPage> {
                           },
                           child: const Text('Clear'),
                         ),
-                        Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                        Text(label,
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700)),
                         TextButton(
                           onPressed: () {
                             final hh = selectedHour.toString().padLeft(2, '0');
-                            final mm = selectedMinute.toString().padLeft(2, '0');
+                            final mm =
+                                selectedMinute.toString().padLeft(2, '0');
                             setState(() {
                               controller.text = '$hh:$mm';
                               _hasChanges = true;
@@ -1372,18 +1391,26 @@ class _EditOfferPageState extends State<EditOfferPage> {
                       children: [
                         Expanded(
                           child: CupertinoPicker(
-                            scrollController: FixedExtentScrollController(initialItem: selectedHour),
+                            scrollController: FixedExtentScrollController(
+                                initialItem: selectedHour),
                             itemExtent: 32,
                             onSelectedItemChanged: (i) => selectedHour = i,
-                            children: List.generate(24, (i) => Center(child: Text(i.toString().padLeft(2, '0')))),
+                            children: List.generate(
+                                24,
+                                (i) => Center(
+                                    child: Text(i.toString().padLeft(2, '0')))),
                           ),
                         ),
                         Expanded(
                           child: CupertinoPicker(
-                            scrollController: FixedExtentScrollController(initialItem: selectedMinute),
+                            scrollController: FixedExtentScrollController(
+                                initialItem: selectedMinute),
                             itemExtent: 32,
                             onSelectedItemChanged: (i) => selectedMinute = i,
-                            children: List.generate(60, (i) => Center(child: Text(i.toString().padLeft(2, '0')))),
+                            children: List.generate(
+                                60,
+                                (i) => Center(
+                                    child: Text(i.toString().padLeft(2, '0')))),
                           ),
                         ),
                       ],
@@ -1404,7 +1431,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+                Text(label,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 6),
                 Text(
                   controller.text.isNotEmpty ? controller.text : 'Any time',
@@ -1428,7 +1456,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     return SwitchListTile(
       value: value,
       onChanged: onChanged,
-      activeColor: kPrimaryColor,
+      activeThumbColor: kPrimaryColor,
       subtitle: subtitle != null
           ? Text(
               subtitle,
@@ -1477,13 +1505,13 @@ class _EditOfferPageState extends State<EditOfferPage> {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? kPrimaryColor.withOpacity(0.1)
+                          ? kPrimaryColor.withValues(alpha: 0.1)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                           color: isSelected
                               ? kPrimaryColor
-                              : kGrayColor.withOpacity(0.2)),
+                              : kGrayColor.withValues(alpha: 0.2)),
                     ),
                     child: Row(
                       children: [
@@ -1506,13 +1534,13 @@ class _EditOfferPageState extends State<EditOfferPage> {
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: isBoth
-                        ? kPrimaryColor.withOpacity(0.1)
+                        ? kPrimaryColor.withValues(alpha: 0.1)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                         color: isBoth
                             ? kPrimaryColor
-                            : kGrayColor.withOpacity(0.2)),
+                            : kGrayColor.withValues(alpha: 0.2)),
                   ),
                   child: Text('Both',
                       style: TextStyle(

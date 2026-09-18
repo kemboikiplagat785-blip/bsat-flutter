@@ -35,7 +35,8 @@ class _EditForwarderState extends State<EditForwarder> {
       TextEditingController();
 
   void fetchData() async {
-    myDeviceName = await SharedPreferencesService().getDeviceName() ?? "Unknown Device";
+    myDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? "Unknown Device";
     if (widget.dbId != null) {
       List<Map<String, dynamic>> results = await SQLiteService().rawQueryInput(
         'SELECT * FROM forwardingDevices WHERE id = ?',
@@ -55,12 +56,10 @@ class _EditForwarderState extends State<EditForwarder> {
   Future<void> postData() async {
     showLoadingDialog(context, text: "Saving...");
 
-
-     final backendService = BackendService();
+    final backendService = BackendService();
 
     try {
       final backendService = BackendService();
-      
 
       // Using a likely endpoint. Update if the server expects a different one.
       final response =
@@ -68,7 +67,6 @@ class _EditForwarderState extends State<EditForwarder> {
         'myDeviceName': myDeviceName,
         'targetDeviceName': deviceToReceive['device_name'],
       });
-
 
       if (!response['success']) {
         if (mounted) {
@@ -103,14 +101,12 @@ class _EditForwarderState extends State<EditForwarder> {
         'amounts_to_forward': jsonEncode(amountsToForward),
       };
 
-
       int updatedId = await SQLiteService().updateStuff(
         updatedData,
         'id = ?',
         [widget.dbId],
         'forwardingDevices',
       );
-
     } else {
       Map<String, dynamic> newData = {
         'device_id': deviceToReceive['device_id'],
@@ -273,7 +269,7 @@ class _EditForwarderState extends State<EditForwarder> {
                           },
                           style: OutlinedButton.styleFrom(
                             // shape:
-                            backgroundColor: kErrorColor.withOpacity(.1),
+                            backgroundColor: kErrorColor.withValues(alpha: .1),
                           ),
                           icon: Icon(
                             CupertinoIcons.trash,

@@ -109,8 +109,9 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
 
       final mapped = <_MappedItem>[];
       for (final m in messagesInRange) {
-        if (!(m.body!.contains('received')))
+        if (!(m.body!.contains('received'))) {
           continue; // only consider messages that contain 'received'
+        }
         final code = getMpesaCode(m.body ?? '').trim().toUpperCase();
         Map<String, dynamic>? matched;
         if (code.isNotEmpty && byTxId.containsKey(code)) {
@@ -208,8 +209,9 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
         if (_start.isAfter(_end)) _end = _start.add(const Duration(minutes: 1));
       } else {
         _end = combined;
-        if (_end.isBefore(_start))
+        if (_end.isBefore(_start)) {
           _start = _end.subtract(const Duration(minutes: 1));
+        }
       }
     });
 

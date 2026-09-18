@@ -3,7 +3,7 @@ import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../../components/dialogs/choose_sim.dart';
 import '../../components/header.dart';
@@ -25,7 +25,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
   int chosenTokenId = 7;
 
   List<Widget> theSubs = [];
-  List<SimCard> sims = [];
+  List<SubscriptionInfo> sims = [];
 
   String expDate = "No active plan";
   bool isExpired = false;
@@ -59,9 +59,9 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
 
     _recheckPlanExpiry();
 
-    SimDataPlugin.getSimData().then((value) {
+    Telephony.instance.getSubscriptionList().then((value) {
       setState(() {
-        sims = value.cards;
+        sims = value;
         // debugPrint("Got cards");
       });
     });
@@ -91,10 +91,10 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
               margin: kPagePaddingInsets,
               padding: kPagePaddingInsets,
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.1),
+                color: Colors.orange.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(kBorderRadius),
                 border: Border.all(
-                  color: Colors.orange.withOpacity(0.5),
+                  color: Colors.orange.withValues(alpha: 0.5),
                   width: 1.5,
                 ),
               ),
@@ -139,15 +139,20 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                           // chosenSubId = s["id"];
                           chosenTokenId = s["id"];
                         });
-                        SimCard? sim = await chooseSim(context, sims);
+                        SubscriptionInfo? sim = await chooseSim(context, sims);
 
                         if (sim == null) {
                           return;
                         }
 
+                        final subscriptionId = sim.subscriptionId;
+                        if (subscriptionId == null) {
+                          return;
+                        }
+
                         await paymentOps.payTokens(
                           s['value'],
-                          sim.subscriptionId,
+                          subscriptionId,
                           s['amount'],
                           planId: s['id'],
                         );
@@ -246,7 +251,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                     color: Theme.of(context).cardColor,
                     borderRadius: BorderRadius.circular(kBorderRadius),
                     border: Border.all(
-                      color: (tier['color'] as Color).withOpacity(0.5),
+                      color: (tier['color'] as Color).withValues(alpha: 0.5),
                       width: 1,
                     ),
                   ),
@@ -269,7 +274,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                                 Icon(Icons.check_circle_outline,
                                     size: 16,
                                     color: (tier['color'] as Color)
-                                        .withOpacity(0.8)),
+                                        .withValues(alpha: 0.8)),
                                 const SizedBox(width: 8),
                                 Expanded(
                                     child: Text(f,
@@ -314,16 +319,20 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                                 //   tier['tier'],
                                 // );
 
-                                SimCard? chosen =
+                                SubscriptionInfo? chosen =
                                     await chooseSim(context, sims);
 
                                 if (chosen == null) {
                                   return;
                                 }
+                                final subscriptionId = chosen.subscriptionId;
+                                if (subscriptionId == null) {
+                                  return;
+                                }
                                 await paymentOps.payCore(
                                   plan['amount'],
                                   plan['durationDays'],
-                                  chosen.subscriptionId,
+                                  subscriptionId,
                                   plan['plan_id'],
                                   tier['tier'],
                                 );
@@ -339,7 +348,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                               decoration: BoxDecoration(
                                 color: isSelected
                                     ? tier['color']
-                                    : (tier['color'] as Color).withOpacity(0.1),
+                                    : (tier['color'] as Color)
+                                        .withValues(alpha: 0.1),
                                 borderRadius:
                                     BorderRadius.circular(kBorderRadius),
                                 border: isSelected
@@ -391,7 +401,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
           borderRadius: BorderRadius.circular(kBorderRadius),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 10,
               offset: const Offset(0, 4), // Adds subtle elevation
             ),
@@ -414,7 +424,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                       .textTheme
                       .bodyLarge
                       ?.color
-                      ?.withOpacity(0.5),
+                      ?.withValues(alpha: 0.5),
                 ),
               ),
             ),
@@ -436,7 +446,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                         height: 1.5,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.3)),
+                              color: Colors.grey.withValues(alpha: 0.3)),
                         ),
                       );
                     }),
@@ -472,7 +482,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                         const Text("Plan Type",
                             style: TextStyle(color: Colors.grey)),
                         Text(
-                          "${_lastPayment.type}",
+                          _lastPayment.type,
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ],
@@ -514,7 +524,7 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                         height: 1.5,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.3)),
+                              color: Colors.grey.withValues(alpha: 0.3)),
                         ),
                       );
                     }),
@@ -548,8 +558,8 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
             // --- RECEIPT FOOTER / TOGGLE ---
             Container(
               decoration: BoxDecoration(
-                color: Colors.grey
-                    .withOpacity(0.05), // Gives it a slight "footer" shade
+                color: Colors.grey.withValues(
+                    alpha: 0.05), // Gives it a slight "footer" shade
                 borderRadius: BorderRadius.only(
                   bottomLeft: Radius.circular(kBorderRadius),
                   bottomRight: Radius.circular(kBorderRadius),

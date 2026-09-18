@@ -4,7 +4,6 @@ import 'package:another_telephony/telephony.dart';
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/utils/date_ops.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/cupertino.dart';
@@ -46,7 +45,7 @@ class _InboxPageState extends State<InboxPage> {
   static const int _pageSize = 50;
 
   final TextEditingController _maxVisibleMessagesController =
-  TextEditingController(text: '500');
+      TextEditingController(text: '500');
   Timer? _searchDebounce;
 
   @override
@@ -115,11 +114,8 @@ class _InboxPageState extends State<InboxPage> {
   }
 
   double _amountSortValue(String amount) {
-    final normalized = amount
-        .toUpperCase()
-        .replaceAll('KSH', '')
-        .replaceAll(',', '')
-        .trim();
+    final normalized =
+        amount.toUpperCase().replaceAll('KSH', '').replaceAll(',', '').trim();
 
     return double.tryParse(normalized) ?? double.infinity;
   }
@@ -128,37 +124,36 @@ class _InboxPageState extends State<InboxPage> {
     _filteredSmsList
       ..clear()
       ..addAll(_originalSmsList.where((msg) {
-      if (_searchQuery.isNotEmpty) {
-        final body = (msg.body ?? '').toLowerCase();
-        final address = (msg.address ?? '').toLowerCase();
-        final query = _searchQuery.toLowerCase();
-        if (!body.contains(query) && !address.contains(query)) {
-          return false;
+        if (_searchQuery.isNotEmpty) {
+          final body = (msg.body ?? '').toLowerCase();
+          final address = (msg.address ?? '').toLowerCase();
+          final query = _searchQuery.toLowerCase();
+          if (!body.contains(query) && !address.contains(query)) {
+            return false;
+          }
         }
-      }
 
-      if (_selectedSender != null && _selectedSender!.isNotEmpty) {
-        if ((msg.address ?? 'Unknown') != _selectedSender) {
-          return false;
+        if (_selectedSender != null && _selectedSender!.isNotEmpty) {
+          if ((msg.address ?? 'Unknown') != _selectedSender) {
+            return false;
+          }
         }
-      }
 
-      if (_selectedAmounts.isNotEmpty) {
-        final amount = _extractAmount(msg.body ?? '');
-        if (amount.isEmpty || !_selectedAmounts.contains(amount)) {
-          return false;
+        if (_selectedAmounts.isNotEmpty) {
+          final amount = _extractAmount(msg.body ?? '');
+          if (amount.isEmpty || !_selectedAmounts.contains(amount)) {
+            return false;
+          }
         }
-      }
 
-      return true;
-    }));
+        return true;
+      }));
 
     _filteredMessageCount = _filteredSmsList.length;
 
     if (resetPagination) {
-      _visibleMessageCount = _filteredMessageCount < _pageSize
-          ? _filteredMessageCount
-          : _pageSize;
+      _visibleMessageCount =
+          _filteredMessageCount < _pageSize ? _filteredMessageCount : _pageSize;
       _selectedIndices.clear();
       _lastSelectedIndex = null;
       _isRangeSelectMode = false;
@@ -169,7 +164,6 @@ class _InboxPageState extends State<InboxPage> {
     _smsList = _filteredSmsList.take(_visibleMessageCount).toList();
     _isMessageListTruncated = _filteredMessageCount > _visibleMessageCount;
     _hasMoreToReveal = _visibleMessageCount < _filteredMessageCount;
-
   }
 
   void _onSearchChanged(String query) {
@@ -220,9 +214,8 @@ class _InboxPageState extends State<InboxPage> {
 
     setState(() {
       final nextCount = _visibleMessageCount + _pageSize;
-      _visibleMessageCount = nextCount > _filteredMessageCount
-          ? _filteredMessageCount
-          : nextCount;
+      _visibleMessageCount =
+          nextCount > _filteredMessageCount ? _filteredMessageCount : nextCount;
       _smsList = _filteredSmsList.take(_visibleMessageCount).toList();
       _isMessageListTruncated = _filteredMessageCount > _visibleMessageCount;
       _hasMoreToReveal = _visibleMessageCount < _filteredMessageCount;
@@ -245,12 +238,10 @@ class _InboxPageState extends State<InboxPage> {
   void _selectRange(int currentIndex) {
     if (_lastSelectedIndex == null) return;
 
-    final start = _lastSelectedIndex! < currentIndex
-        ? _lastSelectedIndex!
-        : currentIndex;
-    final end = _lastSelectedIndex! > currentIndex
-        ? _lastSelectedIndex!
-        : currentIndex;
+    final start =
+        _lastSelectedIndex! < currentIndex ? _lastSelectedIndex! : currentIndex;
+    final end =
+        _lastSelectedIndex! > currentIndex ? _lastSelectedIndex! : currentIndex;
 
     setState(() {
       for (int i = start; i <= end; i++) {
@@ -523,8 +514,8 @@ class _InboxPageState extends State<InboxPage> {
                     children: [
                       FilterChip(
                         label: const Text('All'),
-                        selected: _selectedSender == null ||
-                            _selectedSender!.isEmpty,
+                        selected:
+                            _selectedSender == null || _selectedSender!.isEmpty,
                         onSelected: (selected) {
                           setState(() {
                             _selectedSender = null;
@@ -734,10 +725,10 @@ class _SmsTile extends StatelessWidget {
                             },
                           );
 
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Retrying message from MPESA')));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Retrying message from MPESA')));
 
                           // vibrate
-
                         },
                       ),
                     const SizedBox(width: 8),

@@ -5,7 +5,6 @@ import 'dart:ui';
 // import 'package:bsat/services/socket_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/skills.dart';
-import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:phone_state/phone_state.dart';
@@ -33,7 +32,8 @@ Future<void> initializeBackgroundService() async {
 }
 
 class _TransactionControllerService {
-  static final _TransactionControllerService _instance = _TransactionControllerService._internal();
+  static final _TransactionControllerService _instance =
+      _TransactionControllerService._internal();
   late TransactionController transactionController;
 
   _TransactionControllerService._internal();
@@ -59,7 +59,7 @@ void onStart(ServiceInstance serviceInstance) async {
   final transactionController = transactionService.transactionController;
 
   final SharedPreferencesService sharedPreferencesService =
-  SharedPreferencesService();
+      SharedPreferencesService();
 
   DartPluginRegistrant.ensureInitialized();
 
@@ -91,7 +91,8 @@ void onStart(ServiceInstance serviceInstance) async {
           print("call from ${state.number}");
           transactionController.unmaskFromCall(state.number ?? "");
         } else {
-          print("call from ${state.number} - Permission.phone not granted, skipping unmask");
+          print(
+              "call from ${state.number} - Permission.phone not granted, skipping unmask");
         }
       }
     });

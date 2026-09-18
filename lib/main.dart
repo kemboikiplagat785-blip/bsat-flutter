@@ -1,7 +1,6 @@
 // import 'dart:ui';
 
 import 'package:bsat/firebase_options.dart';
-import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:bsat/screens/home/home.dart';
 import 'package:bsat/screens/onboarding/main_page.dart';
 import 'package:bsat/services/firebase_messaging_service.dart';
@@ -17,7 +16,6 @@ import 'package:sqflite/sqflite.dart';
 import 'package:bsat/utils/logger.dart';
 
 import 'providers/theme_provider.dart';
-import 'screens/messaging/whatsapp.dart';
 import 'screens/settings/kill_switch.dart';
 import 'services/admin_management_service.dart';
 

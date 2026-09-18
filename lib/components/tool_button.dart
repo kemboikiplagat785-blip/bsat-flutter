@@ -29,12 +29,12 @@ Widget toolButton(
             color: backgroundColor ?? Theme.of(context).scaffoldBackgroundColor,
             border: Border(
               bottom: BorderSide(
-                color: (borderColor ?? hintColor.withOpacity(0.1)),
+                color: (borderColor ?? hintColor.withValues(alpha: 0.1)),
                 // color: Colors.black.withOpacity(0.9),
                 width: 1,
               ),
               right: BorderSide(
-                color: (borderColor ?? hintColor.withOpacity(0.1)),
+                color: (borderColor ?? hintColor.withValues(alpha: 0.1)),
                 // color: Colors.black.withOpacity(0.9),
                 width: 1,
               ),

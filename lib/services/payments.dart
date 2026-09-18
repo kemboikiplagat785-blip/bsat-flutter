@@ -40,7 +40,6 @@ class PaymentOps {
 
       String code = "*140*$amount*0${numbers[numberIndex]}#";
 
-
       final value = await _phoneService.makeMyRequest(
         code,
         subId,
@@ -56,7 +55,6 @@ class PaymentOps {
         usableUntil = DateTime.now().millisecondsSinceEpoch +
             (days * 24 * 60 * 60 * 1000);
       }
-
 
       int response = await _sqliteHelper.insertStuff(
         {
@@ -123,7 +121,7 @@ class PaymentOps {
     print(response);
     return response.toLowerCase().contains("sent") ||
         response.toLowerCase().contains(" successful") ||
-        response.toLowerCase().contains(" transferred")||
+        response.toLowerCase().contains(" transferred") ||
         response.toLowerCase().contains("umetuma");
   }
 
@@ -162,8 +160,7 @@ class PaymentOps {
       await _sqliteHelper.insertStuff(
         {
           'sim': subId,
-          'till':
-              0,
+          'till': 0,
           'plan_id': planId,
           'amount': amount,
           'type': 'token',
@@ -201,13 +198,15 @@ class PaymentOps {
 
   Future<List<String>> autoRenewSubscription() async {
     Map? lastPlan = (await SQLiteService()
-        .queryAll('payments', limit: 1, orderBy: 'id DESC')).firstOrNull ?? {};
+                .queryAll('payments', limit: 1, orderBy: 'id DESC'))
+            .firstOrNull ??
+        {};
 
     int planId;
     int subId;
     int amount;
 
-    if (lastPlan != null && lastPlan.isNotEmpty) {
+    if (lastPlan.isNotEmpty) {
       planId = lastPlan['plan_id'] ?? -1;
       subId = lastPlan['sim'] ?? -1;
       amount = lastPlan['amount'] ?? -1;
@@ -220,7 +219,6 @@ class PaymentOps {
           .queryAll('ussdCodes', limit: 1, orderBy: 'id DESC'))[0]['dialSim'];
     }
 
-
     return await payCore(
       amount,
       1,
@@ -229,7 +227,6 @@ class PaymentOps {
       lastPlan['type'] ?? 'Online',
     );
   }
-
 
   static void start1DayOnlinePlusFreeTrial() async {
     int id = await SQLiteService().insertStuff(
@@ -316,15 +313,13 @@ class Payment {
     // This method can be used to fetch the last payment from the database if needed
     // For now, it just returns the current instance
 
-      Map<String, dynamic> lastPlan = 
-      (await SQLiteService().queryAll(
-        'payments',
-        limit: 1,
-        orderBy: 'id DESC',
-      ))[0];
+    Map<String, dynamic> lastPlan = (await SQLiteService().queryAll(
+      'payments',
+      limit: 1,
+      orderBy: 'id DESC',
+    ))[0];
 
-    Payment res = Payment.fromMap(lastPlan
-    );
+    Payment res = Payment.fromMap(lastPlan);
 
     return res;
   }
@@ -392,5 +387,4 @@ class Payment {
 
     return Payment.fromMap(payments[0]);
   }
-
 }

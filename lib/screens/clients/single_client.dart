@@ -147,8 +147,8 @@ class _SingleClientPageState extends State<SingleClientPage> {
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 8, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color:
-                                                kPrimaryColor.withOpacity(0.1),
+                                            color: kPrimaryColor.withValues(
+                                                alpha: 0.1),
                                             borderRadius: BorderRadius.circular(
                                                 kBorderRadius),
                                           ),
@@ -167,7 +167,9 @@ class _SingleClientPageState extends State<SingleClientPage> {
                                   _buildInfoRow(context, "Phone",
                                       _client!.formattedPhone),
                                   const SizedBox(height: kPagePadding / 2),
-                                  if (_client!.alternativePhoneNumber?.isNotEmpty ?? false) ...[
+                                  if (_client!
+                                          .alternativePhoneNumber?.isNotEmpty ??
+                                      false) ...[
                                     _buildInfoRow(context, "Alt Phone",
                                         _client!.alternativePhoneNumber!),
                                     const SizedBox(height: kPagePadding / 2),
@@ -250,7 +252,7 @@ class _SingleClientPageState extends State<SingleClientPage> {
                                         context,
                                         textSize: 13,
                                       ),
-                                                                            toolButton(
+                                      toolButton(
                                         () => _showEditClientDialog(context),
                                         Icon(
                                           CupertinoIcons.pencil,
@@ -268,22 +270,32 @@ class _SingleClientPageState extends State<SingleClientPage> {
                                             context: context,
                                             builder: (BuildContext context) {
                                               return AlertDialog(
-                                                title: const Text('Delete Client'),
-                                                content: const Text('Are you sure you want to delete this client? This cannot be undone.'),
+                                                title:
+                                                    const Text('Delete Client'),
+                                                content: const Text(
+                                                    'Are you sure you want to delete this client? This cannot be undone.'),
                                                 actions: <Widget>[
                                                   TextButton(
                                                     child: const Text('Cancel'),
                                                     onPressed: () {
-                                                      Navigator.of(context).pop();
+                                                      Navigator.of(context)
+                                                          .pop();
                                                     },
                                                   ),
                                                   TextButton(
-                                                    child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                                    child: const Text('Delete',
+                                                        style: TextStyle(
+                                                            color: Colors.red)),
                                                     onPressed: () async {
-                                                      await _sqliteService.deleteStuff(widget.id, 'clients');
+                                                      await _sqliteService
+                                                          .deleteStuff(
+                                                              widget.id,
+                                                              'clients');
                                                       if (context.mounted) {
-                                                        Navigator.of(context).pop(); // Close dialog
-                                                        Navigator.of(context).pop(true); // Close SingleClientPage
+                                                        Navigator.of(context)
+                                                            .pop(); // Close dialog
+                                                        Navigator.of(context).pop(
+                                                            true); // Close SingleClientPage
                                                       }
                                                     },
                                                   ),
@@ -316,7 +328,7 @@ class _SingleClientPageState extends State<SingleClientPage> {
                                     .textTheme
                                     .bodyLarge
                                     ?.color
-                                    ?.withOpacity(0.7),
+                                    ?.withValues(alpha: 0.7),
                               ),
                             ),
                             const SizedBox(height: kPagePadding / 2),
@@ -333,7 +345,8 @@ class _SingleClientPageState extends State<SingleClientPage> {
                                   child: Text(
                                     "No transactions found",
                                     style: TextStyle(
-                                        color: kGrayColor.withOpacity(0.5)),
+                                        color:
+                                            kGrayColor.withValues(alpha: 0.5)),
                                   ),
                                 ),
                               )
@@ -367,7 +380,7 @@ class _SingleClientPageState extends State<SingleClientPage> {
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
-                                              "${transaction['date']} ${interpunct} ${transaction['time']}",
+                                              "${transaction['date']} $interpunct ${transaction['time']}",
                                               style: TextStyle(
                                                 fontSize: 12,
                                               ),
@@ -414,11 +427,13 @@ class _SingleClientPageState extends State<SingleClientPage> {
       ],
     );
   }
+
   Future<void> _showEditClientDialog(BuildContext context) async {
     final firstNameController = TextEditingController(text: _client!.firstName);
     final lastNameController = TextEditingController(text: _client!.lastName);
     final phoneController = TextEditingController(text: _client!.phoneNumber);
-    final altPhoneController = TextEditingController(text: _client!.alternativePhoneNumber ?? "");
+    final altPhoneController =
+        TextEditingController(text: _client!.alternativePhoneNumber ?? "");
 
     final result = await showDialog<bool>(
       context: context,
@@ -441,13 +456,15 @@ class _SingleClientPageState extends State<SingleClientPage> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: phoneController,
-                  decoration: const InputDecoration(labelText: 'Phone Number (Required)'),
+                  decoration: const InputDecoration(
+                      labelText: 'Phone Number (Required)'),
                   keyboardType: TextInputType.phone,
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: altPhoneController,
-                  decoration: const InputDecoration(labelText: 'Alternative Phone Number'),
+                  decoration: const InputDecoration(
+                      labelText: 'Alternative Phone Number'),
                   keyboardType: TextInputType.phone,
                 ),
               ],
@@ -466,27 +483,30 @@ class _SingleClientPageState extends State<SingleClientPage> {
                   );
                   return;
                 }
-                
+
                 final updatedClient = Client(
                   id: _client!.id,
                   firstName: firstNameController.text.trim(),
                   lastName: lastNameController.text.trim(),
                   phoneNumber: phoneController.text.trim(),
-                  alternativePhoneNumber: altPhoneController.text.trim().isNotEmpty ? altPhoneController.text.trim() : null,
+                  alternativePhoneNumber:
+                      altPhoneController.text.trim().isNotEmpty
+                          ? altPhoneController.text.trim()
+                          : null,
                   createdAt: _client!.createdAt,
                   lastBought: _client!.lastBought,
                   noOfPurchases: _client!.noOfPurchases,
                   // daysSinceLastPurchase: _client!.daysSinceLastPurchase,
                   // totalSpent: _client!.totalSpent,
                 );
-                
+
                 await _sqliteService.updateStuff(
                   updatedClient.toMap(),
                   'id = ?',
                   [updatedClient.id],
                   'clients',
                 );
-                
+
                 if (context.mounted) Navigator.pop(context, true);
               },
               child: const Text('Save'),

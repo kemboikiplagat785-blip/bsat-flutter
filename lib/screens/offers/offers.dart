@@ -10,7 +10,7 @@ import 'package:bsat/services/file_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:sim_data/sim_data.dart';
+import 'package:another_telephony/telephony.dart';
 
 import '../../components/dialogs/make_offer_tutorial_dialog.dart';
 import '../../utils/constants.dart';
@@ -26,9 +26,9 @@ class _OffersPageState extends State<OffersPage> {
   final _sqliteService = SQLiteService();
 
   List<Map<String, dynamic>> ussdCodes = [];
-  List<SimCard> sims = [];
+  List<SubscriptionInfo> sims = [];
 
-  int _fromSim = -1;
+  final int _fromSim = -1;
   int _dialSim = -1;
 
   bool _selectionMode = false;
@@ -96,16 +96,15 @@ class _OffersPageState extends State<OffersPage> {
           'code': i["code"],
           'startTime': null,
           'endTime': null,
-        },
-        'ussdCodeVariants');
+        }, 'ussdCodeVariants');
       } catch (e) {}
     }
   }
 
   Future<void> getAndProcessCards() async {
-    await SimDataPlugin.getSimData().then((value) {
+    await Telephony.instance.getSubscriptionList().then((value) {
       setState(() {
-        sims = value.cards;
+        sims = value;
       });
       // debugPrint("Got cards");
     });
@@ -143,7 +142,7 @@ class _OffersPageState extends State<OffersPage> {
       }
       if (sim.subscriptionId == subId) {
         res += (count > 0) ? ", " : "";
-        res += " ${sim.displayName} (${sim.slotIndex + 1})";
+        res += " ${sim.displayName} (${sim.simSlotIndex + 1})";
         count++;
       }
     }
@@ -156,7 +155,7 @@ class _OffersPageState extends State<OffersPage> {
     for (var sim in sims) {
       if (subId < 0 || sim.subscriptionId == subId) {
         cards.add(
-          SimCardIconWithNumber(number: sim.slotIndex + 1),
+          SimCardIconWithNumber(number: (sim.simSlotIndex ?? 0) + 1),
         );
       }
     }
@@ -184,10 +183,10 @@ class _OffersPageState extends State<OffersPage> {
   }
 
   Future<void> changeSimCard() async {
-    SimCard? simCard = await chooseSim(context, sims);
+    SubscriptionInfo? simCard = await chooseSim(context, sims);
 
     if (simCard != null) {
-      _dialSim = simCard.subscriptionId;
+      _dialSim = simCard.subscriptionId!;
 
       await _sqliteService.updateStuff(
         {'dialSim': _dialSim},
@@ -328,7 +327,8 @@ class _OffersPageState extends State<OffersPage> {
                         padding: kPagePaddingInsets,
                         child: Builder(builder: (context) {
                           // Group offers by the USSD code string
-                          final Map<String, List<Map<String, dynamic>>> grouped = {};
+                          final Map<String, List<Map<String, dynamic>>>
+                              grouped = {};
                           for (var item in ussdCodes) {
                             final code = item['code'] ?? '';
                             grouped.putIfAbsent(code, () => []).add(item);
@@ -340,7 +340,8 @@ class _OffersPageState extends State<OffersPage> {
                               final items = entry.value;
 
                               return Padding(
-                                padding: const EdgeInsets.only(bottom: kPagePadding / 2),
+                                padding: const EdgeInsets.only(
+                                    bottom: kPagePadding / 2),
                                 child: items.length == 1
                                     ? _buildOfferCard(items.first)
                                     : _buildOfferGroupCard(code, items),
@@ -446,13 +447,13 @@ class _OffersPageState extends State<OffersPage> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: isEnabled
-            ? kPrimaryColor.withOpacity(0.1)
-            : Theme.of(context).dividerColor.withOpacity(0.08),
+            ? kPrimaryColor.withValues(alpha: 0.1)
+            : Theme.of(context).dividerColor.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(kBorderRadius / 2),
         border: Border.all(
           color: isEnabled
-              ? kPrimaryColor.withOpacity(0.3)
-              : Theme.of(context).dividerColor.withOpacity(0.2),
+              ? kPrimaryColor.withValues(alpha: 0.3)
+              : Theme.of(context).dividerColor.withValues(alpha: 0.2),
         ),
       ),
       child: Text(
@@ -469,9 +470,10 @@ class _OffersPageState extends State<OffersPage> {
 
   Widget _codeChip(String code) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: kPagePadding / 3, vertical: 4),
+      padding:
+          const EdgeInsets.symmetric(horizontal: kPagePadding / 3, vertical: 4),
       decoration: BoxDecoration(
-        color: Theme.of(context).indicatorColor.withOpacity(0.1),
+        color: Theme.of(context).indicatorColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(kBorderRadius / 2),
       ),
       child: Text(
@@ -491,7 +493,8 @@ class _OffersPageState extends State<OffersPage> {
       ),
       child: const Text(
         'PAUSED',
-        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+        style: TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
       ),
     );
   }
@@ -499,21 +502,21 @@ class _OffersPageState extends State<OffersPage> {
   Widget _statusBadge(int activeCount, int total) {
     final bool allActive = activeCount == total;
     final bool allPaused = activeCount == 0;
-    final Color color = allActive
-        ? kPrimaryColor
-        : (allPaused ? kErrorColor : kWarningColor);
+    final Color color =
+        allActive ? kPrimaryColor : (allPaused ? kErrorColor : kWarningColor);
     final String label = allActive
         ? 'All active'
         : (allPaused ? 'All paused' : '$activeCount/$total active');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(kBorderRadius / 2),
       ),
       child: Text(
         label,
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
+        style:
+            TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
       ),
     );
   }
@@ -526,7 +529,7 @@ class _OffersPageState extends State<OffersPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: kIndigoColor.withOpacity(0.1),
+        color: kIndigoColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(kBorderRadius / 2),
       ),
       child: Row(
@@ -536,7 +539,8 @@ class _OffersPageState extends State<OffersPage> {
           const SizedBox(width: 4),
           Text(
             '$start - $end',
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: kIndigoColor),
+            style: const TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700, color: kIndigoColor),
           ),
         ],
       ),
@@ -546,11 +550,13 @@ class _OffersPageState extends State<OffersPage> {
   Widget _simRow(int fromSim, int dialSim) {
     return Row(
       children: [
-        Text('From', style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor)),
+        Text('From',
+            style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor)),
         const SizedBox(width: kPagePadding / 4),
         getSimCards(fromSim),
         const SizedBox(width: kPagePadding),
-        Text('Dial', style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor)),
+        Text('Dial',
+            style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor)),
         const SizedBox(width: kPagePadding / 4),
         getSimCards(dialSim),
       ],
@@ -562,8 +568,9 @@ class _OffersPageState extends State<OffersPage> {
     final bool isEnabled = (item['enabled'] ?? 1) == 1;
     final bool isSelected = _selectedTransactionIds.contains(id);
     final String? offerName = item['offerName'];
-    final bool hasCustomName =
-        offerName != null && offerName.isNotEmpty && offerName != 'Ksh ${item['amount']}';
+    final bool hasCustomName = offerName != null &&
+        offerName.isNotEmpty &&
+        offerName != 'Ksh ${item['amount']}';
 
     return GestureDetector(
       onLongPress: () => _startSelecting(id),
@@ -572,10 +579,11 @@ class _OffersPageState extends State<OffersPage> {
         padding: kPagePaddingInsets,
         decoration: BoxDecoration(
           color: isSelected
-              ? kPrimaryColor.withOpacity(0.12)
+              ? kPrimaryColor.withValues(alpha: 0.12)
               : Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(kBorderRadius),
-          border: isSelected ? Border.all(color: kPrimaryColor, width: 1.5) : null,
+          border:
+              isSelected ? Border.all(color: kPrimaryColor, width: 1.5) : null,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -586,8 +594,10 @@ class _OffersPageState extends State<OffersPage> {
                 children: [
                   Row(
                     children: [
-                      Text('KSH ', style: Theme.of(context).textTheme.labelSmall),
-                      Text('${item['amount']}', style: Theme.of(context).textTheme.titleLarge),
+                      Text('KSH ',
+                          style: Theme.of(context).textTheme.labelSmall),
+                      Text('${item['amount']}',
+                          style: Theme.of(context).textTheme.titleLarge),
                       if (!isEnabled) ...[
                         const SizedBox(width: 8),
                         _pausedTag(),
@@ -599,7 +609,8 @@ class _OffersPageState extends State<OffersPage> {
                       padding: const EdgeInsets.only(top: 2),
                       child: Text(
                         offerName,
-                        style: TextStyle(color: Theme.of(context).hintColor, fontSize: 13),
+                        style: TextStyle(
+                            color: Theme.of(context).hintColor, fontSize: 13),
                       ),
                     ),
                   const SizedBox(height: kPagePadding / 2),
@@ -626,7 +637,8 @@ class _OffersPageState extends State<OffersPage> {
                   onChanged: (value) => enableOffer(value, id),
                 ),
                 IconButton(
-                  icon: const Icon(CupertinoIcons.delete, color: kErrorColor, size: 20),
+                  icon: const Icon(CupertinoIcons.delete,
+                      color: kErrorColor, size: 20),
                   onPressed: () => _deleteOffer(id),
                 ),
               ],
@@ -670,11 +682,14 @@ class _OffersPageState extends State<OffersPage> {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.layers, size: 14, color: Theme.of(context).hintColor),
+                            Icon(Icons.layers,
+                                size: 14, color: Theme.of(context).hintColor),
                             const SizedBox(width: 6),
                             Text(
                               '${items.length} tiers on this code',
-                              style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Theme.of(context).hintColor),
                             ),
                           ],
                         ),
@@ -693,7 +708,9 @@ class _OffersPageState extends State<OffersPage> {
                         const SizedBox(height: kPagePadding / 2),
                         Row(
                           children: [
-                            Expanded(child: _simRow(items.first['fromSim'], items.first['dialSim'])),
+                            Expanded(
+                                child: _simRow(items.first['fromSim'],
+                                    items.first['dialSim'])),
                             _statusBadge(activeCount, items.length),
                           ],
                         ),
@@ -720,15 +737,17 @@ class _OffersPageState extends State<OffersPage> {
     final bool isEnabled = (item['enabled'] ?? 1) == 1;
     final bool isSelected = _selectedTransactionIds.contains(id);
     final String? offerName = item['offerName'];
-    final bool hasCustomName =
-        offerName != null && offerName.isNotEmpty && offerName != 'Ksh ${item['amount']}';
+    final bool hasCustomName = offerName != null &&
+        offerName.isNotEmpty &&
+        offerName != 'Ksh ${item['amount']}';
 
     return GestureDetector(
       onLongPress: () => _startSelecting(id),
       onTap: () => _openOffer(id),
       child: Container(
-        color: isSelected ? kPrimaryColor.withOpacity(0.12) : null,
-        padding: const EdgeInsets.symmetric(horizontal: kPagePadding, vertical: kPagePadding / 3),
+        color: isSelected ? kPrimaryColor.withValues(alpha: 0.12) : null,
+        padding: const EdgeInsets.symmetric(
+            horizontal: kPagePadding, vertical: kPagePadding / 3),
         child: Row(
           children: [
             Expanded(
@@ -737,7 +756,8 @@ class _OffersPageState extends State<OffersPage> {
                 children: [
                   Row(
                     children: [
-                      Text('KSH ${item['amount']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text('KSH ${item['amount']}',
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
                       if (!isEnabled) ...[
                         const SizedBox(width: 8),
                         _pausedTag(),
@@ -747,7 +767,8 @@ class _OffersPageState extends State<OffersPage> {
                   if (hasCustomName)
                     Text(
                       offerName,
-                      style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
+                      style: TextStyle(
+                          color: Theme.of(context).hintColor, fontSize: 12),
                     ),
                   if (_timeWindowChip(item) != null) ...[
                     const SizedBox(height: 4),
@@ -765,7 +786,8 @@ class _OffersPageState extends State<OffersPage> {
               onPressed: () => _openOffer(id),
             ),
             IconButton(
-              icon: const Icon(CupertinoIcons.delete, color: kErrorColor, size: 20),
+              icon: const Icon(CupertinoIcons.delete,
+                  color: kErrorColor, size: 20),
               onPressed: () => _deleteOffer(id),
             ),
           ],

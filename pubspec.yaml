@@ -28,8 +28,7 @@ dependencies:
   cupertino_icons: ^1.0.2
   google_fonts: ^6.2.1
   ussd_service: ^0.1.1
-  sim_data: ^0.0.2
-  another_telephony: ^0.3.0
+  another_telephony: ^0.5.0-pre.1
   call_log: ^6.0.1
   phone_state: ^2.0.1
   sqflite: ^2.3.2
@@ -49,8 +48,7 @@ dependencies:
   # firebase_core: ^2.24.2
   firebase_crashlytics: ^3.4.9
   telephony_sms: ^0.0.4
-  background_sms: ^0.0.4
-  flutter_contacts: ^1.1.9+2
+  flutter_contacts: 2.5.0
   flutter_sms_inbox: ^1.0.3
   package_info_plus: ^8.2.1
   widgets_easier: ^0.0.10

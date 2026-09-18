@@ -126,13 +126,6 @@
 //   }
 // }
 
-
-
-
-
-
-
-
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -140,7 +133,7 @@ import 'package:flutter_accessibility_service/flutter_accessibility_service.dart
 import 'package:app_settings/app_settings.dart';
 
 class AccessibilityTutorialScreen extends StatefulWidget {
-  const AccessibilityTutorialScreen({Key? key}) : super(key: key);
+  const AccessibilityTutorialScreen({super.key});
 
   @override
   State<AccessibilityTutorialScreen> createState() =>
@@ -197,7 +190,8 @@ class _AccessibilityTutorialScreenState
         }
       } else if (step == 1) {
         // Step 2: Open App Info for Restricted Settings
-        await AppSettings.openAppSettings(type: AppSettingsType.generalSettings);
+        await AppSettings.openAppSettings(
+            type: AppSettingsType.generalSettings);
         await _waitForAppResume();
 
         // Move to step 2 (Final Try)
@@ -360,7 +354,7 @@ class _AccessibilityTutorialScreenState
                     boxShadow: [
                       if (!isLocked)
                         BoxShadow(
-                          color: color.withOpacity(0.4),
+                          color: color.withValues(alpha: 0.4),
                           blurRadius: 8,
                           offset: const Offset(0, 4),
                         )
@@ -388,12 +382,16 @@ class _AccessibilityTutorialScreenState
                   color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(
-                    color: isActive ? color : Theme.of(context).dividerColor.withOpacity(0.05),
+                    color: isActive
+                        ? color
+                        : Theme.of(context)
+                            .dividerColor
+                            .withValues(alpha: 0.05),
                     width: isActive ? 3 : 1,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     )
@@ -478,7 +476,7 @@ class _AccessibilityTutorialScreenState
             "Accessibility is turned on.\nYou are ready to go!",
             textAlign: TextAlign.center,
             style: TextStyle(
-                fontSize: 18, 
+                fontSize: 18,
                 color: Theme.of(context).textTheme.bodyMedium?.color),
           ),
           const SizedBox(height: 40),

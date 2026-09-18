@@ -1,6 +1,4 @@
 import 'package:another_telephony/telephony.dart';
-import 'package:bsat/components/dialogs/make_offer_prompt_dialog.dart';
-import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:bsat/services/background_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:flutter/cupertino.dart';
@@ -47,7 +45,6 @@ class _PermissionsPageState extends State<PermissionsPage> {
 
     if (isRequestGranted) {
       print("App is now the default SMS app!");
-      // Now try your BackgroundSms.sendMessage code with the simSlot
     } else {
       print("User denied the request.");
     }
@@ -112,8 +109,7 @@ class _PermissionsPageState extends State<PermissionsPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Spacer(),
-                    const MyHeroWidget(),
-
+          const MyHeroWidget(),
           const Spacer(
             flex: 1,
           ),
@@ -123,8 +119,8 @@ class _PermissionsPageState extends State<PermissionsPage> {
               'The following permissions are required for the app to work. Please enable them.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                // color: kDullColor,
-              ),
+                  // color: kDullColor,
+                  ),
             ),
           ),
           Padding(
@@ -226,16 +222,20 @@ class _PermissionsPageState extends State<PermissionsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,children: [Text(
-                            'Notifications',
-                            style: (kTitleText),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Notifications',
+                                style: (kTitleText),
+                              ),
+                              Icon(
+                                CupertinoIcons.bell,
+                                size: textTheme.labelMedium?.fontSize,
+                                color: Theme.of(context).indicatorColor,
+                              ),
+                            ],
                           ),
-                          Icon(
-                            CupertinoIcons.bell,
-                            size: textTheme.labelMedium?.fontSize,
-                            color: Theme.of(context).indicatorColor,
-                          ),
-                          ],),
                           const SizedBox(height: kPagePadding / 4),
                           Text(
                             'To keep the app active in the background.',
@@ -251,14 +251,16 @@ class _PermissionsPageState extends State<PermissionsPage> {
           ),
           const Spacer(),
           Hero(
-          tag: '',
+            tag: '',
             child: InkWell(
               onTap: () => checkAndProceed(context),
               child: Container(
                 padding: kPagePaddingInsets,
                 width: size.width - (kPagePadding * 2),
                 child: Center(
-                  child: Text('$interpunct $interpunct $interpunct Grant Permissions $interpunct', style: textTheme.titleLarge!.merge(
+                  child: Text(
+                    '$interpunct $interpunct $interpunct Grant Permissions $interpunct',
+                    style: textTheme.titleLarge!.merge(
                       const TextStyle(
                         fontWeight: FontWeight.bold,
                       ),

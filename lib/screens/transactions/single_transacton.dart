@@ -20,11 +20,12 @@ import '../../services/backend_service.dart';
 import '../../services/contacts_service.dart';
 import '../../services/shared_preferences_service.dart';
 import '../../utils/constants.dart';
+import '../../utils/forwarding_job_id.dart';
 import '../clients/single_client.dart';
 import '../tasks/edit_task.dart';
 
 class SingleTransactionPage extends StatefulWidget {
-  final id;
+  final dynamic id;
 
   const SingleTransactionPage({required this.id, super.key});
 
@@ -302,6 +303,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                           );
                                         },
                                       );
+                                      if (!mounted) return;
                                       ScaffoldMessenger.of(context)
                                           .showSnackBar(
                                         SnackBar(
@@ -576,7 +578,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                             children: [
                               toolButton(
                                 () async {
-                                  print("Details before retrying: $_details");
+                                  debugPrint(
+                                      'Details before retrying: $_details');
                                   tillDoneDialogue(
                                     context,
                                     Padding(
@@ -658,6 +661,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       'transactions',
                                     );
 
+                                    if (!mounted) return;
+
                                     showSuccessDialog(context,
                                         text: 'Category changed to $status');
 
@@ -666,7 +671,9 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                 },
                                 Icon(
                                   Icons.satellite_alt_rounded,
-                                  color: Theme.of(context).indicatorColor,
+                                  color: Theme.of(context)
+                                      .tabBarTheme
+                                      .indicatorColor,
                                   size: 14,
                                 ),
                                 "Change Category",
@@ -797,8 +804,11 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                   int numb = toForward.isNotEmpty
                                       ? toForward[0]['numberToReceive']
                                       : 0;
+                                  final currentContext = context;
+                                  final navigator =
+                                      Navigator.of(currentContext);
                                   String? number = (await showForwardTextDialog(
-                                    context,
+                                    currentContext,
                                     numb,
                                   ));
 
@@ -813,7 +823,10 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       '254${int.parse(number)}',
                                       _details['initialMessage'],
                                     );
-                                    Navigator.of(context).pop(number);
+                                    if (!mounted || !currentContext.mounted) {
+                                      return;
+                                    }
+                                    navigator.pop(number);
                                   }
 
                                   await TransactionController().dontProcess(
@@ -828,26 +841,39 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       canRetry: _details['canRetry'] == 1,
                                       reply: 'Forwarded to $numb');
 
-                                  await showConfirmDeleteDialog(context,
-                                          title: 'Delete Transaction?',
-                                          message:
-                                              'Do you want to delete this transaction? This cannot be undone.',
-                                          btnText: 'Delete')
-                                      .then((value) async {
-                                    if (value ?? false) {
-                                      showLoadingDialog(context);
-                                      await _sqliteService.deleteStuff(
-                                        _details["id"],
-                                        "transactions",
-                                      );
-                                      Navigator.pop(context);
-                                      Navigator.pop(context);
+                                  final dialogContext = currentContext;
+                                  if (!mounted || !dialogContext.mounted) {
+                                    return;
+                                  }
+
+                                  final shouldDelete =
+                                      await showConfirmDeleteDialog(
+                                    dialogContext,
+                                    title: 'Delete Transaction?',
+                                    message:
+                                        'Do you want to delete this transaction? This cannot be undone.',
+                                    btnText: 'Delete',
+                                  );
+
+                                  if (shouldDelete ?? false) {
+                                    if (!mounted || !dialogContext.mounted) {
+                                      return;
                                     }
-                                  });
+                                    showLoadingDialog(dialogContext);
+                                    await _sqliteService.deleteStuff(
+                                      _details["id"],
+                                      "transactions",
+                                    );
+                                    if (!mounted || !dialogContext.mounted) {
+                                      return;
+                                    }
+                                    Navigator.pop(dialogContext);
+                                    Navigator.pop(dialogContext);
+                                  }
                                 },
                                 Icon(
                                   Icons.send_outlined,
-                                  color: Theme.of(context).indicatorColor,
+                                  color: Theme.of(context).colorScheme.primary,
                                   size: 14,
                                 ),
                                 "Forward (Offline)",
@@ -859,26 +885,40 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                   String? senderDeviceName =
                                       await SharedPreferencesService()
                                           .getDeviceName();
-                                  var device = await Navigator.of(context).push(
+                                  final currentContext = context;
+                                  final navigator =
+                                      Navigator.of(currentContext);
+                                  final device = await navigator.push(
                                       MaterialPageRoute(
                                           builder: (context) =>
                                               SearchDevicePage()));
 
+                                  if (!mounted || !currentContext.mounted) {
+                                    return;
+                                  }
+
                                   if (device != null) {
-                                    await showConfirmDialog(context,
-                                            title: 'Confirm Forwarding',
-                                            message:
-                                                'Do you want to forward this transaction to ${device['device_name']} ?')
-                                        .then((confirmed) async {
-                                      if (confirmed ?? false) {
-                                        showLoadingDialog(context);
-                                      } else {
-                                        return;
-                                      }
-                                    });
+                                    final confirmed = await showConfirmDialog(
+                                      currentContext,
+                                      title: 'Confirm Forwarding',
+                                      message:
+                                          'Do you want to forward this transaction to ${device['device_name']} ?',
+                                    );
+
+                                    if (confirmed ?? false) {
+                                      showLoadingDialog(currentContext);
+                                    } else {
+                                      return;
+                                    }
 
                                     String recipientDeviceName =
                                         device['device_name'];
+                                    final forwardingJobId =
+                                        ForwardingJobId.generate(
+                                      mpesaCode:
+                                          (_details['transactionId'] ?? '')
+                                              .toString(),
+                                    );
 
                                     int? txId = await TransactionController()
                                         .dontProcess(
@@ -888,8 +928,10 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       _details['ussdDialed'],
                                       _details['amount'],
                                       _details['simSubId'],
-                                      status: TransactionStatuses.done,
+                                      status:
+                                          TransactionStatuses.forwardedPending,
                                       source: _details['source'],
+                                      forwardingJobId: forwardingJobId,
                                       canRetry: _details['canRetry'] == 1,
                                       reply:
                                           'Forwarding to ${device['device_name']}',
@@ -907,36 +949,49 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                           'type': 'forwarded_sms',
                                           'body': _details['initialMessage'],
                                           'transactionId': txId,
+                                          'forwardingJobId': forwardingJobId,
+                                          'forwardingStatus':
+                                              ForwardingJobStatuses.pending,
                                           'title': "Forwarded Message",
                                           'senderDeviceName': senderDeviceName,
                                         }
                                       },
                                     );
 
+                                    if (result['success'] != true) {
+                                      await _sqliteService.updateStuff(
+                                        {
+                                          'status': TransactionStatuses.error,
+                                          'ussdReply':
+                                              'Forwarding failed: Phone offline or server not reachable. Will retry later.',
+                                        },
+                                        'id = ?',
+                                        [txId],
+                                        'transactions',
+                                      );
+
+                                      if (!context.mounted) return;
+
+                                      await showSuccessDialog(
+                                        context,
+                                        text:
+                                            'Forwarding failed. The transaction was kept for retry.',
+                                      );
+
+                                      if (!context.mounted) return;
+                                      Navigator.pop(context);
+                                      return;
+                                    }
+
+                                    if (!context.mounted) return;
+
                                     await showSuccessDialog(
                                       context,
                                       text:
-                                          "Sent to ${device['device_name']} Succesuflly",
+                                          'Forwarded to ${device['device_name']}. Waiting for confirmation.',
                                     );
 
-                                    await showConfirmDeleteDialog(context,
-                                            title: 'Delete Transaction?',
-                                            message:
-                                                'Do you want to delete this transaction? This cannot be undone.',
-                                            btnText: 'Delete')
-                                        .then((value) async {
-                                      if (value ?? false) {
-                                        showLoadingDialog(context);
-                                        await _sqliteService.deleteStuff(
-                                          _details["id"],
-                                          "transactions",
-                                        );
-
-                                        Navigator.pop(context);
-                                        Navigator.pop(context);
-                                      }
-                                    });
-
+                                    if (!context.mounted) return;
                                     Navigator.pop(context);
                                   }
                                 },
@@ -951,7 +1006,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                               ),
                               toolButton(
                                 () async {
-                                  showSuccessDialog(context,
+                                  await showSuccessDialog(context,
                                       text: "Forwarding to 334");
                                   await tillDoneDialogue(
                                       context, Text("Reversing message"),
@@ -989,6 +1044,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                             'Are you sure you want to reverse this transaction?',
                                       ) ??
                                       false)) {
+                                    if (!context.mounted) return;
+
                                     await tillDoneDialogue(
                                         context, Text("Reversing message"),
                                         () async {
@@ -1006,6 +1063,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       sendEvenInBackground(
                                           '456', trimmedMessage);
                                     }).then((value) async {
+                                      if (!context.mounted) return;
+
                                       if ((await showConfirmDeleteDialog(
                                             context,
                                             title: 'Done',
@@ -1014,13 +1073,20 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                             btnText: 'Delete',
                                           )) ??
                                           false) {
+                                        if (!context.mounted) return;
+
                                         showLoadingDialog(context);
                                         await _sqliteService.deleteStuff(
                                           _details["id"],
                                           "transactions",
                                         );
-                                        Navigator.pop(context);
-                                        Navigator.pop(context);
+
+                                        if (!context.mounted) return;
+
+                                        if (Navigator.of(context).canPop()) {
+                                          Navigator.pop(context);
+                                          Navigator.pop(context);
+                                        }
                                         showSuccessDialog(
                                           context,
                                           text: 'Transaction deleted',
@@ -1055,10 +1121,13 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                               toolButton(
                                 () async {
                                   showLoadingDialog(context);
+
                                   await _sqliteService.deleteStuff(
                                     _details["id"],
                                     "transactions",
                                   );
+
+                                  if (!context.mounted) return;
 
                                   Navigator.pop(context);
                                   Navigator.pop(context);

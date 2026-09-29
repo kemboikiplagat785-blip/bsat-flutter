@@ -47,7 +47,8 @@ class DashboardViewModel extends ChangeNotifier {
   int errorCount = 0;
   int failedCount = 0;
   int timedOutCount = 0;
-  int forwardedCount = 0;
+  int forwardedPendingCount = 0;
+  int forwardedConfirmedCount = 0;
   int unavailableCount = 0;
   int pausedCount = 0;
   int advancedCount = 0;
@@ -152,10 +153,17 @@ class DashboardViewModel extends ChangeNotifier {
           "WHERE status = '${TransactionStatuses.unavailableOffer}' AND date = '${getNormalDate(DateTime.now())}'",
     );
 
-    forwardedCount = await _sqliteService.getCount(
+    forwardedPendingCount = await _sqliteService.getCount(
       'transactions',
       appendQuery:
-          "WHERE status = '${TransactionStatuses.forwarded}' AND date = '${getNormalDate(DateTime.now())}'",
+          "WHERE status IN ('${TransactionStatuses.forwarded}', '${TransactionStatuses.forwardedPending}') "
+          "AND date = '${getNormalDate(DateTime.now())}'",
+    );
+
+    forwardedConfirmedCount = await _sqliteService.getCount(
+      'transactions',
+      appendQuery: "WHERE status = '${TransactionStatuses.forwardedConfirmed}' "
+          "AND date = '${getNormalDate(DateTime.now())}'",
     );
 
     pausedCount = await _sqliteService.getCount(

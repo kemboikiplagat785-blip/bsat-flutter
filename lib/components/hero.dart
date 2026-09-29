@@ -1,4 +1,4 @@
-import 'dart:math' as math; // Required for the rotation angle
+// Required for the rotation angle
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';

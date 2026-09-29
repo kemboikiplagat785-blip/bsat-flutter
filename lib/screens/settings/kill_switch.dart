@@ -1,7 +1,5 @@
-import 'package:bsat/screens/home/dashboard/dashboard.dart';
 import 'package:flutter/material.dart';
 import 'package:ota_update/ota_update.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/admin_management_service.dart';
 import 'updater.dart';

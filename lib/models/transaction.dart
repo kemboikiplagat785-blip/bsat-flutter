@@ -14,6 +14,9 @@ class MyTransaction {
   final int canRetry;
   final String smsDate;
   final String smsTime;
+  String? forwardingJobId;
+  String? forwardingSenderDeviceName;
+  String? forwardingRecipientDeviceName;
 
   MyTransaction({
     required this.id,
@@ -31,6 +34,9 @@ class MyTransaction {
     required this.canRetry,
     required this.smsDate,
     required this.smsTime,
+    this.forwardingJobId,
+    this.forwardingSenderDeviceName,
+    this.forwardingRecipientDeviceName,
   });
 
   factory MyTransaction.fromMap(Map<String, dynamic> map) {
@@ -50,6 +56,10 @@ class MyTransaction {
       canRetry: map['canRetry'],
       smsDate: map['smsDate'],
       smsTime: map['smsTime'],
+      forwardingJobId: map['forwardingJobId']?.toString(),
+      forwardingSenderDeviceName: map['forwardingSenderDeviceName']?.toString(),
+      forwardingRecipientDeviceName:
+          map['forwardingRecipientDeviceName']?.toString(),
     );
   }
 
@@ -71,6 +81,9 @@ class MyTransaction {
       'smsTime': smsTime,
       'date': smsDate,
       'time': smsTime,
+      'forwardingJobId': forwardingJobId,
+      'forwardingSenderDeviceName': forwardingSenderDeviceName,
+      'forwardingRecipientDeviceName': forwardingRecipientDeviceName,
     };
   }
 }

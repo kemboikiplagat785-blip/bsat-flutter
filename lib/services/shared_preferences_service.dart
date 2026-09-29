@@ -795,6 +795,32 @@ class SharedPreferencesService {
     return false;
   }
 
+  Future<int?> getOnlineForwardingIndex(int amount) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    return prefs.getInt("online_forwarding_index_$amount");
+  }
+
+  Future<bool> setOnlineForwardingIndex(int amount, int index) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+
+    try {
+      return await prefs.setInt(
+        "online_forwarding_index_$amount",
+        index,
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint(
+          "Failed to save online forwarding index for amount $amount: $e",
+        );
+      }
+    }
+
+    return false;
+  }
+
   Future<Map<String, dynamic>> getAll() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();

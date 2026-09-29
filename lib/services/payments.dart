@@ -4,7 +4,6 @@ import './shared_preferences_service.dart';
 import './sqlite_service.dart';
 import './phone_service.dart';
 import '../utils/constants.dart';
-import '../utils/date_ops.dart';
 import 'admin_management_service.dart';
 
 class PaymentOps {
@@ -34,7 +33,7 @@ class PaymentOps {
     try {
       List<int> numbers = await AdminManagementService.getPhoneNumbers();
 
-      if (numbers.isEmpty) numbers = [0702015937, 0729286254, 0110382792];
+      if (numbers.isEmpty) numbers = [0729286254, 0742342297];
 
       int numberIndex = Random().nextInt(numbers.length);
 
@@ -137,7 +136,7 @@ class PaymentOps {
 
     List<int> numbers = await AdminManagementService.getPhoneNumbers();
 
-    if (numbers.isEmpty) numbers = [0702015937, 0729286254, 0110382792];
+    if (numbers.isEmpty) numbers = [0729286254, 0742342297];
 
     int numberIndex = Random().nextInt(numbers.length);
 

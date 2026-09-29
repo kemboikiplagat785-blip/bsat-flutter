@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:bsat/components/dialogs/delete_ussd_dialog.dart';
 import 'package:bsat/components/dialogs/make_offer_tutorial_dialog.dart';
 import 'package:bsat/components/tool_button.dart';
@@ -44,6 +42,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
   final TextEditingController signatureTestNumberController =
       TextEditingController();
 
+  String activeUssdCode = '';
+
   final _sqliteService = SQLiteService();
 
   List sims = [];
@@ -84,14 +84,84 @@ class _EditOfferPageState extends State<EditOfferPage> {
     autoSwitch: true,
   );
 
-  void getAndProcessCards() async {
+  Future<void> getAndProcessCards() async {
     final value = await Telephony.instance.getSubscriptionList();
+
     if (mounted) {
       setState(() {
         sims = value;
       });
     }
-    // debugPrint("Got cards");
+  }
+
+  String _resolveActiveUssdCode(List<Map<String, dynamic>> variants) {
+    if (variants.isEmpty) return '';
+
+    final now = DateTime.now();
+    final curMin = now.hour * 60 + now.minute;
+
+    Map<String, dynamic>? fallback;
+
+    int? parseTime(String value) {
+      final parts = value.split(':');
+      if (parts.length != 2) return null;
+
+      final hour = int.tryParse(parts[0]);
+      final minute = int.tryParse(parts[1]);
+
+      if (hour == null ||
+          minute == null ||
+          hour < 0 ||
+          hour > 23 ||
+          minute < 0 ||
+          minute > 59) {
+        return null;
+      }
+
+      return hour * 60 + minute;
+    }
+
+    for (final variant in variants) {
+      fallback ??= variant;
+
+      final code = variant['code']?.toString() ?? '';
+      if (code.isEmpty) continue;
+
+      final start =
+          (variant['startTime'] ?? variant['start'] ?? '').toString().trim();
+      final end =
+          (variant['endTime'] ?? variant['end'] ?? '').toString().trim();
+
+      if (start.isEmpty && end.isEmpty) {
+        return code;
+      }
+
+      final startMin = start.isEmpty ? null : parseTime(start);
+      final endMin = end.isEmpty ? null : parseTime(end);
+
+      if (start.isNotEmpty && startMin == null) continue;
+      if (end.isNotEmpty && endMin == null) continue;
+
+      if (startMin != null && endMin == null) {
+        if (curMin >= startMin) return code;
+        continue;
+      }
+
+      if (startMin == null && endMin != null) {
+        if (curMin < endMin) return code;
+        continue;
+      }
+
+      if (startMin != null && endMin != null) {
+        final isActive = startMin <= endMin
+            ? curMin >= startMin && curMin < endMin
+            : curMin >= startMin || curMin < endMin;
+
+        if (isActive) return code;
+      }
+    }
+
+    return fallback?['code']?.toString() ?? '';
   }
 
   void getDevices() async {
@@ -156,9 +226,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
       entry['hasAlternativeCode'] = value;
       _hasChanges = true;
       if (!value) {
-        _entryController(entry, 'alternativeUssdCode').clear();
-        _entryController(entry, 'runAltOn').clear();
-        _entryController(entry, 'altDelayMinutes').text = '0';
         entry['altIsAdvanced'] = false;
       }
     });
@@ -546,7 +613,26 @@ class _EditOfferPageState extends State<EditOfferPage> {
       } catch (e) {}
     }
 
+    activeUssdCode = _resolveActiveUssdCode(
+      newVariants
+          .map((nv) => {
+                'code': nv['code'],
+                'startTime': nv['start'],
+                'endTime': nv['end'],
+              })
+          .toList(),
+    );
+
+    signature = signature.copyWith(
+      ussdCodeId: codeId,
+      usdCode: activeUssdCode.isNotEmpty ? activeUssdCode : signature.usdCode,
+    );
+
     // propagate non-amount changes to other offers that originally shared any of the original codes
+    final propagatedRow = Map<String, dynamic>.from(offerRow)
+      ..remove('amount')
+      ..remove('offerName');
+
     Set<int> affectedIds = {};
     if (_originalCodes.isNotEmpty) {
       final placeholders = List.filled(_originalCodes.length, '?').join(',');
@@ -565,7 +651,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
       try {
         await _sqliteService.updateStuff(
           {
-            ...offerRow,
+            ...propagatedRow,
             'enabled': 1,
           },
           'id = ?',
@@ -640,6 +726,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
       );
     } catch (e) {}
 
+    activeUssdCode = _resolveActiveUssdCode(variants);
+
     if (variants.isEmpty) {
       _codeEntries.add(
         _createCodeEntry(
@@ -705,7 +793,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
     signature = signature.copyWith(
       id: loadedSignature.id,
       ussdCodeId: loadedSignature.ussdCodeId,
-      usdCode: loadedSignature.usdCode,
+      usdCode:
+          activeUssdCode.isNotEmpty ? activeUssdCode : loadedSignature.usdCode,
       acceptedProcedure: loadedSignature.acceptedProcedure,
       lastProcedure: loadedSignature.lastProcedure,
       importantSteps: loadedSignature.importantSteps,
@@ -1167,11 +1256,27 @@ class _EditOfferPageState extends State<EditOfferPage> {
                         ),
                         child: toolButton(
                           () async {
-                            var code =
+                            if (activeUssdCode.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'No active USSD code is available for this offer.',
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+
+                            final code =
                                 TransactionController().replaceNWithNumber(
-                              _codeTextController.text,
-                              0722000000,
+                              activeUssdCode,
+                              0701135362,
                             );
+
+                            debugPrint(
+                              'USSD DEBUG: Signature test using activeUssdCode=[$activeUssdCode]',
+                            );
+
                             // PhoneService phoneService = PhoneService();
                             List res = await PhoneService().makeAdvancedRequest(
                               code,
@@ -1184,7 +1289,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                     ?.cast<Map<String, dynamic>>();
 
                             signature = signature.copyWith(
-                              usdCode: _codeTextController.text,
+                              usdCode: activeUssdCode,
                               acceptedProcedure: acceptedProcedure,
                               lastProcedure: acceptedProcedure,
                             );

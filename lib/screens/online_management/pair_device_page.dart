@@ -1,15 +1,12 @@
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/dialogs/show_error_dialog.dart';
 import 'package:bsat/components/dialogs/success_dialog.dart';
-import 'package:bsat/components/header.dart';
 import 'package:bsat/screens/online_management/search_device.dart';
-import 'package:bsat/services/auth_service.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 class PairDevicePage extends StatefulWidget {
   const PairDevicePage({super.key});

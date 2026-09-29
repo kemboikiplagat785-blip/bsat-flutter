@@ -51,7 +51,30 @@ class SQLiteService {
     } catch (_) {}
 
     try {
-      await db.execute('ALTER TABLE ussdCodes ADD COLUMN offerName TEXT');
+      await db.execute('ALTER TABLE transactions ADD COLUMN runOn TEXT');
+    } catch (_) {}
+
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN firstFailedTimeStamp INTEGER',
+      );
+    } catch (_) {}
+
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN forwardingJobId TEXT',
+      );
+    } catch (_) {}
+
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN forwardingSenderDeviceName TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN forwardingRecipientDeviceName TEXT',
+      );
     } catch (_) {}
   }
 
@@ -84,37 +107,59 @@ class SQLiteService {
     // already know will fail on this device would spam the device log on
     // every single app start and offers-list refresh.
     bool hasLegacyStartEndTime = false;
+    bool hasLegacyCode = false;
+
     try {
       final columns = await db.rawQuery('PRAGMA table_info(ussdCodes)');
       final columnNames = columns.map((c) => c['name']).toSet();
+
       hasLegacyStartEndTime =
           columnNames.contains('startTime') && columnNames.contains('endTime');
+
+      hasLegacyCode = columnNames.contains('code');
     } catch (_) {}
 
     try {
-      if (hasLegacyStartEndTime) {
+      if (hasLegacyCode && hasLegacyStartEndTime) {
         await db.execute('''
-          INSERT INTO ussdCodeVariants(ussdCodeId, code, startTime, endTime)
-          SELECT id, code, startTime, endTime
-          FROM ussdCodes u
-          WHERE code IS NOT NULL AND code != ''
-            AND NOT EXISTS (
-              SELECT 1 FROM ussdCodeVariants v WHERE v.ussdCodeId = u.id
-            )
-        ''');
-      } else {
-        // Backfilled variants get NULL start/end time, i.e. "always
-        // active", which is correct for offers that never had time-of-day
-        // restrictions.
+      INSERT INTO ussdCodeVariants(
+        ussdCodeId,
+        code,
+        startTime,
+        endTime
+      )
+      SELECT
+        id,
+        code,
+        startTime,
+        endTime
+      FROM ussdCodes u
+      WHERE code IS NOT NULL
+        AND code != ''
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ussdCodeVariants v
+          WHERE v.ussdCodeId = u.id
+        )
+    ''');
+      } else if (hasLegacyCode) {
         await db.execute('''
-          INSERT INTO ussdCodeVariants(ussdCodeId, code)
-          SELECT id, code
-          FROM ussdCodes u
-          WHERE code IS NOT NULL AND code != ''
-            AND NOT EXISTS (
-              SELECT 1 FROM ussdCodeVariants v WHERE v.ussdCodeId = u.id
-            )
-        ''');
+      INSERT INTO ussdCodeVariants(
+        ussdCodeId,
+        code
+      )
+      SELECT
+        id,
+        code
+      FROM ussdCodes u
+      WHERE code IS NOT NULL
+        AND code != ''
+        AND NOT EXISTS (
+          SELECT 1
+          FROM ussdCodeVariants v
+          WHERE v.ussdCodeId = u.id
+        )
+    ''');
       }
     } catch (_) {}
 
@@ -171,7 +216,10 @@ class SQLiteService {
         source TEXT,
         timeStamp INTEGER,
         canRetry INTEGER,
-        firstFailedTimeStamp INTEGER
+        firstFailedTimeStamp INTEGER,
+        forwardingJobId TEXT,
+        forwardingSenderDeviceName TEXT,
+        forwardingRecipientDeviceName TEXT
       )
     ''');
 
@@ -667,7 +715,8 @@ class SQLiteService {
       } catch (_) {}
 
       try {
-        await db.execute('ALTER TABLE forwarded ADD COLUMN paused INTEGER DEFAULT 0');
+        await db.execute(
+            'ALTER TABLE forwarded ADD COLUMN paused INTEGER DEFAULT 0');
       } catch (_) {}
 
       try {

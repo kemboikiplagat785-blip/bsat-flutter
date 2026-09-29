@@ -1,9 +1,6 @@
-import 'dart:ffi';
-
 import 'package:another_telephony/telephony.dart';
 import 'package:bsat/services/admin_management_service.dart';
 import 'package:bsat/services/phone_service.dart';
-import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';

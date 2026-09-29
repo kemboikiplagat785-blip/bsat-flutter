@@ -12,14 +12,11 @@ import 'package:bsat/utils/numbers.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:widgets_easier/widgets_easier.dart';
 
 import '../../../../components/app_paused.dart';
-import '../../../../components/dialogs/change_category_dialog.dart';
 import '../../../../components/no_subscription.dart';
 import '../../../../components/tool_button.dart';
 import 'dashboard_view_model.dart';
-import '../../settings/settings.dart';
 
 /// Main dashboard surface: greets the agent, shows KPIs, and links to tools.
 class DashBoardPage extends StatefulWidget {
@@ -566,16 +563,29 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           'accentColor': kDarkerGreen,
                                         },
                                         {
-                                          'count': vm.forwardedCount,
+                                          'count': vm.forwardedPendingCount,
                                           'icon': const Icon(
-                                              CupertinoIcons
-                                                  .arrow_turn_right_up,
-                                              color: kPrimaryColor,
-                                              size: 14),
-                                          'query':
-                                              TransactionStatuses.forwarded,
-                                          'label': 'forwarded',
-                                          'accentColor': kDarkerGreen,
+                                            CupertinoIcons.clock,
+                                            color: Color(0xFFFFA500),
+                                            size: 14,
+                                          ),
+                                          'query': TransactionStatuses
+                                              .forwardedPending,
+                                          'label': 'Forwarded (pending)',
+                                          'accentColor': Color(0xFFFFA500),
+                                        },
+                                        {
+                                          'count': vm.forwardedConfirmedCount,
+                                          'icon': const Icon(
+                                            CupertinoIcons
+                                                .checkmark_circle_fill,
+                                            color: Color(0xFF00FF88),
+                                            size: 14,
+                                          ),
+                                          'query': TransactionStatuses
+                                              .forwardedConfirmed,
+                                          'label': 'Forwarded (confirmed)',
+                                          'accentColor': Color(0xFF00FF88),
                                         },
                                         {
                                           'count': vm.failedCount,
@@ -767,7 +777,22 @@ class _DashBoardPageState extends State<DashBoardPage>
                                     vm.recentTransactions[0]['time'],
                                     vm.recentTransactions[0]['id'],
                                     vm.recentTransactions[0]['ussdDialed'],
-                                    vm.recentTransactions[0]['source'],
+                                    (vm.recentTransactions[0]['status'] ==
+                                                TransactionStatuses.forwarded ||
+                                            vm.recentTransactions[0]
+                                                    ['status'] ==
+                                                TransactionStatuses
+                                                    .forwardedPending ||
+                                            vm.recentTransactions[0]
+                                                    ['status'] ==
+                                                TransactionStatuses
+                                                    .forwardedConfirmed ||
+                                            vm.recentTransactions[0]
+                                                    ['status'] ==
+                                                TransactionStatuses
+                                                    .forwardedOnline)
+                                        ? 'Forwarded'
+                                        : vm.recentTransactions[0]['source'],
                                     vm.recentTransactions[0]['simSubId'],
                                     vm.recentTransactions[0]['canRetry'] ?? 0,
                                     lineLimit: 1,

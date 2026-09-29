@@ -109,8 +109,28 @@ class MainActivity : FlutterActivity() {
                 sendNativeLog("debug", "UssdSession", "UssdSteps: ${UssdSession.ussdSteps}")
 
                 val subscriptionId = call.argument<Int>("subscriptionId") ?: 0
-                val firstCode = "*${UssdSession.ussdSteps[0]}#"
-                UssdSession.ussdDialed = firstCode
+
+                if (UssdSession.ussdSteps.isEmpty()) {
+                 Log.e(
+                   "BSAT_USSD",
+                 "Cannot start USSD: sequence is empty. subscriptionId=$subscriptionId"
+            )
+
+             UssdSession.isRunning = false
+             UssdSession.currentStepIndex = 0
+             UssdSession.ussdSteps.clear()
+             UssdSession.usedUssdSteps.clear()
+
+             result.error(
+                 "EMPTY_USSD_SEQUENCE",
+                 "USSD sequence is empty. No USSD code was provided.",
+                  null
+    )
+    return@setMethodCallHandler
+}
+
+             val firstCode = "*${UssdSession.ussdSteps[0]}#"
+             UssdSession.ussdDialed = firstCode
 
                 Log.d("BSAT_USSD", "About to dial: $firstCode on subscriptionId=$subscriptionId")
 
@@ -298,3 +318,5 @@ class MainActivity : FlutterActivity() {
         UssdSession.wholeConversation.clear()
     }
 }
+
+

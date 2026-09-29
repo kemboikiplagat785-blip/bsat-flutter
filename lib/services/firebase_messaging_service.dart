@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:developer' as developer;
 
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/main.dart';
@@ -10,7 +10,6 @@ import 'package:bsat/services/offers_transfer_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:bsat/services/phone_service.dart';
 import 'package:another_telephony/telephony.dart';
@@ -18,10 +17,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
-import 'package:package_info_plus/package_info_plus.dart';
 
 import '../utils/constants.dart';
 import 'payments.dart';
@@ -87,9 +84,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     }
   }
 
-  print("Hello fcm");
+  developer.log('Hello fcm');
 
-  print(
+  developer.log(
       "Received FCM message with type: $type, data: ${message.data}, notification: ${message.notification}");
 
   if (await _processIncomingAcknowledgement(message, type)) {
@@ -97,7 +94,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
   }
 
   // return acknowledgement first
-  print(
+  developer.log(
       "Received FCM message with type: $type, data: ${message.data}, notification: ${message.notification}");
 
   await _sendImmediateAck(message, originalType: type);
@@ -133,6 +130,10 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     case 'forwarded_sms':
       // Handle the forwarded SMS case
       String body = message.data['body'] ?? message.notification?.body ?? "";
+      final String? forwardingJobId =
+          message.data['forwardingJobId']?.toString();
+      final String? forwardingSenderDeviceName =
+          message.data['senderDeviceName']?.toString();
       if (!await subscribedToOnline("Online")) {
         // If not subscribed to Online,
         if (!(await PaymentOps().deductSingleToken())) {
@@ -151,7 +152,11 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         }
       }
       if (body.isNotEmpty) {
-        await TransactionController().makeTransactionGivenSmsBody(body);
+        await TransactionController().makeTransactionGivenSmsBody(
+          body,
+          forwardingJobId: forwardingJobId,
+          forwardingSenderDeviceName: forwardingSenderDeviceName,
+        );
       }
       break;
 
@@ -480,6 +485,7 @@ Future<void> _sendImmediateAck(
     'messageId': message.messageId?.toString() ?? '',
     'requestId': message.data['requestId']?.toString() ?? '',
     'transactionId': message.data['transactionId']?.toString() ?? '',
+    'forwardingJobId': message.data['forwardingJobId']?.toString() ?? '',
     'originalType': originalType ?? '',
     'status': 'received',
     'receivedAt': DateTime.now().millisecondsSinceEpoch.toString(),
@@ -507,7 +513,7 @@ Future<void> _sendImmediateAck(
 
   try {
     await BackendService().post(callbackUrl, body: postBody);
-    print("Ack sent ");
+    debugPrint('Ack sent');
   } catch (e) {
     if (kDebugMode) {
       print('Failed to send immediate message ack: $e');
@@ -525,9 +531,9 @@ Future<bool> _processIncomingAcknowledgement(
 
   var data = message.data;
 
-  print("${data['body']}");
+  debugPrint("${data['body']}");
 
-  print("Received ack from backend ${data['body']}");
+  debugPrint("Received ack from backend ${data['body']}");
 
   final String normalizedType = (type ?? '').toUpperCase();
   final String originalType =
@@ -539,12 +545,24 @@ Future<bool> _processIncomingAcknowledgement(
   }
 
   if (normalizedType == 'MESSAGE_ACK') {
+    debugPrint(
+      'MESSAGE_ACK DEBUG: '
+      'originalType=${message.data['originalType']}, '
+      'forwardingJobId=${message.data['forwardingJobId']}, '
+      'transactionId=${message.data['transactionId']}, '
+      'status=${message.data['status']}, '
+      'data=${message.data}',
+    );
+
     await _handleGenericMessageAck(message);
 
     switch (originalType) {
       case 'PROCESS_ALT_REQUEST':
-      case 'FORWARDED_SMS':
         await _handleProcessAltRequestAck(message);
+        break;
+
+      case 'FORWARDED_SMS':
+        await _handleForwardedSmsAck(message);
         break;
       case 'REQUEST_CONTACTS_FROM_DEVICE':
         await _handleForwardedSmsAck(message);
@@ -684,7 +702,112 @@ Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
 }
 
 Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
-  await _persistAckState(message, ackScope: 'forwarded_sms');
+  final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
+
+  final ackKind = message.data['ackKind']?.toString().toLowerCase() ?? '';
+
+  final status = message.data['status']?.toString().toLowerCase() ?? '';
+
+  debugPrint(
+    'FORWARDED_SMS ACK: '
+    'ackKind=$ackKind, '
+    'status=$status, '
+    'forwardingJobId=$forwardingJobId',
+  );
+
+  if (forwardingJobId.isEmpty) {
+    debugPrint(
+      'FORWARDED_SMS ACK received without forwardingJobId',
+    );
+
+    await _persistAckState(
+      message,
+      ackScope: 'forwarded_sms',
+    );
+
+    return;
+  }
+
+  // A normal "received" ACK only means Phone B received
+  // the forwarded SMS. It MUST NOT confirm Phone A.
+  if (ackKind == 'received' || status == 'received') {
+    debugPrint(
+      'FORWARDED_SMS: received ACK only. '
+      'Keeping transaction forwarded-pending.',
+    );
+
+    await _persistAckState(
+      message,
+      ackScope: 'forwarded_sms',
+    );
+
+    return;
+  }
+
+  // Only an explicit transaction confirmation is allowed
+  // to change Phone A to forwarded-confirmed.
+  if (ackKind != 'confirmed' &&
+      status != TransactionStatuses.doneConfirmed &&
+      status != 'transaction-confirmed') {
+    debugPrint(
+      'FORWARDED_SMS: non-confirmation ACK. '
+      'Keeping transaction forwarded-pending.',
+    );
+
+    await _persistAckState(
+      message,
+      ackScope: 'forwarded_sms',
+    );
+
+    return;
+  }
+
+  final beforeAckRows = await SQLiteService().queryCustom(
+    'transactions',
+    'forwardingJobId = ?',
+    [forwardingJobId],
+  );
+
+  debugPrint(
+    'FORWARDED_SMS CONFIRMATION LOOKUP: '
+    'forwardingJobId=$forwardingJobId, '
+    'rows=$beforeAckRows',
+  );
+
+  if (beforeAckRows.isEmpty) {
+    debugPrint(
+      'FORWARDED_SMS CONFIRMATION: '
+      'No transaction found for forwardingJobId=$forwardingJobId',
+    );
+
+    await _persistAckState(
+      message,
+      ackScope: 'forwarded_sms',
+    );
+
+    return;
+  }
+
+  final updatedRows = await SQLiteService().updateStuff(
+    {
+      'status': TransactionStatuses.forwardedConfirmed,
+      'canRetry': 0,
+    },
+    'forwardingJobId = ?',
+    [forwardingJobId],
+    'transactions',
+  );
+
+  debugPrint(
+    'FORWARDED_SMS CONFIRMATION UPDATE: '
+    'forwardingJobId=$forwardingJobId, '
+    'updatedRows=$updatedRows',
+  );
+
+  await _persistAckState(
+    message,
+    ackScope: 'forwarded_sms',
+  );
 }
 
 Future<void> _handleDataRequestAck(RemoteMessage message) async {

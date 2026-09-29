@@ -60,6 +60,11 @@ class PhoneService {
     CodeSignature? codeSignature,
     bool isGettingSignature = false,
   }) async {
+    debugPrint(
+        "USSD DEBUG: makeAdvancedRequest received code=[$code], subscriptionId=$subscriptionId");
+    debugPrint("USSD DEBUG: makeAdvancedRequest caller stack:");
+    debugPrint(
+        "USSD DEBUG: CALLER STACK => ${StackTrace.current.toString().replaceAll("\n", " | ")}");
     final sims = await getAllSimSubids();
     if (!(sims.contains(subscriptionId)) || subscriptionId == -1) {
       subscriptionId = (await getAllSimSubids()).first;
@@ -84,7 +89,7 @@ class PhoneService {
       //   return [res, TransactionStatuses.advancedQueue];
       // }
 
-      print("Advanced USSD response: $res");
+      debugPrint("Advanced USSD response: $res");
 
       if (!isGettingSignature) {
         if (res.contains(RegExp(
@@ -128,11 +133,13 @@ class PhoneService {
                 .toList()
             : [],
       ];
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint("UssdSession: Error sending code in makeAdvancedRequest: $e");
+      debugPrint("UssdSession: StackTrace: $stackTrace");
+
       return [
-        "Error sending code: Advanced Error ${TransactionStatuses.error} MissingPluginException",
-        TransactionStatuses.error
+        "Error sending code: $e",
+        TransactionStatuses.error,
       ];
     }
   }
@@ -222,7 +229,7 @@ class PhoneService {
     }
 // You can make this configurable if needed
     try {
-      print(
+      debugPrint(
           "UssdSession(fl): Sending USSD code: $fullCode on sim with subscriptionId: $subscriptionId, precedure:${CodeSignature.simpleProcedure(codeSignature?.acceptedProcedure ?? [])}");
       final result = await platform.invokeMethod(
         'runUssdSequence',
@@ -238,31 +245,28 @@ class PhoneService {
           "isGettingSignature": isGettingSignature,
         },
       );
-      print(
+      debugPrint(
           "UssdSession(fl): Result: $result for code: $fullCode on sim with subscriptionId: $subscriptionId");
 
       if (result == null) return <Map<String, dynamic>>[];
 
       if (result is List) {
         return result.map<Map<String, dynamic>>((item) {
-          if (item is Map) return Map<String, dynamic>.from(item);
+          if (item is Map) {
+            return Map<String, dynamic>.from(item);
+          }
           return {"value": item};
         }).toList();
       }
 
-      // If platform returned a single map-like object
-      // if (result is Map) {
-      //   return [Map<String, dynamic>.from(result)];
-      // }
-
-      // Fallback: wrap primitive/string result
-      if (result is String || result is num || result is bool) {
-        return [
-          {"value": result}
-        ];
+      if (result is Map) {
+        return [Map<String, dynamic>.from(result)];
       }
 
-      return [Map<String, dynamic>.from(result)];
+// Fallback: wrap primitive/string result
+      return [
+        {"value": result}
+      ];
     } finally {
       isRunning = false;
     }

@@ -5,10 +5,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../utils/constants.dart';
-import '../transactions/transaction_history.dart';
-import '../settings/settings.dart';
-import '../stats/statistics.dart';
-import '../messaging/send_message_page.dart';
 import 'data_page.dart';
 
 class HomePage extends StatefulWidget {

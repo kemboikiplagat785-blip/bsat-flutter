@@ -6,16 +6,12 @@ import 'package:another_telephony/telephony.dart';
 import 'package:bsat/models/transaction.dart';
 import 'package:bsat/services/auth_service.dart';
 import 'package:bsat/services/backend_service.dart';
-import 'package:call_log/call_log.dart';
 import 'package:bsat/services/contacts_service.dart';
 import 'package:bsat/services/payments.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../models/client.dart';
 import '../models/code_signature.dart';
@@ -23,6 +19,7 @@ import '../models/transaction_message.dart';
 import '../models/ussd_code.dart';
 import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
+import '../utils/forwarding_job_id.dart';
 
 // import '../services/skills.dart';
 import '../services/skills.dart';
@@ -37,8 +34,6 @@ import '../services/phone_service.dart';
 class TransactionController {
   final PhoneService _phoneService = PhoneService();
   final SQLiteService _sqliteService = SQLiteService();
-  static final bool _isProcessingMaskedFromCallLogs = false;
-
   final _paymentOps = PaymentOps();
 
   final _sharedPreferencesService = SharedPreferencesService();
@@ -54,19 +49,82 @@ class TransactionController {
   /// 7) Guardrails: pause inactive offers; enqueue advanced calls if app inactive.
   /// 8) Execute USSD: advanced or standard dial; derive transaction status.
   /// 9) Persist result to SQLite, emit replies, and auto-save contact when enabled.
+  ///
+  Future<void> _sendForwardingConfirmation({
+    required String forwardingJobId,
+    required String recipientDeviceName,
+    String? transactionId,
+  }) async {
+    final senderDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? '';
 
-  Future<int?> makeTransactionGivenSmsBody(String smsBody,
-      {String? address}) async {
+    if (senderDeviceName.isEmpty || recipientDeviceName.isEmpty) {
+      debugPrint(
+        'FORWARDED_SMS CONFIRMATION: '
+        'Missing sender/recipient device name. '
+        'sender=$senderDeviceName, recipient=$recipientDeviceName',
+      );
+      return;
+    }
+
+    try {
+      final result = await BackendService().post(
+        '/api/fcm/send-secure',
+        body: {
+          'title': 'BSAT Online Forwarding',
+          'body': 'Forwarded transaction confirmed',
+          'senderDeviceName': senderDeviceName,
+          'recipientDeviceName': recipientDeviceName,
+          'data': {
+            'type': 'forwarded_sms_ack',
+            'ackKind': 'confirmed',
+            'status': TransactionStatuses.doneConfirmed,
+            'forwardingJobId': forwardingJobId,
+            'transactionId': transactionId ?? '',
+            'senderDeviceName': senderDeviceName,
+            'recipientDeviceName': recipientDeviceName,
+          },
+        },
+      );
+
+      debugPrint(
+        'FORWARDED_SMS CONFIRMATION SENT: '
+        'jobId=$forwardingJobId, '
+        'from=$senderDeviceName, '
+        'to=$recipientDeviceName, '
+        'result=$result',
+      );
+    } catch (e) {
+      debugPrint(
+        'FORWARDED_SMS CONFIRMATION FAILED: $e',
+      );
+    }
+  }
+
+  Future<int?> makeTransactionGivenSmsBody(
+    String smsBody, {
+    String? address,
+    String? forwardingJobId,
+    String? forwardingSenderDeviceName,
+  }) async {
     TransactionMessage fakeMessage = TransactionMessage(
       body: smsBody,
       date: DateTime.now().millisecondsSinceEpoch,
       address: address,
     );
 
-    return await makeTransaction(fakeMessage);
+    return await makeTransaction(
+      fakeMessage,
+      forwardingJobId: forwardingJobId,
+      forwardingSenderDeviceName: forwardingSenderDeviceName,
+    );
   }
 
-  Future<int?> makeTransaction(TransactionMessage smsMessage) async {
+  Future<int?> makeTransaction(
+    TransactionMessage smsMessage, {
+    String? forwardingJobId,
+    String? forwardingSenderDeviceName,
+  }) async {
     // if (DateTime.now().millisecondsSinceEpoch > 1772303182000) return;
 
     bool autoSaveContacts =
@@ -263,7 +321,7 @@ class TransactionController {
       );
     }
 
-    List<dynamic> USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive =
+    List<dynamic> ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive =
         await get0USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive(
       amount,
       number,
@@ -276,19 +334,19 @@ class TransactionController {
     );
 
     if (canCompound[3]) {
-      USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive = canCompound;
+      ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive = canCompound;
       amount = canCompound[6];
     }
 
-    if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0]
+    if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0]
         .toString()
         .isEmpty) {
-      if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive.length > 6) {
+      if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive.length > 6) {
         transactionID = await forwardIfNeeded(
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6],
+          ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6],
           trimmedBody,
           alterMpesaMessage(smsMessage.body ?? "",
-              USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6]),
+              ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6]),
           mpesaCode,
           number,
           name,
@@ -299,7 +357,7 @@ class TransactionController {
         }
       }
 
-      if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0]
+      if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0]
           .toString()
           .isEmpty) {
         int forwardingLimit =
@@ -341,10 +399,10 @@ class TransactionController {
         );
       }
 
-      amount = USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[6];
+      amount = ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6];
     }
 
-    if (!USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[5]) {
+    if (!ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[5]) {
       processReply(
         number,
         TransactionStatuses.paused,
@@ -366,9 +424,9 @@ class TransactionController {
         smsMessage.body ?? "",
         mpesaCode,
         number,
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
         amount,
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
         status: TransactionStatuses.paused,
         reply: 'Offer paused. Please check/retry.',
         canRetry: false,
@@ -415,9 +473,9 @@ class TransactionController {
           smsMessage.body ?? "",
           mpesaCode,
           number,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+          ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
           amount,
-          USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+          ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
           source: name,
           canRetry: true,
         );
@@ -426,7 +484,7 @@ class TransactionController {
 
     List requestResponse = [];
 
-    if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[4]) {
+    if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]) {
       debugPrint('advanced starting');
 
       Map<String, dynamic> signatureMap = (await _sqliteService.queryCustom(
@@ -445,25 +503,25 @@ class TransactionController {
       }
 
       requestResponse = await PhoneService().makeAdvancedRequest(
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
         codeSignature: signatureMap.isEmpty ? null : signature,
       );
 
       requestResponse[1] = await transactionStatus(requestResponse);
 
       if (requestResponse[1] == TransactionStatuses.error) {
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[2] = true;
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[2] = true;
       }
     } else {
       requestResponse = await PhoneService().makeMyRequest(
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
       );
       requestResponse[1] = await transactionStatus(requestResponse);
     }
 
-    print("Rechecking status after USSD execution: ${requestResponse[1]}");
+    debugPrint("Rechecking status after USSD execution: ${requestResponse[1]}");
 
     if (requestResponse[1] == TransactionStatuses.hasOkoa) {
       processReply(
@@ -479,9 +537,9 @@ class TransactionController {
         smsMessage.body ?? "",
         mpesaCode,
         number,
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
         amount,
-        USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
         status: TransactionStatuses.hasOkoa,
         reply: requestResponse[0],
         canRetry: false,
@@ -499,10 +557,12 @@ class TransactionController {
       {
         'initialMessage': smsMessage.body,
         'transactionId': mpesaCode,
+        'forwardingJobId': forwardingJobId,
+        'forwardingSenderDeviceName': forwardingSenderDeviceName,
         'number': number,
         'date': getNormalDate(DateTime.now()),
         'time': getNormalTime(DateTime.now()),
-        'ussdDialed': USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[0],
+        'ussdDialed': ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
         'ussdReply': requestResponse[0],
         'amount': amount,
         'smsDate': getNormalDate(
@@ -512,11 +572,11 @@ class TransactionController {
           DateTime.fromMillisecondsSinceEpoch(smsMessage.date ?? 0),
         ),
         'status': requestResponse[1] == "" ? "No reply" : requestResponse[1],
-        'simSubId': USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[1],
+        'simSubId': ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
         'source': name,
         'timeStamp': DateTime.now().millisecondsSinceEpoch,
         'canRetry':
-            USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5isActive[2] ? 1 : 0,
+            ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[2] ? 1 : 0,
       },
       'transactions',
     );
@@ -543,6 +603,19 @@ class TransactionController {
       amount,
     );
 
+// ONLINE FORWARDING: notify Phone A only after Phone B confirms the transaction.
+    if (requestResponse[1] == TransactionStatuses.doneConfirmed &&
+        forwardingJobId != null &&
+        forwardingJobId.isNotEmpty &&
+        forwardingSenderDeviceName != null &&
+        forwardingSenderDeviceName.isNotEmpty) {
+      await _sendForwardingConfirmation(
+        forwardingJobId: forwardingJobId,
+        recipientDeviceName: forwardingSenderDeviceName,
+        transactionId: mpesaCode,
+      );
+    }
+
     retryAll(true);
     return transactionID;
   }
@@ -557,6 +630,7 @@ class TransactionController {
     bool autoSaveContacts, {
     String? status,
     int? txId,
+    String? forwardingRecipientDeviceName,
   }) async {
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
@@ -626,114 +700,365 @@ class TransactionController {
       if (amount > 0) {
         List<Map<String, dynamic>> forwardingDevices =
             await _sqliteService.queryAll('forwardingDevices');
+
         if (forwardingDevices.isNotEmpty) {
           final senderDeviceName =
               await SharedPreferencesService().getDeviceName() ??
                   "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
 
-          for (var device in forwardingDevices) {
-            if ((device['paused'] ?? 0) != 1) {
-              String recipientDeviceName = device['device_name'] ??
-                  "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
-              String amountsString = device['amounts_to_forward'] ?? "";
-              // Remove brackets and quotes if it was stored as JSON string
-              amountsString = amountsString.replaceAll(RegExp(r'[\[\]"]'), '');
-              List<String> amounts = amountsString.isEmpty
-                  ? []
-                  : amountsString.split(',').map((e) => e.trim()).toList();
+          // ------------------------------------------------------------
+          // STEP 1: Build the list of devices that are allowed to
+          // forward this amount AND are currently online.
+          // ------------------------------------------------------------
+          final List<Map<String, dynamic>> eligibleDevices = [];
 
-              if (amounts.contains(amount.toString())) {
-                if (await AuthService().pingDevice(recipientDeviceName)) {
-                } else {
-                  return await dontProcess(
-                    smsMessageBody,
-                    mpesaCode,
-                    number,
-                    '',
-                    amount,
-                    -1,
-                    status: TransactionStatuses.error,
-                    reply:
-                        'Forwarding failed: Phone offline of server not reachable. Will retry later.',
-                    canRetry: true,
-                    source: name,
-                  );
-                }
+          for (final device in forwardingDevices) {
+            if ((device['paused'] ?? 0) == 1) {
+              continue;
+            }
 
-                int? transactionId = txId ??
-                    await dontProcess(
-                      smsMessageBody,
-                      mpesaCode,
-                      number,
-                      '',
-                      amount,
-                      -1,
-                      status: TransactionStatuses.done,
-                      reply: 'Forwarding to device',
-                      canRetry: true,
-                      source: name,
-                    );
+            final recipientDeviceName = device['device_name']?.toString() ??
+                "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
 
-                final result = await BackendService().post(
-                  '/api/fcm/send-secure',
-                  body: {
-                    'title': "BSAT Online Forwarding",
-                    'body': smsMessageBody,
-                    'senderDeviceName': senderDeviceName,
-                    'recipientDeviceName': recipientDeviceName,
-                    'data': {
-                      'type': 'forwarded_sms',
-                      'body': smsMessageBody,
-                      'title': "Forwarded Message",
-                      'messageId': mpesaCode,
-                      'transactionId': transactionId,
-                      'senderDeviceName': senderDeviceName,
-                    }
-                  },
-                );
+            String amountsString =
+                device['amounts_to_forward']?.toString() ?? "";
 
-                String messageId = result['messageId'] ?? "";
+            amountsString = amountsString.replaceAll(RegExp(r'[\[\]"]'), '');
 
-                print("MessageID: $messageId");
+            final List<String> amounts = amountsString.isEmpty
+                ? []
+                : amountsString.split(',').map((e) => e.trim()).toList();
 
-                if (result['success'] != true) {
-                  await _sqliteService.updateStuff(
-                      {
-                        'status': TransactionStatuses.error,
-                        'ussdReply':
-                            'Forwarding failed: Phone offline or server not reachable. Will retry later.',
-                      },
-                      'id = ?',
-                      [transactionId],
-                      'transactions');
+            if (!amounts.contains(amount.toString())) {
+              continue;
+            }
 
-                  return transactionId;
-                }
+            // Use the existing connectivity check.
+            final isOnline =
+                await AuthService().pingDevice(recipientDeviceName);
 
-                await _sqliteService.updateStuff(
-                    {
-                      'status': TransactionStatuses.done,
-                      'ussdReply':
-                          'Forwarded to ${device['device_name']} (ID: ${device['device_id']})',
-                    },
-                    'id = ?',
-                    [transactionId],
-                    'transactions');
+            if (!isOnline) {
+              debugPrint(
+                'ONLINE FORWARDING: '
+                '$recipientDeviceName is offline for amount $amount',
+              );
+              continue;
+            }
 
-                await processReply(
-                  number,
-                  TransactionStatuses.forwardedOnline,
-                  name.split(' ')[0],
-                  name.trim().split(RegExp(r'\s+')).length > 1
-                      ? name.trim().split(RegExp(r'\s+'))[1]
-                      : '',
-                  amount,
-                );
+            eligibleDevices.add(device);
+          }
 
-                return transactionId;
-              }
+          // ------------------------------------------------------------
+          // STEP 2: Load the existing transaction, if this is a retry.
+          // ------------------------------------------------------------
+          Map<String, dynamic>? existingTransaction;
+
+          if (txId != null) {
+            final existingRows = await _sqliteService.queryCustom(
+              'transactions',
+              'id = ?',
+              [txId],
+            );
+
+            if (existingRows.isNotEmpty) {
+              existingTransaction = existingRows.first;
             }
           }
+
+          final savedRecipientDeviceName = forwardingRecipientDeviceName ??
+              existingTransaction?['forwardingRecipientDeviceName']?.toString();
+
+          final savedForwardingJobId =
+              existingTransaction?['forwardingJobId']?.toString();
+
+          // ------------------------------------------------------------
+          // STEP 3: Select the recipient.
+          //
+          // RETRY:
+          //   Always reuse the saved recipient.
+          //
+          // NEW TRANSACTION:
+          //   Use round-robin for this specific amount.
+          // ------------------------------------------------------------
+          Map<String, dynamic>? selectedDevice;
+          String? recipientDeviceName;
+          int? selectedIndex;
+          bool isRetryWithSavedRecipient = savedRecipientDeviceName != null &&
+              savedRecipientDeviceName.isNotEmpty;
+
+          if (isRetryWithSavedRecipient) {
+            // ----------------------------------------------------------
+            // RETRY PATH
+            //
+            // Do NOT rotate. Do NOT choose another phone.
+            // ----------------------------------------------------------
+            recipientDeviceName = savedRecipientDeviceName;
+
+            for (final device in forwardingDevices) {
+              final deviceName = device['device_name']?.toString();
+
+              if (deviceName == recipientDeviceName) {
+                selectedDevice = device;
+                break;
+              }
+            }
+
+            debugPrint(
+              'ONLINE FORWARDING RETRY: '
+              'Reusing recipient=$recipientDeviceName '
+              'for transactionId=$txId',
+            );
+
+            // Important:
+            // If the original recipient is currently offline, do not
+            // silently redirect this transaction to another phone.
+            final recipientOnline =
+                await AuthService().pingDevice(recipientDeviceName);
+
+            if (!recipientOnline) {
+              debugPrint(
+                'ONLINE FORWARDING RETRY: '
+                'Original recipient $recipientDeviceName is offline. '
+                'Will NOT rotate to another device.',
+              );
+
+              if (txId != null) {
+                await _sqliteService.updateStuff(
+                  {
+                    'status': TransactionStatuses.error,
+                    'ussdReply': 'Forwarding failed: original forwarding device '
+                        '$recipientDeviceName is offline. Will retry later.',
+                  },
+                  'id = ?',
+                  [txId],
+                  'transactions',
+                );
+              }
+
+              return txId;
+            }
+          } else {
+            // ----------------------------------------------------------
+            // NEW TRANSACTION PATH
+            //
+            // Round-robin index is stored separately for each amount.
+            // ----------------------------------------------------------
+            if (eligibleDevices.isEmpty) {
+              debugPrint(
+                'ONLINE FORWARDING: '
+                'No online forwarding device available for amount $amount',
+              );
+
+              return null;
+            }
+
+            final storedIndex = await SharedPreferencesService()
+                    .getOnlineForwardingIndex(amount) ??
+                0;
+
+            selectedIndex = storedIndex % eligibleDevices.length;
+
+            selectedDevice = eligibleDevices[selectedIndex];
+
+            recipientDeviceName = selectedDevice['device_name']?.toString() ??
+                "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
+
+            debugPrint(
+              'ONLINE FORWARDING ROUND-ROBIN: '
+              'amount=$amount '
+              'eligible=${eligibleDevices.length} '
+              'storedIndex=$storedIndex '
+              'selectedIndex=$selectedIndex '
+              'recipient=$recipientDeviceName',
+            );
+          }
+
+          // ------------------------------------------------------------
+          // STEP 4: Reuse or create the forwarding job ID.
+          // ------------------------------------------------------------
+          String? forwardingJobId = savedForwardingJobId;
+
+          if (forwardingJobId != null && forwardingJobId.isNotEmpty) {
+            debugPrint(
+              'ONLINE FORWARDING RETRY: '
+              'Reusing existing forwardingJobId=$forwardingJobId '
+              'for transactionId=$txId',
+            );
+          }
+
+          forwardingJobId ??= ForwardingJobId.generate(mpesaCode: mpesaCode);
+
+          // ------------------------------------------------------------
+          // STEP 5: Create/update the local transaction.
+          // Save the selected recipient permanently so retries know
+          // exactly which phone originally received the transaction.
+          // ------------------------------------------------------------
+          int? transactionId = txId;
+
+          if (transactionId == null) {
+            transactionId = await dontProcess(
+              smsMessageBody,
+              mpesaCode,
+              number,
+              '',
+              amount,
+              -1,
+              status: TransactionStatuses.forwardedPending,
+              reply: 'Forwarding to device',
+              canRetry: true,
+              source: name,
+              forwardingJobId: forwardingJobId,
+              forwardingSenderDeviceName: senderDeviceName,
+              forwardingRecipientDeviceName: recipientDeviceName,
+            );
+          } else {
+            final Map<String, dynamic> updateData = {
+              'forwardingJobId': forwardingJobId,
+              'status': TransactionStatuses.forwardedPending,
+              'canRetry': 1,
+              'ussdReply': 'Forwarding to device',
+            };
+
+            // Never overwrite an existing recipient during retry.
+            if (savedRecipientDeviceName == null ||
+                savedRecipientDeviceName.isEmpty) {
+              updateData['forwardingRecipientDeviceName'] = recipientDeviceName;
+            }
+
+            if (existingTransaction?['forwardingSenderDeviceName']
+                    ?.toString()
+                    .isEmpty ??
+                true) {
+              updateData['forwardingSenderDeviceName'] = senderDeviceName;
+            }
+
+            await _sqliteService.updateStuff(
+              updateData,
+              'id = ?',
+              [transactionId],
+              'transactions',
+            );
+
+            debugPrint(
+              'ONLINE FORWARDING RETRY: '
+              'transactionId=$transactionId, '
+              'forwardingJobId=$forwardingJobId, '
+              'recipient=$recipientDeviceName',
+            );
+          }
+
+          debugPrint(
+            'FORWARDING DEBUG AFTER CREATE: '
+            'transactionId=$transactionId, '
+            'forwardingJobId=$forwardingJobId, '
+            'recipient=$recipientDeviceName',
+          );
+
+          if (transactionId != null) {
+            final debugRows = await _sqliteService.queryCustom(
+              'transactions',
+              'id = ?',
+              [transactionId],
+            );
+
+            debugPrint(
+              'FORWARDING DEBUG DB ROW: $debugRows',
+            );
+          }
+
+          // ------------------------------------------------------------
+          // STEP 6: Send the forwarding message.
+          // ------------------------------------------------------------
+          final result = await BackendService().post(
+            '/api/fcm/send-secure',
+            body: {
+              'title': "BSAT Online Forwarding",
+              'body': smsMessageBody,
+              'senderDeviceName': senderDeviceName,
+              'recipientDeviceName': recipientDeviceName,
+              'data': {
+                'type': 'forwarded_sms',
+                'body': smsMessageBody,
+                'title': "Forwarded Message",
+                'messageId': mpesaCode,
+                'transactionId': transactionId,
+                'forwardingJobId': forwardingJobId,
+                'forwardingStatus': ForwardingJobStatuses.pending,
+                'senderDeviceName': senderDeviceName,
+              }
+            },
+          );
+
+          final String messageId = result['messageId'] ?? "";
+
+          debugPrint("MessageID: $messageId");
+
+          // ------------------------------------------------------------
+          // STEP 7: Backend send failed.
+          //
+          // Do NOT advance the round-robin index.
+          // ------------------------------------------------------------
+          if (result['success'] != true) {
+            await _sqliteService.updateStuff(
+              {
+                'status': TransactionStatuses.error,
+                'ussdReply':
+                    'Forwarding failed: Phone offline or server not reachable. Will retry later.',
+              },
+              'id = ?',
+              [transactionId],
+              'transactions',
+            );
+
+            return transactionId;
+          }
+
+          // ------------------------------------------------------------
+          // STEP 8: Backend send succeeded.
+          //
+          // Only NEW transactions advance the per-amount index.
+          // Retries NEVER rotate.
+          // ------------------------------------------------------------
+          if (!isRetryWithSavedRecipient &&
+              selectedIndex != null &&
+              eligibleDevices.isNotEmpty) {
+            final nextIndex = (selectedIndex + 1) % eligibleDevices.length;
+
+            await SharedPreferencesService()
+                .setOnlineForwardingIndex(amount, nextIndex);
+
+            debugPrint(
+              'ONLINE FORWARDING ROUND-ROBIN: '
+              'amount=$amount '
+              'selected=$recipientDeviceName '
+              'nextIndex=$nextIndex',
+            );
+          }
+
+          await _sqliteService.updateStuff(
+            {
+              'status': TransactionStatuses.forwardedPending,
+              'forwardingRecipientDeviceName': recipientDeviceName,
+              'ussdReply': 'Forwarded to $recipientDeviceName'
+                  '${selectedDevice != null && selectedDevice!['device_id'] != null ? ' (ID: ${selectedDevice!['device_id']})' : ''}',
+            },
+            'id = ?',
+            [transactionId],
+            'transactions',
+          );
+
+          // Preserve the existing online-forwarding flow.
+          await processReply(
+            number,
+            TransactionStatuses.forwardedOnline,
+            name.split(' ')[0],
+            name.trim().split(RegExp(r'\s+')).length > 1
+                ? name.trim().split(RegExp(r'\s+'))[1]
+                : '',
+            amount,
+          );
+
+          return transactionId;
         }
       }
     } catch (e) {
@@ -1040,7 +1365,7 @@ class TransactionController {
   Future<void> redoTransaction(
       int id, String ussdCode, int simSubId, int canRetry, String reply,
       {String? mpesaMessage, CodeSignature? codeSignature}) async {
-    print(
+    debugPrint(
         "Retrying transaction $id with code $ussdCode on sim $simSubId. Can retry: $canRetry. Previous reply: $reply");
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
 
@@ -1070,6 +1395,14 @@ class TransactionController {
 
     MyTransaction transaction = MyTransaction.fromMap(tx.first);
 
+    final forwardingJobId = tx.first['forwardingJobId']?.toString();
+
+    final forwardingSenderDeviceName =
+        tx.first['forwardingSenderDeviceName']?.toString();
+
+    final forwardingRecipientDeviceName =
+        tx.first['forwardingRecipientDeviceName']?.toString();
+
     String trimmedBody = transaction.initialMessage.length > 160
         ? transaction.initialMessage.substring(0, 160)
         : transaction.initialMessage;
@@ -1083,6 +1416,7 @@ class TransactionController {
       transaction.source,
       true,
       txId: id,
+      forwardingRecipientDeviceName: forwardingRecipientDeviceName,
     );
 
     if (newTransactionId != null) {
@@ -1180,25 +1514,27 @@ class TransactionController {
 
     //print("Redoing transaction $id with code $ussdCode on sim $simSubId");
 
-    List<dynamic> USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive =
+    List<dynamic> ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive =
         await get0USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive(
       amount,
       number,
       simSubId,
     );
 
-    print(
-        "Fetched USSD and sim info for retry: $USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive");
+    if (kDebugMode) {
+      debugPrint(
+          "Fetched USSD and sim info for retry: $ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive");
+    }
 
-    ussdCode = USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0];
-    simSubId = USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1];
+    ussdCode = ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0];
+    simSubId = ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1];
 
     List<dynamic> response = [];
 
     // //print("Is Adv 0: ${await isAdvanced(ussdCode)}");
-    // //print("is adv ${USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]}");
+    // //print("is adv ${ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]}");
 
-    if (USSDToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]) {
+    if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]) {
       bool isActive =
           await _sharedPreferencesService.getAppIsActiveState() ?? false;
 
@@ -1229,7 +1565,9 @@ class TransactionController {
             signatureQuery.isNotEmpty ? signatureQuery.first : {},
           );
 
-      print("so far so good");
+      if (kDebugMode) {
+        debugPrint("so far so good");
+      }
 
       response = await PhoneService().makeAdvancedRequest(
         ussdCode,
@@ -1240,7 +1578,9 @@ class TransactionController {
       response[1] = await transactionStatus(response);
 
       if ((response[0]).toString().contains("MissingPluginException")) {
-        print("MissingPluginException yoo");
+        if (kDebugMode) {
+          debugPrint("MissingPluginException yoo");
+        }
         int? newTxId = await transactGivenUssdAndDialSim(
           ussdCode,
           simSubId,
@@ -1271,7 +1611,9 @@ class TransactionController {
     if (response[1] == TransactionStatuses.secondAttempt) {
       String bsatMessage = "(Number Altered by BSAT): ";
       canRetry = 20;
-      print("second attempt");
+      if (kDebugMode) {
+        debugPrint("second attempt");
+      }
       Client? dbClient = await ClientService().getClientByPhone('0$number');
       if (dbClient != null &&
           dbClient.alternativePhoneNumber != null &&
@@ -1287,7 +1629,9 @@ class TransactionController {
           if (altNumber != number && altNumber > 0) {
             int? newTransactionId =
                 await makeTransactionGivenSmsBody(altMessage);
-            print("new transaction id: $newTransactionId");
+            if (kDebugMode) {
+              debugPrint("new transaction id: $newTransactionId");
+            }
             if (newTransactionId != null) {
               await purgeAndMerge(newTransactionId, id);
               // get transactionstatus of transactionId
@@ -1299,8 +1643,9 @@ class TransactionController {
                 limit: 1,
               ));
 
-              print(txs);
-
+              if (kDebugMode) {
+                debugPrint(txs.toString());
+              }
               if (txs.isNotEmpty) {
                 if (txs.first['status'] != TransactionStatuses.secondAttempt) {
                   return;
@@ -1432,7 +1777,23 @@ class TransactionController {
         id,
       ],
     );
+    if (response[1] == TransactionStatuses.doneConfirmed &&
+        forwardingJobId != null &&
+        forwardingJobId.isNotEmpty &&
+        forwardingSenderDeviceName != null &&
+        forwardingSenderDeviceName.isNotEmpty) {
+      debugPrint(
+        'FORWARDED_SMS RETRY CONFIRMED: '
+        'jobId=$forwardingJobId, '
+        'senderDevice=$forwardingSenderDeviceName',
+      );
 
+      await _sendForwardingConfirmation(
+        forwardingJobId: forwardingJobId,
+        recipientDeviceName: forwardingSenderDeviceName,
+        transactionId: id.toString(),
+      );
+    }
     if (canRetry < (retryTimes) &&
         (response[1] == TransactionStatuses.secondAttempt ||
             response[1] == TransactionStatuses.error)) {
@@ -1487,6 +1848,14 @@ class TransactionController {
       'ussdCodes',
       'amount = ? AND (fromSim = ? OR fromSim < 0)',
       [amount, fromId],
+    );
+
+    debugPrint(
+      'USSD DEBUG: Looking for ussdCodes amount=$amount, fromId=$fromId',
+    );
+
+    debugPrint(
+      'USSD DEBUG: Matching ussdCodes: $ussdCodes',
     );
 
     if (ussdCodes.isNotEmpty) {
@@ -1586,12 +1955,16 @@ class TransactionController {
     String? source,
     bool? canRetry,
     int? id,
+    String? forwardingJobId,
+    String? forwardingSenderDeviceName,
+    String? forwardingRecipientDeviceName,
   }) async {
     List<Map<String, dynamic>> transactions = await _sqliteService.queryCustom(
       'transactions',
       'id = ?',
       [id ?? -1],
     );
+
     if (transactions.isNotEmpty && id != null) {
       await _sqliteService.deleteStuff(id, 'transactions');
     }
@@ -1601,6 +1974,9 @@ class TransactionController {
         'id': id,
         'initialMessage': initialMessage,
         'transactionId': transactionId,
+        'forwardingJobId': forwardingJobId,
+        'forwardingSenderDeviceName': forwardingSenderDeviceName,
+        'forwardingRecipientDeviceName': forwardingRecipientDeviceName,
         'number': number,
         'date': getNormalDate(DateTime.now()),
         'time': getNormalTime(DateTime.now()),
@@ -2307,8 +2683,20 @@ class TransactionController {
 
     final row = ussdCodeItem.first;
 
-    // choose active variant code for this ussdCode id
+    debugPrint('USSD DEBUG: ussdCodes row for id=$id: $row');
+
+    final variants = await _sqliteService.queryCustom(
+      'ussdCodeVariants',
+      'ussdCodeId = ?',
+      [id],
+    );
+
+    debugPrint('USSD DEBUG: variants for id=$id: $variants');
+
+// choose active variant code for this ussdCode id
     String activeCode = await _getActiveVariantCode(row['id']);
+
+    debugPrint('USSD DEBUG: activeCode for id=$id: "$activeCode"');
 
     if (row['usesBongaPoints'] == null || row['usesBongaPoints'] == 0) {
       return activeCode;
@@ -2735,14 +3123,55 @@ class TransactionController {
 
   Future<void> purgeAndMerge(int toPurgeId, int toMergeId) async {
     print("PUEREGGEGEGEG");
-    MyTransaction purgeTransaction = MyTransaction.fromMap(
-        (await _sqliteService.queryOne('transactions', toPurgeId)));
+
+    // Read the original transaction before deleting it.
+    final originalTransaction =
+        await _sqliteService.queryOne('transactions', toMergeId);
+
+    // Read the newly created transaction.
+    final purgeTransaction = MyTransaction.fromMap(
+      await _sqliteService.queryOne('transactions', toPurgeId),
+    );
+
+    // The original transaction may contain the forwardingJobId.
+    // Preserve it when replacing the original transaction with
+    // the newly processed transaction.
+    // The original transaction may contain forwarding context.
+// Preserve it when replacing the original transaction with
+// the newly processed transaction.
+    final originalForwardingJobId =
+        originalTransaction['forwardingJobId']?.toString();
+
+    final originalForwardingSenderDeviceName =
+        originalTransaction['forwardingSenderDeviceName']?.toString();
+
+    if (originalForwardingJobId != null && originalForwardingJobId.isNotEmpty) {
+      purgeTransaction.forwardingJobId = originalForwardingJobId;
+
+      debugPrint(
+        'PURGE/MERGE: Preserved forwardingJobId=$originalForwardingJobId',
+      );
+    }
+
+    if (originalForwardingSenderDeviceName != null &&
+        originalForwardingSenderDeviceName.isNotEmpty) {
+      purgeTransaction.forwardingSenderDeviceName =
+          originalForwardingSenderDeviceName;
+
+      debugPrint(
+        'PURGE/MERGE: Preserved '
+        'forwardingSenderDeviceName=$originalForwardingSenderDeviceName',
+      );
+    }
 
     await _sqliteService.deleteStuff(toMergeId, 'transactions');
     await _sqliteService.deleteStuff(toPurgeId, 'transactions');
 
     purgeTransaction.id = toMergeId;
 
-    await _sqliteService.insertStuff(purgeTransaction.toMap(), 'transactions');
+    await _sqliteService.insertStuff(
+      purgeTransaction.toMap(),
+      'transactions',
+    );
   }
 }

@@ -1,5 +1,3 @@
-import 'package:intl/intl.dart';
-
 import '../services/sms_sevice.dart';
 
 class Client {

@@ -3,7 +3,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'dart:io';
 import 'package:bsat/utils/logger.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/auth_service.dart';
@@ -11,14 +10,10 @@ import 'package:bsat/screens/online_management/login.dart';
 
 // Assuming these imports remain the same
 import 'package:bsat/services/shared_preferences_service.dart';
-import 'package:bsat/services/sqlite_service.dart';
-import 'package:bsat/utils/theme.dart';
 import '../../providers/theme_provider.dart';
-import '../../services/admin_management_service.dart';
 import '../../utils/constants.dart';
 import '../offers/download_offers_page.dart';
 import 'custom_statuses.dart';
-import 'kill_switch.dart';
 import 'updater.dart';
 
 class SettingsPage extends StatefulWidget {

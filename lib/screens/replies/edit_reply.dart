@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/screens/messaging/whatsapp_screen.dart';
 import 'package:bsat/utils/constants.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:another_telephony/telephony.dart';
 

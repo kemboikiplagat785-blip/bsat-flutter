@@ -63,6 +63,8 @@ class TransactionStatuses {
   static const advancedQueue = "transaction-advanced-queue";
   static const doneConfirmed = "transaction-confirmed";
   static const forwarded = "transaction-forwarded";
+  static const forwardedPending = "transaction-forwarded-pending";
+  static const forwardedConfirmed = "transaction-forwarded-confirmed";
   static const masked = "transaction-masked";
   static const forwardedOnline = "transaction-forwarded-online";
 
@@ -78,8 +80,10 @@ class TransactionStatuses {
   static const advancedQueueMap = {9: advancedQueue};
   static const doneConfirmedMap = {10: doneConfirmed};
   static const forwardedMap = {11: forwarded};
-  static const maskedMap = {12: masked};
-  static const forwardedOnlineMap = {13: forwardedOnline};
+  static const forwardedPendingMap = {12: forwardedPending};
+  static const forwardedConfirmedMap = {13: forwardedConfirmed};
+  static const maskedMap = {14: masked};
+  static const forwardedOnlineMap = {15: forwardedOnline};
 
   static const statuses = {
     0: done,
@@ -94,9 +98,20 @@ class TransactionStatuses {
     9: advancedQueue,
     10: doneConfirmed,
     11: forwarded,
-    12: masked,
-    13: forwardedOnline,
+    12: forwardedPending,
+    13: forwardedConfirmed,
+    14: masked,
+    15: forwardedOnline,
   };
+}
+
+class ForwardingJobStatuses {
+  static const pending = 'forwarding-pending';
+  static const delivered = 'forwarding-delivered';
+  static const processing = 'forwarding-processing';
+  static const confirmed = 'forwarding-confirmed';
+  static const failed = 'forwarding-failed';
+  static const timedOut = 'forwarding-timed-out';
 }
 
 List<Map<String, dynamic>> kSubscriptionTiers = [
@@ -230,36 +245,31 @@ List<Map<String, dynamic>> kTokens = [
 ];
 
 List<Map<String, dynamic>> kInitialCodes = [
-  {'code': '*180*5*2*n*8*1#', 'amount': 55},
-  {'code': '*180*5*2*n*8*1#', 'amount': 58},
-  {'code': '*180*5*2*n*8*1#', 'amount': 60},
-  {'code': '*180*5*2*n*7*1#', 'amount': 99},
-  {'code': '*180*5*2*n*7*1#', 'amount': 100},
-  {'code': '*180*5*2*n*6*1#', 'amount': 20},
-  {'code': '*180*5*2*n*6*1#', 'amount': 25},
-  {'code': '*180*5*2*n*5*1#', 'amount': 19},
-  {'code': '*180*5*2*n*2*1#', 'amount': 49},
+  {'code': '*180*5*2*n*6*1#', 'amount': 55},
+  {'code': '*180*5*2*n*6*1#', 'amount': 58},
+  {'code': '*180*5*2*n*6*1#', 'amount': 60},
+  {'code': '*180*5*2*n*5*1#', 'amount': 99},
+  {'code': '*180*5*2*n*5*1#', 'amount': 100},
+  {'code': '*180*5*2*n*2*1#', 'amount': 20},
+  {'code': '*180*5*2*n*2*1#', 'amount': 25},
+  {'code': '*180*5*2*n*1*1#', 'amount': 19},
+  {'code': '*180*5*2*n*4*1#', 'amount': 49},
 ];
 
 List<Map<String, dynamic>> kNoAutoretryCodes = [
-  {'code': '*100*0*9*1*n*1*1#', 'amount': 130},
-  {'code': '*100*0*9*1*n*1*1#', 'amount': 120},
-  {'code': '*100*0*9*2*n*1*1#', 'amount': 23},
-  {'code': '*456*1*12*2*n*1*1#', 'amount': 21},
-  {'code': '*100*0*9*3*n*1*1#', 'amount': 53},
-  {'code': '*456*1*13*6*7*3*n*2*1#', 'amount': 50},
-
+  {'code': '*544*13*1*n*1*1#', 'amount': 130},
+  {'code': '*544*13*1*n*1*1#', 'amount': 120},
+  {'code': '*544*6*8*n*00*1*0*1*1#', 'amount': 23},
+  {'code': '*544*6*8*n*00*1*0*1*1#', 'amount': 21},
+  {'code': '*544*6*8*n*00*1*0*2*1#', 'amount': 53},
+  {'code': '*544*6*8*n*00*14*8*2*1#', 'amount': 50},
+  {'code': '*544*6*8*n*00*14*8*2*1#', 'amount': 51},
+  {'code': '*544*6*8*n*00*14*8*2*1#', 'amount': 52},
   {'code': '*188*8*2*2*n*1*2#', 'amount': 30},
   {'code': '*188*8*1*2*n*1*2#', 'amount': 10},
   {'code': '*188*8*1*1*n*1*2#', 'amount': 5},
-
-  {'code': '*188*9*#*n*1*1*1#', 'amount': 22},
-  {'code': '*444*5*1*n*1*1*1#', 'amount': 22},
-
-  // {'code': '*444*#*3*1*n*1*1#', 'amount': 22},
-  // {'code': '*444*#*3*1*n*3*1#', 'amount': 51},
-  {'code': '*456*1*13*6*7*3*n*2*1#', 'amount': 51},
-  // {'code': '*188*7*2*1*n*1*1#', 'amount': 20},
+  {'code': '*544*6*8*n*00*14*8*1*1#', 'amount': 22},
+  {'code': '*544*1*1*6*n*2*1#', 'amount': 54},
 ];
 
 List<Color> colors = [

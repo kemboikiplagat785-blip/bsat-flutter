@@ -1,6 +1,5 @@
 import 'package:bsat/components/dialogs/refresh_dialog.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
-import 'package:bsat/utils/date_ops.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:another_telephony/telephony.dart';
@@ -8,7 +7,6 @@ import 'package:another_telephony/telephony.dart';
 import '../../components/dialogs/choose_sim.dart';
 import '../../components/header.dart';
 import '../../services/payments.dart';
-import '../../services/sqlite_service.dart';
 import '../../utils/constants.dart';
 
 class SubscriptionPage extends StatefulWidget {

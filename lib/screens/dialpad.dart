@@ -1,5 +1,4 @@
 import 'package:bsat/components/dialogs/choose_sim.dart';
-import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/dialogs/add_client_dialog.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/controllers/transaction_controller.dart';

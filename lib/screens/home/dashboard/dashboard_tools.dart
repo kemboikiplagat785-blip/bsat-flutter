@@ -5,9 +5,6 @@ import 'package:bsat/screens/blacklist.dart';
 import 'package:bsat/screens/clients/clients.dart';
 import 'package:bsat/screens/dialpad.dart';
 import 'package:bsat/screens/messaging/inbox.dart';
-import 'package:bsat/screens/messaging/send_message_page.dart';
-import 'package:bsat/screens/messaging/whatsapp.dart';
-import 'package:bsat/screens/messaging/whatsapp_screen.dart';
 import 'package:bsat/screens/offers/offers.dart';
 import 'package:bsat/screens/online_management/online_management.dart';
 import 'package:bsat/screens/replies/replies.dart';
@@ -18,18 +15,12 @@ import 'package:bsat/screens/settings/subscription.dart';
 import 'package:bsat/screens/tasks/tasks.dart';
 import 'package:bsat/screens/transactions/confirm_transactions.dart';
 import 'package:bsat/screens/transactions/transaction_history.dart';
-import 'package:bsat/services/shared_preferences_service.dart';
-import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:another_telephony/telephony.dart';
 
 import '../../../controllers/transaction_controller.dart';
-import '../../../services/sqlite_service.dart';
-import '../../settings/accessibility_setup.dart';
 
 /// Collection of “My tools” shortcuts used on the dashboard.
 class DashboardToolsSection extends StatelessWidget {

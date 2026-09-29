@@ -8,7 +8,6 @@ import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/date_ops.dart';
 import 'package:flutter/material.dart';
-import 'package:telephony_sms/telephony_sms.dart';
 
 final telephony = Telephony.instance;
 

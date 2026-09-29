@@ -31,6 +31,7 @@ class OffersTransferService {
     'alternativeUssdCode',
     'runAltOn',
     'altIsAdvanced',
+    'altDelayMinutes',
   ];
 
   Future<Map<String, dynamic>> requestOffersFromDevice(
@@ -81,7 +82,8 @@ class OffersTransferService {
       if (cleanedVariant.isEmpty) {
         continue;
       }
-      final offerId = int.tryParse(variant['ussdCodeId']?.toString() ?? '') ?? -1;
+      final offerId =
+          int.tryParse(variant['ussdCodeId']?.toString() ?? '') ?? -1;
       variantsByOfferId.putIfAbsent(offerId, () => []).add(cleanedVariant);
     }
 
@@ -269,7 +271,7 @@ class OffersTransferService {
         continue;
       }
 
-      if (key == 'altIsAdvanced') {
+      if (key == 'altIsAdvanced' || key == 'altDelayMinutes') {
         value = int.tryParse(value.toString()) ?? 0;
       }
 
@@ -336,7 +338,7 @@ class OffersTransferService {
     );
     await _sqliteService.addColumnIfNotExists(
       'ussdCodeVariants',
-      'altIsAdvanced',
+      'altDelayMinutes',
       'INTEGER',
       defaultValue: 0,
     );

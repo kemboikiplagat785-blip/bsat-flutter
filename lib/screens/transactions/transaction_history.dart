@@ -18,6 +18,7 @@ import '../../components/dialogs/loading_dialog.dart';
 import '../../components/tool_button.dart';
 import '../../components/dialogs/till_done_dialogue.dart';
 import '../../utils/constants.dart';
+import '../../utils/forwarding_job_id.dart';
 
 enum _SelectionMenuAction {
   retry,
@@ -57,6 +58,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _secondAttemptCount = 0,
       _blacklistedCount = 0,
       _forwardedCount = 0,
+      _forwardedPendingCount = 0,
+      _forwardedConfirmedCount = 0,
       _unavailableOfferCount = 0,
       _pausedCount = 0,
       _advancedCount = 0,
@@ -115,7 +118,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               "WHERE status = '${TransactionStatuses.forwarded}' AND date = '$dateStr'"),
       databaseHelper.getCount('transactions',
           appendQuery:
-              "WHERE status = '${TransactionStatuses.unavailableOffer}' AND date = '$dateStr'"),
+              "WHERE status = '${TransactionStatuses.forwardedPending}' AND date = '$dateStr'"),
+      databaseHelper.getCount('transactions',
+          appendQuery:
+              "WHERE status = '${TransactionStatuses.forwardedConfirmed}' AND date = '$dateStr'"),
+      databaseHelper.getCount('transactions',
+          appendQuery:
+              "WHERE status = '${TransactionStatuses.unavailableOffer}' AND date= '$dateStr'"),
       databaseHelper.getCount('transactions',
           appendQuery:
               "WHERE status = '${TransactionStatuses.paused}' AND date = '$dateStr'"),
@@ -138,11 +147,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _secondAttemptCount = results[3];
       _blacklistedCount = results[4];
       _forwardedCount = results[5];
-      _unavailableOfferCount = results[6];
-      _pausedCount = results[7];
-      _okoaCount = results[8];
-      _advancedCount = results[9];
-      _maskedCount = results[10];
+      _forwardedPendingCount = results[6];
+      _forwardedConfirmedCount = results[7];
+      _unavailableOfferCount = results[8];
+      _pausedCount = results[9];
+      _okoaCount = results[10];
+      _advancedCount = results[11];
+      _maskedCount = results[12];
     });
   }
 
@@ -675,6 +686,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
       for (final transaction in transactions) {
         final message = (transaction['initialMessage'] ?? '').toString().trim();
+
+        final forwardingJobId = ForwardingJobId.generate(
+          mpesaCode: (transaction['transactionId'] ?? '').toString(),
+        );
+
         if (message.isEmpty) {
           failed++;
           continue;
@@ -688,11 +704,12 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
             (transaction['ussdDialed'] ?? '').toString(),
             _toInt(transaction['amount']) ?? 0,
             _toInt(transaction['simSubId']) ?? 0,
-            status: TransactionStatuses.done,
+            status: TransactionStatuses.forwardedPending,
             source: (transaction['source'] ?? 'bingwa').toString(),
             canRetry: (transaction['canRetry'] ?? 0) == 1,
             id: _toInt(transaction['id']),
             reply: 'Forwarded to $recipientDeviceName',
+            forwardingJobId: forwardingJobId,
           );
 
           final result = await BackendService().post(
@@ -707,6 +724,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                 'body': message,
                 'title': 'Forwarded Message',
                 'transactionId': txId,
+                'forwardingJobId': forwardingJobId,
+                'forwardingStatus': ForwardingJobStatuses.pending,
                 'senderDeviceName': senderDeviceName,
               },
             },
@@ -798,6 +817,20 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               _forwardedCount,
               kPrimaryColor,
               'Forwarded'),
+          const SizedBox(width: 8),
+          _tool(
+              TransactionStatuses.forwardedPending,
+              const Icon(Icons.fork_right, color: kWarningColor, size: 14),
+              _forwardedPendingCount,
+              kWarningColor,
+              'Forwarded (Pending)'),
+          const SizedBox(width: 8),
+          _tool(
+              TransactionStatuses.forwardedConfirmed,
+              const Icon(Icons.fork_right, color: kPrimaryColor, size: 14),
+              _forwardedConfirmedCount,
+              kPrimaryColor,
+              'Forwarded (Confirmed)'),
           const SizedBox(width: 8),
           _tool(
               TransactionStatuses.hasOkoa,

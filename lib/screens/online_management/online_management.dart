@@ -5,8 +5,6 @@ import 'package:bsat/components/profile_card.dart';
 import 'package:bsat/screens/online_management/paired_devices.dart';
 import 'package:bsat/screens/online_management/login.dart';
 import 'package:bsat/screens/online_management/my_online_presence.dart';
-import 'package:bsat/screens/online_management/pair_device_page.dart';
-import 'package:bsat/screens/settings/coming_soon.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/utils/constants.dart';
@@ -18,9 +16,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import '../../components/button_descriptive.dart';
 import '../../components/dialogs/confirm_delete_dialog.dart';
 import '../../services/auth_service.dart';
-import 'portal.dart';
 import 'register_device.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'webview.dart';
 

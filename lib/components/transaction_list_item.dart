@@ -138,6 +138,26 @@ Widget transactionListItem(
               ],
             ),
             const SizedBox(height: kPagePadding / 2),
+            if (status == TransactionStatuses.forwardedPending ||
+                status == TransactionStatuses.forwarded)
+              Text(
+                'Forwarded (pending)',
+                style: const TextStyle(
+                  color: Color(0xFFFFA500),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            if (status == TransactionStatuses.forwardedConfirmed)
+              const Text(
+                'Forwarded (confirmed)',
+                style: TextStyle(
+                  color: Color(0xFF00FF88),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            const SizedBox(height: kPagePadding / 3),
             Text(
               reply,
               // "You have"

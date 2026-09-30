@@ -123,7 +123,17 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         isAdvanced,
         number,
         message: message.data['smsMessage'] ?? '',
+        forwardingJobId: message.data['forwardingJobId']?.toString(),
+        forwardingTransactionId: message.data['transactionId']?.toString(),
+        forwardingSenderDeviceName:
+            message.data['senderDeviceName']?.toString(),
+        forwardingRecipientDeviceName:
+            message.data['recipientDeviceName']?.toString(),
       );
+      break;
+
+    case 'forwarded_alt_result':
+      await _handleForwardedAltResult(message);
       break;
 
     case 'request_contacts_from_device':
@@ -685,20 +695,110 @@ Future<void> _handlePingAck(RemoteMessage message) async {
 }
 
 Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
-  String transactionId = message.data['transactionId'] ?? '';
+  final transactionId = message.data['transactionId']?.toString() ?? '';
 
-  print("TransactionId = $transactionId");
+  final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
 
-  await SQLiteService().updateStuff(
+  debugPrint(
+    'PROCESS_ALT_REQUEST ACK received: '
+    'transactionId=$transactionId, '
+    'forwardingJobId=$forwardingJobId. '
+    'This is delivery only; waiting for execution result.',
+  );
+
+  // IMPORTANT:
+  // This ACK only confirms that Phone C received the request.
+  // Do NOT change Phone B's transaction status here.
+  await _persistAckState(
+    message,
+    ackScope: 'process_alt_request',
+  );
+}
+
+Future<void> _handleForwardedAltResult(RemoteMessage message) async {
+  final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
+
+  final transactionId = message.data['transactionId']?.toString() ?? '';
+
+  final status = message.data['status']?.toString() ?? '';
+
+  final ussdReply = message.data['ussdReply']?.toString() ?? '';
+
+  debugPrint(
+    'FORWARDED_ALT_RESULT received: '
+    'transactionId=$transactionId, '
+    'forwardingJobId=$forwardingJobId, '
+    'status=$status',
+  );
+
+  if (forwardingJobId.isEmpty) {
+    debugPrint(
+      'FORWARDED_ALT_RESULT ignored: missing forwardingJobId',
+    );
+    return;
+  }
+
+  // Only a successful execution on Phone C confirms
+  // Phone B's forwarded transaction.
+  if (status != TransactionStatuses.doneConfirmed &&
+      status != TransactionStatuses.advancedUssd) {
+    debugPrint(
+      'FORWARDED_ALT_RESULT: Phone C did not confirm success. '
+      'Keeping Phone B transaction pending.',
+    );
+    return;
+  }
+
+  final updatedRows = await SQLiteService().updateStuff(
     {
-      'status': TransactionStatuses.forwarded,
+      'status': TransactionStatuses.forwardedConfirmed,
+      'canRetry': 0,
+      'ussdReply': ussdReply,
+      'timeStamp': DateTime.now().millisecondsSinceEpoch,
     },
-    'id = ?',
-    [transactionId],
+    'forwardingJobId = ?',
+    [forwardingJobId],
     'transactions',
   );
 
-  await _persistAckState(message, ackScope: 'process_alt_request');
+  debugPrint(
+    'FORWARDED_ALT_RESULT UPDATE: '
+    'forwardingJobId=$forwardingJobId, '
+    'updatedRows=$updatedRows',
+  );
+
+  if (updatedRows > 0) {
+    final tx = await SQLiteService().queryCustom(
+      'transactions',
+      'forwardingJobId = ?',
+      [forwardingJobId],
+      limit: 1,
+    );
+
+    if (tx.isNotEmpty) {
+      final forwardingSenderDeviceName =
+          tx.first['forwardingSenderDeviceName']?.toString() ?? '';
+
+      if (forwardingSenderDeviceName.isNotEmpty) {
+        await TransactionController().sendForwardingConfirmation(
+          forwardingJobId: forwardingJobId,
+          recipientDeviceName: forwardingSenderDeviceName,
+          transactionId: transactionId,
+        );
+      } else {
+        debugPrint(
+          'FORWARDED_ALT_RESULT: '
+          'No forwardingSenderDeviceName found for job '
+          '$forwardingJobId',
+        );
+      }
+    }
+  }
+
+  await _persistAckState(
+    message,
+    ackScope: 'forwarded_alt_result',
+  );
 }
 
 Future<void> _handleForwardedSmsAck(RemoteMessage message) async {

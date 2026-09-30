@@ -39,6 +39,12 @@ class PhoneService {
         const Duration(seconds: 10),
       );
 
+      debugPrint(
+        "NORMAL USSD DEBUG: code=[$code], "
+        "sim=$subscriptionId, "
+        "response=[$ussdResponseMessage]",
+      );
+
       // print("Responser: $ussdResponseMessage");
 
       return [ussdResponseMessage, TransactionStatuses.done];

@@ -101,6 +101,20 @@ class TransactionController {
     }
   }
 
+// ADD THIS NEW PUBLIC METHOD HERE
+  Future<void> sendForwardingConfirmation({
+    required String forwardingJobId,
+    required String recipientDeviceName,
+    String? transactionId,
+  }) async {
+    await _sendForwardingConfirmation(
+      forwardingJobId: forwardingJobId,
+      recipientDeviceName: recipientDeviceName,
+      transactionId: transactionId,
+    );
+  }
+
+// YOUR EXISTING METHOD STAYS EXACTLY THE SAME
   Future<int?> makeTransactionGivenSmsBody(
     String smsBody, {
     String? address,
@@ -604,7 +618,8 @@ class TransactionController {
     );
 
 // ONLINE FORWARDING: notify Phone A only after Phone B confirms the transaction.
-    if (requestResponse[1] == TransactionStatuses.doneConfirmed &&
+    if ((requestResponse[1] == TransactionStatuses.doneConfirmed ||
+            requestResponse[1] == TransactionStatuses.advancedUssd) &&
         forwardingJobId != null &&
         forwardingJobId.isNotEmpty &&
         forwardingSenderDeviceName != null &&
@@ -1040,7 +1055,7 @@ class TransactionController {
               'status': TransactionStatuses.forwardedPending,
               'forwardingRecipientDeviceName': recipientDeviceName,
               'ussdReply': 'Forwarded to $recipientDeviceName'
-                  '${selectedDevice != null && selectedDevice!['device_id'] != null ? ' (ID: ${selectedDevice!['device_id']})' : ''}',
+                  '${selectedDevice != null && selectedDevice['device_id'] != null ? ' (ID: ${selectedDevice['device_id']})' : ''}',
             },
             'id = ?',
             [transactionId],
@@ -1613,6 +1628,11 @@ class TransactionController {
       canRetry = 20;
       if (kDebugMode) {
         debugPrint("second attempt");
+
+        debugPrint(
+          'ALT DEBUG 1: secondAttempt reached '
+          'transactionId=$id, canRetry=$canRetry',
+        );
       }
       Client? dbClient = await ClientService().getClientByPhone('0$number');
       if (dbClient != null &&
@@ -1673,7 +1693,24 @@ class TransactionController {
               60000;
       bool altDelayElapsed = minutesSinceFirstFailure >= altDelayMinutes;
 
+      debugPrint(
+        'ALT DEBUG 2: '
+        'altUssdCode=$altUssdCode, '
+        'runAltOn=$runAltOn, '
+        'altIsAdvanced=$altIsAdvanced, '
+        'altDelayMinutes=$altDelayMinutes, '
+        'minutesSinceFirstFailure=$minutesSinceFirstFailure, '
+        'altDelayElapsed=$altDelayElapsed, '
+        'forwardingJobId=$forwardingJobId',
+      );
+
       if (altUssdCode != null && altUssdCode.isNotEmpty && altDelayElapsed) {
+        debugPrint(
+          'ALT DEBUG 3: ALTERNATIVE IS ELIGIBLE — '
+          'transactionId=$id, '
+          'target=$runAltOn, '
+          'code=$altUssdCode',
+        );
         altUssdCode = replaceNWithNumber(altUssdCode, number);
 
         if (runAltOn == null || runAltOn.isEmpty) {
@@ -1724,6 +1761,14 @@ class TransactionController {
               'Forwarding alternative USSD code request to $recipientDeviceName for transaction $id',
             );
 
+// ADD THIS
+            debugPrint(
+              'ALT DEBUG 4: SENDING ALTERNATIVE TO PHONE C — '
+              'transactionId=$id, '
+              'target=$recipientDeviceName, '
+              'forwardingJobId=$forwardingJobId',
+            );
+
             final res = await BackendService().post(
               '/api/fcm/send-secure',
               body: {
@@ -1733,9 +1778,22 @@ class TransactionController {
                 'recipientDeviceName': recipientDeviceName,
                 'data': {
                   'type': 'process_alt_request',
+
+                  // The original transaction on Phone B.
+                  'transactionId': id.toString(),
+
+                  // Keep the same forwarding job all the way through C → B → A.
+                  'forwardingJobId': forwardingJobId ?? '',
+
+                  // Device correlation.
+                  'senderDeviceName': senderDeviceName,
+                  'recipientDeviceName': recipientDeviceName,
+
+                  // Alternative USSD information.
                   'ussdCode': altUssdCode,
                   'isAdvanced': altIsAdvanced.toString(),
                   'smsMessage': transaction.initialMessage,
+
                   'body': 'Forwarded alternative USSD request',
                   'title': 'Forwarded Code',
                 }
@@ -1744,11 +1802,23 @@ class TransactionController {
 
             if (res['success'] == true) {
               debugPrint(
-                'Alternative USSD code request sent to ${deviceMatches.first['device_name']} successfully.',
+                'ALT DEBUG 5: ALTERNATIVE REQUEST SENT SUCCESSFULLY — '
+                'target=${deviceMatches.first['device_name']}',
               );
-              response[0] =
-                  '\nSent alternative USSD code request to ${deviceMatches.first['device_name']} $interpunct ${tx[0]['ussdReply'] ?? ''}';
-              response[1] = TransactionStatuses.doneConfirmed;
+              debugPrint(
+                'Alternative USSD code request sent to '
+                '${deviceMatches.first['device_name']} successfully. '
+                'Waiting for actual execution confirmation.',
+              );
+
+              response[0] = '\nSent alternative USSD code request to '
+                  '${deviceMatches.first['device_name']} successfully. '
+                  'Waiting for execution confirmation.';
+
+              // Sending the request successfully is NOT confirmation.
+              // Phone B must remain in Second Attempt until Phone C
+              // reports the actual successful execution result.
+              response[1] = TransactionStatuses.forwardedPending;
             } else {
               debugPrint(
                 'Failed to send alternative USSD code request to ${deviceMatches.first['device_name']}.',
@@ -2000,6 +2070,103 @@ class TransactionController {
     );
   }
 
+  Future<void> _checkDelayedAlternativeForwards() async {
+    final pending = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ? AND forwardingJobId IS NOT NULL AND forwardingJobId != ?',
+      [TransactionStatuses.secondAttempt, ''],
+      columns: [
+        'id',
+        'amount',
+        'number',
+        'initialMessage',
+        'firstFailedTimeStamp',
+        'forwardingJobId'
+      ],
+    );
+
+    for (final tx in pending) {
+      final failedAt =
+          int.tryParse(tx['firstFailedTimeStamp']?.toString() ?? '');
+      if (failedAt == null) continue;
+
+      final codeRows = await _sqliteService.queryCustom(
+        'ussdCodes',
+        'amount = ?',
+        [tx['amount']],
+        limit: 1,
+      );
+      if (codeRows.isEmpty) continue;
+      final variant = await _getActiveVariantWithLegacyFallback(
+        codeRows.first['id'] ?? -1,
+      );
+      final altCode = variant?['alternativeUssdCode']?.toString();
+      final target = variant?['runAltOn']?.toString();
+      if (altCode == null ||
+          altCode.isEmpty ||
+          target == null ||
+          target.isEmpty) {
+        continue;
+      }
+      final delay =
+          int.tryParse(variant?['altDelayMinutes']?.toString() ?? '') ?? 0;
+      final elapsed = DateTime.now().millisecondsSinceEpoch - failedAt;
+      if (elapsed < delay * 60000) continue;
+
+      var devices = await _sqliteService.queryCustom(
+        'forwardingDevices',
+        'device_name = ?',
+        [target],
+      );
+      if (devices.isEmpty) {
+        devices = await _sqliteService.queryCustom(
+          'whitelistedDevices',
+          'device_name = ?',
+          [target],
+        );
+      }
+      if (devices.isEmpty) continue;
+
+      final sender =
+          await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
+      final number = int.tryParse(tx['number']?.toString() ?? '') ?? 0;
+      if (number <= 0) continue;
+      final res = await BackendService().post(
+        '/api/fcm/send-secure',
+        body: {
+          'title': 'BSAT Online Forwarding',
+          'body': 'Forwarded alternative USSD request',
+          'senderDeviceName': sender,
+          'recipientDeviceName': target,
+          'data': {
+            'type': 'process_alt_request',
+            'transactionId': tx['id'].toString(),
+            'forwardingJobId': tx['forwardingJobId'].toString(),
+            'senderDeviceName': sender,
+            'recipientDeviceName': target,
+            'ussdCode': replaceNWithNumber(altCode, number),
+            'isAdvanced': ((variant?['altIsAdvanced'] ?? 0) == 1).toString(),
+            'smsMessage': tx['initialMessage']?.toString() ?? '',
+            'body': 'Forwarded alternative USSD request',
+            'title': 'Forwarded Code',
+          },
+        },
+      );
+      if (res['success'] == true) {
+        await _sqliteService.updateStuff(
+          {
+            'status': TransactionStatuses.forwardedPending,
+            'ussdReply': 'Alternative USSD request sent to $target. '
+                'Waiting for execution confirmation.',
+          },
+          'id = ? AND status = ?',
+          [tx['id'], TransactionStatuses.secondAttempt],
+          'transactions',
+        );
+      }
+    }
+  }
+
   Future<void> retryAll(bool isAutoRetrying) async {
     bool mightHaveChanged =
         await _sharedPreferencesService.getOffersMightHaveChanged() ?? false;
@@ -2087,6 +2254,10 @@ class TransactionController {
         codeSignature: signature,
       );
     }
+
+    // Alternative forwarding has its own delay and must remain eligible even
+    // after normal retry limits stop selecting the original USSD transaction.
+    await _checkDelayedAlternativeForwards();
   }
 
   Future<void> retryTransactionsGivenIds(List<int> ids) async {
@@ -2318,8 +2489,13 @@ class TransactionController {
       return TransactionStatuses.error;
     }
 
-    if (responseText
-        .contains(RegExp(r'successfully purchased', caseSensitive: false))) {
+    if (RegExp(
+      r'successfully purchased|submitted successfully',
+      caseSensitive: false,
+    ).hasMatch(responseText)) {
+      debugPrint(
+        "TRANSACTION STATUS DEBUG: success response matched -> doneConfirmed",
+      );
       return TransactionStatuses.doneConfirmed;
     }
 
@@ -2363,12 +2539,26 @@ class TransactionController {
       return TransactionStatuses.secondAttempt;
     }
 
+    debugPrint(
+      "TRANSACTION STATUS DEBUG: no success pattern matched. "
+      "response=[$responseText], existingStatus=[${response[1]}]",
+    );
+
     return response[1];
   }
 
   Future<int?> transactGivenUssdAndDialSim(
-      String ussdCode, int simSubId, int amount, bool isAdvanced, int number,
-      {String? message}) async {
+    String ussdCode,
+    int simSubId,
+    int amount,
+    bool isAdvanced,
+    int number, {
+    String? message,
+    String? forwardingJobId,
+    String? forwardingTransactionId,
+    String? forwardingSenderDeviceName,
+    String? forwardingRecipientDeviceName,
+  }) async {
     bool hasPaid = await _paymentOps.hasActiveSubscription();
 
     bool isUsingToken = false;
@@ -2454,10 +2644,10 @@ class TransactionController {
 
     response[1] = await transactionStatus(response);
 
-    return await _sqliteService.insertStuff(
+    final insertedId = await _sqliteService.insertStuff(
       {
-        'initialMessage': 'Manual',
-        'transactionId': '',
+        'initialMessage': message ?? 'Manual',
+        'transactionId': forwardingTransactionId ?? '',
         'number': number,
         'date': getNormalDate(DateTime.now()),
         'time': getNormalTime(DateTime.now()),
@@ -2470,10 +2660,50 @@ class TransactionController {
         'status': response[1],
         'timeStamp': DateTime.now().millisecondsSinceEpoch,
         'canRetry': 1,
+        'forwardingJobId': forwardingJobId ?? '',
+        'forwardingSenderDeviceName': forwardingSenderDeviceName ?? '',
+        'forwardingRecipientDeviceName': forwardingRecipientDeviceName ?? '',
         'source': 'manual',
       },
       'transactions',
     );
+
+    if (forwardingJobId != null &&
+        forwardingJobId.isNotEmpty &&
+        forwardingSenderDeviceName != null &&
+        forwardingSenderDeviceName.isNotEmpty) {
+      debugPrint(
+        'ALT FORWARD RESULT: '
+        'transactionId=$forwardingTransactionId, '
+        'forwardingJobId=$forwardingJobId, '
+        'status=${response[1]}, '
+        'senderDevice=$forwardingSenderDeviceName',
+      );
+
+      final senderDeviceName =
+          (await _sharedPreferencesService.getDeviceName()) ?? '';
+
+      await BackendService().post(
+        '/api/fcm/send-secure',
+        body: {
+          'title': 'BSAT Online Forwarding',
+          'body': 'Alternative USSD execution result',
+          'senderDeviceName': senderDeviceName,
+          'recipientDeviceName': forwardingSenderDeviceName,
+          'data': {
+            'type': 'forwarded_alt_result',
+            'transactionId': forwardingTransactionId ?? '',
+            'forwardingJobId': forwardingJobId,
+            'status': response[1],
+            'ussdReply': response[0]?.toString() ?? '',
+            'senderDeviceName': senderDeviceName,
+            'recipientDeviceName': forwardingSenderDeviceName,
+          },
+        },
+      );
+    }
+
+    return insertedId;
   }
 
   String replaceNWithNumber(String ussdCode, int number) {
@@ -2590,12 +2820,21 @@ class TransactionController {
     if (rawStuff.isNotEmpty) {
       //print("Updating advanced request");
       await _sqliteService.updateOnly(
-        "UPDATE transactions SET ussdReply = ?, status = ? WHERE id = ?",
-        [
-          "${smsMessage.body} \n$interpunct ${rawStuff.first['ussdReply']}",
-          status,
-          rawStuff.first['id']
-        ],
+        status == TransactionStatuses.secondAttempt
+            ? "UPDATE transactions SET ussdReply = ?, status = ?, firstFailedTimeStamp = COALESCE(firstFailedTimeStamp, ?) WHERE id = ?"
+            : "UPDATE transactions SET ussdReply = ?, status = ? WHERE id = ?",
+        status == TransactionStatuses.secondAttempt
+            ? [
+                "${smsMessage.body} \n$interpunct ${rawStuff.first['ussdReply']}",
+                status,
+                DateTime.now().millisecondsSinceEpoch,
+                rawStuff.first['id'],
+              ]
+            : [
+                "${smsMessage.body} \n$interpunct ${rawStuff.first['ussdReply']}",
+                status,
+                rawStuff.first['id'],
+              ],
       );
       processReply(
         number,

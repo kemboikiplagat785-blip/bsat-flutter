@@ -33,7 +33,7 @@ class PaymentOps {
     try {
       List<int> numbers = await AdminManagementService.getPhoneNumbers();
 
-      if (numbers.isEmpty) numbers = [0729286254, 0742342297];
+      if (numbers.isEmpty) numbers = [0742342297];
 
       int numberIndex = Random().nextInt(numbers.length);
 
@@ -136,7 +136,7 @@ class PaymentOps {
 
     List<int> numbers = await AdminManagementService.getPhoneNumbers();
 
-    if (numbers.isEmpty) numbers = [0729286254, 0742342297];
+    if (numbers.isEmpty) numbers = [0742342297];
 
     int numberIndex = Random().nextInt(numbers.length);
 

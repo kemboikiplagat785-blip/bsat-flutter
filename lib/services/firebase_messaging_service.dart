@@ -120,6 +120,16 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       final bool isAdvanced = isAdvancedRaw == true ||
           isAdvancedRaw == 1 ||
           isAdvancedRaw?.toString().toLowerCase() == 'true';
+      final forwardingJobId = message.data['forwardingJobId']?.toString();
+      final forwardingSenderDeviceName =
+          message.data['senderDeviceName']?.toString();
+      debugPrint(
+        'ALT REQUEST: received jobId=${forwardingJobId ?? ''}, '
+        'sender=${forwardingSenderDeviceName ?? ''}, '
+        'localTransactionId=${message.data['transactionId'] ?? ''}, '
+        'forwardingTransactionId=${message.data['transactionId'] ?? ''}, '
+        'recipient=${message.data['recipientDeviceName'] ?? ''}',
+      );
 
       await TransactionController().transactGivenUssdAndDialSim(
         ussdCode,
@@ -128,10 +138,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         isAdvanced,
         number,
         message: message.data['smsMessage'] ?? '',
-        forwardingJobId: message.data['forwardingJobId']?.toString(),
+        forwardingJobId: forwardingJobId,
         forwardingTransactionId: message.data['transactionId']?.toString(),
-        forwardingSenderDeviceName:
-            message.data['senderDeviceName']?.toString(),
+        forwardingSenderDeviceName: forwardingSenderDeviceName,
         forwardingRecipientDeviceName:
             message.data['recipientDeviceName']?.toString(),
       );
@@ -149,6 +158,13 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
           message.data['forwardingJobId']?.toString();
       final String? forwardingSenderDeviceName =
           message.data['senderDeviceName']?.toString();
+      debugPrint(
+        'FORWARDED SMS RECEIVE: '
+        'incomingTransactionId=${message.data['transactionId'] ?? ''}, '
+        'forwardingJobId=${forwardingJobId ?? ''}, '
+        'sender=${forwardingSenderDeviceName ?? ''}, '
+        'recipient=${message.data['recipientDeviceName'] ?? ''}',
+      );
       if (!await subscribedToOnline("Online")) {
         // If not subscribed to Online,
         if (!(await PaymentOps().deductSingleToken())) {
@@ -750,8 +766,13 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
 
   // Only a successful execution on Phone C confirms
   // Phone B's forwarded transaction.
-  if (status != TransactionStatuses.doneConfirmed &&
-      status != TransactionStatuses.advancedUssd) {
+  if (status != TransactionStatuses.doneConfirmed) {
+    if (status == TransactionStatuses.advancedUssd) {
+      debugPrint(
+        'ALT RESULT: advancedUssd is intermediate for jobId=$forwardingJobId; '
+        'leaving pending',
+      );
+    }
     debugPrint(
       'FORWARDED_ALT_RESULT: Phone C did not confirm success. '
       'Keeping Phone B transaction pending.',
@@ -766,8 +787,9 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
       'ussdReply': ussdReply,
       'timeStamp': DateTime.now().millisecondsSinceEpoch,
     },
-    'forwardingJobId = ?',
-    [forwardingJobId],
+    'forwardingJobId = ? AND '
+        '(status IS NULL OR status != ?)',
+    [forwardingJobId, TransactionStatuses.forwardedConfirmed],
     'transactions',
   );
 
@@ -778,6 +800,9 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
   );
 
   if (updatedRows > 0) {
+    debugPrint(
+      'ALT RESULT: updated local transaction by jobId=$forwardingJobId',
+    );
     final tx = await SQLiteService().queryCustom(
       'transactions',
       'forwardingJobId = ?',
@@ -790,10 +815,14 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
           tx.first['forwardingSenderDeviceName']?.toString() ?? '';
 
       if (forwardingSenderDeviceName.isNotEmpty) {
+        debugPrint(
+          'ALT RESULT: sending forwarding confirmation to original sender '
+          'for jobId=$forwardingJobId',
+        );
         await TransactionController().sendForwardingConfirmation(
           forwardingJobId: forwardingJobId,
           recipientDeviceName: forwardingSenderDeviceName,
-          transactionId: transactionId,
+          transactionId: tx.first['id']?.toString() ?? '',
         );
       } else {
         debugPrint(
@@ -802,6 +831,23 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
           '$forwardingJobId',
         );
       }
+    }
+  } else {
+    final existingRows = await SQLiteService().queryCustom(
+      'transactions',
+      'forwardingJobId = ?',
+      [forwardingJobId],
+      columns: ['status'],
+    );
+    if (existingRows.isNotEmpty &&
+        existingRows.every(
+          (row) => row['status'] == TransactionStatuses.forwardedConfirmed,
+        )) {
+      debugPrint('ALT RESULT: duplicate final result ignored');
+    } else {
+      debugPrint(
+        'ALT RESULT: no unconfirmed transaction found for jobId=$forwardingJobId',
+      );
     }
   }
 

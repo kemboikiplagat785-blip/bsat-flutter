@@ -116,6 +116,54 @@ class TransactionController {
     );
   }
 
+  Future<void> _sendForwardedAlternativeResult({
+    required String forwardingJobId,
+    required String recipientDeviceName,
+    required String transactionId,
+    required String ussdReply,
+  }) async {
+    final senderDeviceName =
+        await SharedPreferencesService().getDeviceName() ?? '';
+    if (senderDeviceName.isEmpty || recipientDeviceName.isEmpty) {
+      debugPrint(
+        'ALT RESULT: cannot send jobId=$forwardingJobId; '
+        'sender or recipient device name is missing',
+      );
+      return;
+    }
+
+    debugPrint(
+      'ALT RESULT: sending doneConfirmed jobId=$forwardingJobId '
+      'transactionId=$transactionId to $recipientDeviceName',
+    );
+    try {
+      final result = await BackendService().post(
+        '/api/fcm/send-secure',
+        body: {
+          'title': 'BSAT Online Forwarding',
+          'body': 'Alternative USSD execution confirmed',
+          'senderDeviceName': senderDeviceName,
+          'recipientDeviceName': recipientDeviceName,
+          'data': {
+            'type': 'forwarded_alt_result',
+            'transactionId': transactionId,
+            'forwardingJobId': forwardingJobId,
+            'status': TransactionStatuses.doneConfirmed,
+            'ussdReply': ussdReply,
+            'senderDeviceName': senderDeviceName,
+            'recipientDeviceName': recipientDeviceName,
+          },
+        },
+      );
+      debugPrint(
+        'ALT RESULT: sent jobId=$forwardingJobId '
+        'transactionId=$transactionId result=$result',
+      );
+    } catch (e) {
+      debugPrint('ALT RESULT: failed jobId=$forwardingJobId: $e');
+    }
+  }
+
 // YOUR EXISTING METHOD STAYS EXACTLY THE SAME
   Future<int?> makeTransactionGivenSmsBody(
     String smsBody, {
@@ -596,6 +644,11 @@ class TransactionController {
       },
       'transactions',
     );
+    debugPrint(
+      'FORWARDED SMS STORED: '
+      'localTransactionId=$transactionID, '
+      'forwardingJobId=${forwardingJobId ?? ''}',
+    );
 
     if (autoSaveContacts) {
       await contactService.addNewContact(
@@ -902,7 +955,13 @@ class TransactionController {
             );
           }
 
-          forwardingJobId ??= ForwardingJobId.generate(mpesaCode: mpesaCode);
+          if (forwardingJobId == null || forwardingJobId.isEmpty) {
+            forwardingJobId = ForwardingJobId.generate(mpesaCode: mpesaCode);
+          }
+          debugPrint(
+            'FORWARDED SMS JOB CREATED: '
+            'transactionId=$mpesaCode, forwardingJobId=$forwardingJobId',
+          );
 
           // ------------------------------------------------------------
           // STEP 5: Create/update the local transaction.
@@ -975,16 +1034,25 @@ class TransactionController {
               'transactions',
               'id = ?',
               [transactionId],
+              columns: ['id', 'forwardingJobId'],
             );
 
             debugPrint(
-              'FORWARDING DEBUG DB ROW: $debugRows',
+              'FORWARDED SMS STORED: '
+              'localTransactionId=$transactionId, row=$debugRows',
             );
           }
 
           // ------------------------------------------------------------
           // STEP 6: Send the forwarding message.
           // ------------------------------------------------------------
+          debugPrint(
+            'FORWARDED SMS SEND: '
+            'transactionId=$transactionId, '
+            'forwardingJobId=$forwardingJobId, '
+            'sender=$senderDeviceName, '
+            'recipient=$recipientDeviceName',
+          );
           final result = await BackendService().post(
             '/api/fcm/send-secure',
             body: {
@@ -1115,7 +1183,52 @@ class TransactionController {
           continue;
         }
 
-        await BackendService().post(
+        final forwardingJobId =
+            ForwardingJobId.generate(mpesaCode: getMpesaCode(message));
+        debugPrint(
+          'FORWARDED SMS JOB CREATED: '
+          'transactionId=${getMpesaCode(message)}, '
+          'forwardingJobId=$forwardingJobId',
+        );
+        final transactionId = await dontProcess(
+          message,
+          getMpesaCode(message),
+          number,
+          '',
+          amount,
+          -1,
+          status: TransactionStatuses.forwarded,
+          reply:
+              'Forwarded unavailable amount(Ksh $amount) to all paired devices',
+          canRetry: false,
+          source: name,
+          forwardingJobId: forwardingJobId,
+          forwardingSenderDeviceName: senderDeviceName,
+          forwardingRecipientDeviceName: recipientDeviceName,
+        );
+        final storedRows = transactionId == null
+            ? <Map<String, dynamic>>[]
+            : await _sqliteService.queryCustom(
+                'transactions',
+                'id = ?',
+                [transactionId],
+                columns: ['id', 'forwardingJobId'],
+              );
+
+        debugPrint(
+          'FORWARDED SMS STORED: '
+          'localTransactionId=$transactionId, '
+          'forwardingJobId=$forwardingJobId, row=$storedRows',
+        );
+        debugPrint(
+          'FORWARDED SMS SEND: '
+          'transactionId=$transactionId, '
+          'forwardingJobId=$forwardingJobId, '
+          'sender=$senderDeviceName, '
+          'recipient=$recipientDeviceName',
+        );
+
+        final result = await BackendService().post(
           '/api/fcm/send-secure',
           body: {
             'title': "BSAT Online Forwarding",
@@ -1126,23 +1239,19 @@ class TransactionController {
               'type': 'forwarded_sms',
               'body': message,
               'title': "Forwarded Message",
+              'messageId': getMpesaCode(message),
+              'transactionId': transactionId,
+              'forwardingJobId': forwardingJobId,
+              'forwardingStatus': ForwardingJobStatuses.pending,
+              'senderDeviceName': senderDeviceName,
             }
           },
         );
-
-        // print("No forwarding devices found to forward the message.");
-        dontProcess(
-          message,
-          '',
-          number,
-          '',
-          amount,
-          -1,
-          status: TransactionStatuses.forwarded,
-          reply:
-              'Forwarded unavailable amount(Ksh $amount) to all paired devices',
-          canRetry: false,
-          source: name,
+        debugPrint(
+          'FORWARDED SMS SEND RESULT: '
+          'transactionId=$transactionId, '
+          'forwardingJobId=$forwardingJobId, '
+          'success=${result['success']}',
         );
       }
     }
@@ -1966,6 +2075,7 @@ class TransactionController {
         'initialMessage',
         'firstFailedTimeStamp',
         'forwardingJobId',
+        'forwardingSenderDeviceName',
         'alternativeExecuteAt',
       ],
     );
@@ -2093,7 +2203,7 @@ class TransactionController {
             ? latestStatus
             : altResponse[1];
 
-        await _sqliteService.updateStuff(
+        final alternativeUpdateRows = await _sqliteService.updateStuff(
           {
             'ussdDialed': processedCode,
             'ussdReply': smsAlreadyConfirmed || smsAlreadyFailed
@@ -2102,8 +2212,8 @@ class TransactionController {
             'status': finalAlternativeStatus,
             'timeStamp': DateTime.now().millisecondsSinceEpoch,
           },
-          'id = ?',
-          [transactionId],
+          'id = ? AND (status IS NULL OR status != ?)',
+          [transactionId, TransactionStatuses.doneConfirmed],
           'transactions',
         );
         final transactionRows = await _sqliteService.queryCustom(
@@ -2118,10 +2228,10 @@ class TransactionController {
             .firstOrNull?['forwardingSenderDeviceName']
             ?.toString();
         final alternativeSucceeded =
-            finalAlternativeStatus == TransactionStatuses.doneConfirmed ||
-                finalAlternativeStatus == TransactionStatuses.advancedUssd;
+            finalAlternativeStatus == TransactionStatuses.doneConfirmed;
 
-        if (alternativeSucceeded &&
+        if (alternativeUpdateRows == 1 &&
+            alternativeSucceeded &&
             forwardingJobId != null &&
             forwardingJobId.isNotEmpty &&
             senderDevice != null &&
@@ -2157,6 +2267,55 @@ class TransactionController {
       }
       if (devices.isEmpty) continue;
 
+      var remoteForwardingJobId = tx['forwardingJobId']?.toString() ?? '';
+      final previousSenderDeviceName =
+          tx['forwardingSenderDeviceName']?.toString() ?? '';
+
+      if (remoteForwardingJobId.isEmpty) {
+        if (previousSenderDeviceName.isNotEmpty) {
+          debugPrint(
+            'ALT FORWARD DISPATCH: transaction=$transactionId came from '
+            '$previousSenderDeviceName but has no forwardingJobId; '
+            'not generating a replacement ID',
+          );
+          continue;
+        }
+
+        // This node is originating the remote alternative job. Assign its
+        // first job ID here and persist it before sending; never replace an
+        // ID supplied by an upstream forwarding node.
+        final createdJobId = ForwardingJobId.generate(
+          mpesaCode: getMpesaCode(tx['initialMessage']?.toString() ?? ''),
+        );
+        await _sqliteService.updateStuff(
+          {'forwardingJobId': createdJobId},
+          'id = ? AND (forwardingJobId IS NULL OR forwardingJobId = ?)',
+          [transactionId, ''],
+          'transactions',
+        );
+        final storedJobRows = await _sqliteService.queryCustom(
+          'transactions',
+          'id = ?',
+          [transactionId],
+          columns: ['id', 'forwardingJobId'],
+          limit: 1,
+        );
+        remoteForwardingJobId =
+            storedJobRows.firstOrNull?['forwardingJobId']?.toString() ?? '';
+        if (remoteForwardingJobId.isEmpty) {
+          debugPrint(
+            'ALT FORWARD DISPATCH: could not persist an originating '
+            'forwardingJobId for transaction=$transactionId',
+          );
+          continue;
+        }
+        debugPrint(
+          'ALT FORWARD JOB CREATED: '
+          'localTransactionId=$transactionId, '
+          'forwardingJobId=$remoteForwardingJobId',
+        );
+      }
+
       // Claim the task before enqueueing it so a later retry tick cannot send
       // the same alternative request twice.
       await _sqliteService.updateOnly(
@@ -2169,6 +2328,13 @@ class TransactionController {
       );
       final sender =
           await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
+      debugPrint(
+        'ALT FORWARD DISPATCH: '
+        'localTransactionId=$transactionId, '
+        'forwardingTransactionId=$transactionId, '
+        'forwardingJobId=$remoteForwardingJobId, '
+        'target=$target',
+      );
       final res = await BackendService().post(
         '/api/fcm/send-secure',
         body: {
@@ -2179,7 +2345,7 @@ class TransactionController {
           'data': {
             'type': 'process_alt_request',
             'transactionId': tx['id'].toString(),
-            'forwardingJobId': tx['forwardingJobId']?.toString() ?? '',
+            'forwardingJobId': remoteForwardingJobId,
             'senderDeviceName': sender,
             'recipientDeviceName': target,
             'ussdCode': processedCode,
@@ -2677,6 +2843,11 @@ class TransactionController {
     List<dynamic> response = [];
 
     if (isAdvanced) {
+      if (forwardingJobId != null && forwardingJobId.isNotEmpty) {
+        debugPrint(
+          'ALT USSD: advanced request started jobId=$forwardingJobId',
+        );
+      }
       String transStatus = TransactionStatuses.advancedUssd;
       String msg = 'Advanced. Added to queue.';
 
@@ -2741,14 +2912,31 @@ class TransactionController {
       },
       'transactions',
     );
+    debugPrint(
+      'ALT USSD STORED: localTransactionId=$insertedId, '
+      'forwardingTransactionId=${forwardingTransactionId ?? ''}, '
+      'forwardingJobId=${forwardingJobId ?? ''}, '
+      'sender=${forwardingSenderDeviceName ?? ''}, '
+      'recipient=${forwardingRecipientDeviceName ?? ''}',
+    );
 
     if (forwardingJobId != null &&
         forwardingJobId.isNotEmpty &&
         forwardingSenderDeviceName != null &&
         forwardingSenderDeviceName.isNotEmpty) {
+      if (response[1] != TransactionStatuses.doneConfirmed) {
+        debugPrint(
+          'ALT USSD: status=${response[1]} is not final; '
+          'waiting for doneConfirmed jobId=$forwardingJobId, '
+          'localTransactionId=$insertedId',
+        );
+        return insertedId;
+      }
+
       debugPrint(
         'ALT FORWARD RESULT: '
-        'transactionId=$forwardingTransactionId, '
+        'localTransactionId=$insertedId, '
+        'forwardingTransactionId=$forwardingTransactionId, '
         'forwardingJobId=$forwardingJobId, '
         'status=${response[1]}, '
         'senderDevice=$forwardingSenderDeviceName',
@@ -2757,7 +2945,7 @@ class TransactionController {
       final senderDeviceName =
           (await _sharedPreferencesService.getDeviceName()) ?? '';
 
-      await BackendService().post(
+      final result = await BackendService().post(
         '/api/fcm/send-secure',
         body: {
           'title': 'BSAT Online Forwarding',
@@ -2766,7 +2954,7 @@ class TransactionController {
           'recipientDeviceName': forwardingSenderDeviceName,
           'data': {
             'type': 'forwarded_alt_result',
-            'transactionId': forwardingTransactionId ?? '',
+            'transactionId': insertedId.toString(),
             'forwardingJobId': forwardingJobId,
             'status': response[1],
             'ussdReply': response[0]?.toString() ?? '',
@@ -2774,6 +2962,10 @@ class TransactionController {
             'recipientDeviceName': forwardingSenderDeviceName,
           },
         },
+      );
+      debugPrint(
+        'ALT RESULT: sent immediate non-advanced result '
+        'jobId=$forwardingJobId, status=${response[1]}, result=$result',
       );
     }
 
@@ -3054,15 +3246,30 @@ class TransactionController {
         final forwardingSender =
             candidate['forwardingSenderDeviceName']?.toString() ?? '';
         if (forwardingJobId.isNotEmpty && forwardingSender.isNotEmpty) {
-          debugPrint(
-            'SAFARICOM CONFIRMATION: sending forwarding ACK '
-            'for transaction=$transactionId',
-          );
-          await _sendForwardingConfirmation(
-            forwardingJobId: forwardingJobId,
-            recipientDeviceName: forwardingSender,
-            transactionId: transactionId.toString(),
-          );
+          if (candidate['source']?.toString() == 'manual') {
+            final finalReply = updated.firstOrNull?['ussdReply']?.toString() ??
+                confirmationBody.trim();
+            debugPrint(
+              'ALT CONFIRMED: Safaricom confirmation matched '
+              'jobId=$forwardingJobId, localTransactionId=$transactionId',
+            );
+            await _sendForwardedAlternativeResult(
+              forwardingJobId: forwardingJobId,
+              recipientDeviceName: forwardingSender,
+              transactionId: transactionId.toString(),
+              ussdReply: finalReply,
+            );
+          } else {
+            debugPrint(
+              'SAFARICOM CONFIRMATION: sending forwarding ACK '
+              'for transaction=$transactionId',
+            );
+            await _sendForwardingConfirmation(
+              forwardingJobId: forwardingJobId,
+              recipientDeviceName: forwardingSender,
+              transactionId: transactionId.toString(),
+            );
+          }
         }
       }
       return;

@@ -919,6 +919,11 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                           (_details['transactionId'] ?? '')
                                               .toString(),
                                     );
+                                    debugPrint(
+                                      'FORWARDED SMS JOB CREATED: '
+                                      'transactionId=${_details['transactionId'] ?? ''}, '
+                                      'forwardingJobId=$forwardingJobId',
+                                    );
 
                                     int? txId = await TransactionController()
                                         .dontProcess(
@@ -936,7 +941,26 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       reply:
                                           'Forwarding to ${device['device_name']}',
                                     );
+                                    final storedRows = txId == null
+                                        ? <Map<String, dynamic>>[]
+                                        : await _sqliteService.queryCustom(
+                                            'transactions',
+                                            'id = ?',
+                                            [txId],
+                                            columns: ['id', 'forwardingJobId'],
+                                          );
+                                    debugPrint(
+                                      'FORWARDED SMS STORED: '
+                                      'localTransactionId=$txId, row=$storedRows',
+                                    );
 
+                                    debugPrint(
+                                      'FORWARDED SMS SEND: '
+                                      'transactionId=$txId, '
+                                      'forwardingJobId=$forwardingJobId, '
+                                      'sender=$senderDeviceName, '
+                                      'recipient=$recipientDeviceName',
+                                    );
                                     final result = await BackendService().post(
                                       '/api/fcm/send-secure',
                                       body: {

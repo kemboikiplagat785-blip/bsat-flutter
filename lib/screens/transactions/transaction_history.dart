@@ -690,6 +690,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         final forwardingJobId = ForwardingJobId.generate(
           mpesaCode: (transaction['transactionId'] ?? '').toString(),
         );
+        debugPrint(
+          'FORWARDED SMS JOB CREATED: '
+          'transactionId=${transaction['transactionId'] ?? ''}, '
+          'forwardingJobId=$forwardingJobId',
+        );
 
         if (message.isEmpty) {
           failed++;
@@ -711,7 +716,24 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
             reply: 'Forwarded to $recipientDeviceName',
             forwardingJobId: forwardingJobId,
           );
+          final storedRows = txId == null
+              ? <Map<String, dynamic>>[]
+              : await SQLiteService().queryCustom(
+                  'transactions',
+                  'id = ?',
+                  [txId],
+                  columns: ['id', 'forwardingJobId'],
+                );
+          debugPrint(
+            'FORWARDED SMS STORED: '
+            'localTransactionId=$txId, row=$storedRows',
+          );
 
+          debugPrint(
+            'FORWARDED SMS SEND: '
+            'transactionId=$txId, forwardingJobId=$forwardingJobId, '
+            'sender=$senderDeviceName, recipient=$recipientDeviceName',
+          );
           final result = await BackendService().post(
             '/api/fcm/send-secure',
             body: {

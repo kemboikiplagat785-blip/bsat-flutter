@@ -97,7 +97,12 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
   developer.log(
       "Received FCM message with type: $type, data: ${message.data}, notification: ${message.notification}");
 
-  await _sendImmediateAck(message, originalType: type);
+  // CHECK_UPDATE is a one-way app update notification, not a paired-device
+  // forwarding request. Replying through the forwarding ACK path can lack the
+  // sender/recipient fields that endpoint requires.
+  if ((type ?? '').toUpperCase() != 'CHECK_UPDATE') {
+    await _sendImmediateAck(message, originalType: type);
+  }
 
   switch (type) {
     case 'process_alt_request':
@@ -548,6 +553,11 @@ Future<bool> _processIncomingAcknowledgement(
   final String normalizedType = (type ?? '').toUpperCase();
   final String originalType =
       message.data['originalType']?.toString().toUpperCase() ?? '';
+
+  if (originalType == 'CHECK_UPDATE') {
+    debugPrint('Ignoring generic ACK for CHECK_UPDATE.');
+    return true;
+  }
 
   if (normalizedType == 'PING_RESPONSE') {
     await _handlePingAck(message);

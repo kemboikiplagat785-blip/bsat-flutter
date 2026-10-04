@@ -112,6 +112,48 @@ Future<String?> showChangeCategoryDialog(BuildContext context,
                   () async {
                     if ((await showConfirmDeleteDialog(context,
                             message:
+                                'Change category to Forwarded (Pending)?')) ??
+                        false) {
+                      Navigator.of(context)
+                          .pop(TransactionStatuses.forwardedPending);
+                    }
+                  },
+                  Icon(
+                    CupertinoIcons.arrow_up_right,
+                    color: kWarningColor,
+                    size: 14,
+                  ),
+                  'Forwarded (Pending)',
+                  context,
+                  withBorder: true,
+                  textSize: 12,
+                  accentColor: kWarningColor,
+                ),
+                toolButton(
+                  () async {
+                    if ((await showConfirmDeleteDialog(context,
+                            message:
+                                'Change category to Forwarded (Successful)?')) ??
+                        false) {
+                      Navigator.of(context)
+                          .pop(TransactionStatuses.forwardedConfirmed);
+                    }
+                  },
+                  Icon(
+                    CupertinoIcons.arrow_up_right,
+                    color: kPrimaryColor,
+                    size: 14,
+                  ),
+                  'Forwarded (Successful)',
+                  context,
+                  withBorder: true,
+                  textSize: 12,
+                  accentColor: kPrimaryColor,
+                ),
+                toolButton(
+                  () async {
+                    if ((await showConfirmDeleteDialog(context,
+                            message:
                                 'Change category to Failed (second attempt)?')) ??
                         false) {
                       Navigator.of(context)

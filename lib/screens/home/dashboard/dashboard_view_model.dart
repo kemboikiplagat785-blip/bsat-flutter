@@ -119,14 +119,14 @@ class DashboardViewModel extends ChangeNotifier {
 
     successfulCount = await _sqliteService.getCount(
       'transactions',
-      appendQuery:
-          "WHERE (status = '${TransactionStatuses.done}') AND date = '${getNormalDate(DateTime.now())}'",
+      appendQuery: "WHERE status = '${TransactionStatuses.successfulPending}' "
+          "AND date = '${getNormalDate(DateTime.now())}'",
     );
 
     successfulConfirmedCount = await _sqliteService.getCount(
       'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.doneConfirmed}' AND date = '${getNormalDate(DateTime.now())}'",
+      appendQuery: "WHERE status = '${TransactionStatuses.doneConfirmed}' "
+          "AND date = '${getNormalDate(DateTime.now())}'",
     );
 
     errorCount = await _sqliteService.getCount(

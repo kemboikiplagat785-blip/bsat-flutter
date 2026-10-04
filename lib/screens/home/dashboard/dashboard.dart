@@ -501,9 +501,12 @@ class _DashBoardPageState extends State<DashBoardPage>
                               },
                               {
                                 'count': vm.successfulCount,
-                                'icon': const Icon(CupertinoIcons.checkmark_alt,
-                                    color: kWarningColor, size: 14),
-                                'query': TransactionStatuses.done,
+                                'icon': const Icon(
+                                  CupertinoIcons.checkmark_alt,
+                                  color: kWarningColor,
+                                  size: 14,
+                                ),
+                                'query': TransactionStatuses.successfulPending,
                                 'label': 'successful(pending)',
                                 'accentColor': kDarkerGreen,
                               },

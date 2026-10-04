@@ -5,6 +5,7 @@ import 'dart:ui';
 // import 'package:bsat/services/socket_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/skills.dart';
+import 'package:bsat/utils/logger.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:phone_state/phone_state.dart';
@@ -46,6 +47,9 @@ class _TransactionControllerService {
 // Then update the onStart function:
 @pragma('vm:entry-point')
 void onStart(ServiceInstance serviceInstance) async {
+  DartPluginRegistrant.ensureInitialized();
+
+  final log = BsatLogger(tag: 'BackgroundService');
   const int retryAfter = 20;
   const Duration maskedCallLogDelay = Duration(minutes: 5);
   bool isTickRunning = false;
@@ -88,11 +92,10 @@ void onStart(ServiceInstance serviceInstance) async {
         // Note: Permission requests cannot be made from background service (no Activity context)
         // Permission must be requested in the main app when in foreground
         if ((await Permission.phone.status).isGranted) {
-          print("call from ${state.number}");
+          log.info('Incoming call detected; attempting to unmask');
           transactionController.unmaskFromCall(state.number ?? "");
         } else {
-          print(
-              "call from ${state.number} - Permission.phone not granted, skipping unmask");
+          log.warn('Phone permission not granted; skipping call unmask');
         }
       }
     });
@@ -137,7 +140,11 @@ void onStart(ServiceInstance serviceInstance) async {
             }
           }
 
-          await TransactionController().retryAll(true);
+          await TransactionController().retryAll(
+            true,
+            useMainEngineBridge: true,
+            backgroundService: serviceInstance,
+          );
           await transactionController.checkSkipped();
           await transactionController.runScheduled();
 

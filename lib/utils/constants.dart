@@ -67,6 +67,9 @@ class TransactionStatuses {
   static const forwardedConfirmed = "transaction-forwarded-confirmed";
   static const masked = "transaction-masked";
   static const forwardedOnline = "transaction-forwarded-online";
+  static const alternativeExecuting = "transaction-alternative-executing";
+  static const alternativeFailed = "transaction-alternative-failed";
+  static const successfulPending = 'successful-pending';
 
   static const doneMap = {0: done};
   static const errorMap = {1: error};
@@ -84,7 +87,9 @@ class TransactionStatuses {
   static const forwardedConfirmedMap = {13: forwardedConfirmed};
   static const maskedMap = {14: masked};
   static const forwardedOnlineMap = {15: forwardedOnline};
-
+  static const alternativeExecutingMap = {16: alternativeExecuting};
+  static const alternativeFailedMap = {17: alternativeFailed};
+  static const successfulPendingMap = {18: successfulPending};
   static const statuses = {
     0: done,
     1: error,
@@ -102,6 +107,9 @@ class TransactionStatuses {
     13: forwardedConfirmed,
     14: masked,
     15: forwardedOnline,
+    16: alternativeExecuting,
+    17: alternativeFailed,
+    18: successfulPending,
   };
 }
 
@@ -259,10 +267,10 @@ List<Map<String, dynamic>> kInitialCodes = [
 List<Map<String, dynamic>> kNoAutoretryCodes = [
   {'code': '*544*13*1*n*1*1#', 'amount': 130},
   {'code': '*544*13*1*n*1*1#', 'amount': 120},
-  {'code': '*544*6*8*n*00*1*0*1*1#', 'amount': 23},
-  {'code': '*544*6*8*n*00*1*0*1*1#', 'amount': 21},
-  {'code': '*544*6*8*n*00*1*0*2*1#', 'amount': 53},
-  {'code': '*544*6*8*n*00*14*8*2*1#', 'amount': 50},
+  {'code': '*544*5*8*n*00*1*0*1*1#', 'amount': 23},
+  {'code': '*544*5*8*n*00*1*0*1*1#', 'amount': 21},
+  {'code': '*544*5*8*n*00*1*0*4*1#', 'amount': 53},
+  {'code': '*544*5*8*n*00*14*8*2*1#', 'amount': 50},
   {'code': '*544*6*8*n*00*14*8*2*1#', 'amount': 51},
   {'code': '*544*6*8*n*00*14*8*2*1#', 'amount': 52},
   {'code': '*188*8*2*2*n*1*2#', 'amount': 30},

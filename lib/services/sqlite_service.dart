@@ -18,7 +18,7 @@ class SQLiteService {
     final path = join(databasesPath, 'bsat_app.db');
     final db = await openDatabase(
       path,
-      version: 16,
+      version: 17,
       onCreate: onCreate,
       onUpgrade: onUpgrade,
       singleInstance: true,
@@ -74,6 +74,11 @@ class SQLiteService {
     try {
       await db.execute(
         'ALTER TABLE transactions ADD COLUMN forwardingRecipientDeviceName TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN alternativeExecuteAt INTEGER',
       );
     } catch (_) {}
   }
@@ -219,7 +224,8 @@ class SQLiteService {
         firstFailedTimeStamp INTEGER,
         forwardingJobId TEXT,
         forwardingSenderDeviceName TEXT,
-        forwardingRecipientDeviceName TEXT
+        forwardingRecipientDeviceName TEXT,
+        alternativeExecuteAt INTEGER
       )
     ''');
 
@@ -600,6 +606,11 @@ class SQLiteService {
     try {
       await db.execute(
         'ALTER TABLE transactions ADD COLUMN firstFailedTimeStamp INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN alternativeExecuteAt INTEGER',
       );
     } catch (_) {}
 

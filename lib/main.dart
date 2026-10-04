@@ -18,6 +18,7 @@ import 'package:bsat/utils/logger.dart';
 import 'providers/theme_provider.dart';
 import 'screens/settings/kill_switch.dart';
 import 'services/admin_management_service.dart';
+import 'services/main_engine_ussd_bridge.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -42,6 +43,8 @@ Future<void> main() async {
   );
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  registerMainEngineAlternativeUssdBridge();
 
   // Initialize Firebase Messaging (Don't await to prevent blocking startup)
   FirebaseMessagingService().initNotifications();

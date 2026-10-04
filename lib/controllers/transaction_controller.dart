@@ -620,8 +620,7 @@ class TransactionController {
     );
 
 // ONLINE FORWARDING: notify Phone A only after Phone B confirms the transaction.
-    if ((requestResponse[1] == TransactionStatuses.doneConfirmed ||
-            requestResponse[1] == TransactionStatuses.advancedUssd) &&
+    if (requestResponse[1] == TransactionStatuses.doneConfirmed &&
         forwardingJobId != null &&
         forwardingJobId.isNotEmpty &&
         forwardingSenderDeviceName != null &&
@@ -2832,6 +2831,243 @@ class TransactionController {
   }
 
   Future<void> updateWithMessage(TransactionMessage smsMessage) async {
+    final confirmationBody = smsMessage.body ?? '';
+    final isGiftConfirmation = RegExp(
+      r'you\s+have\s+gifted',
+      caseSensitive: false,
+    ).hasMatch(confirmationBody);
+    final hasCaringPhrase = RegExp(
+      r'thank\s+you\s+for\s+caring',
+      caseSensitive: false,
+    ).hasMatch(confirmationBody);
+
+    if (isGiftConfirmation && hasCaringPhrase) {
+      debugPrint('SAFARICOM CONFIRMATION: confirmation SMS detected');
+
+      // This confirmation SMS carries the offer price, while its recipient
+      // phone number may be masked. Use the amount to locate the original
+      // advanced transaction; proceed only when the match is unambiguous.
+      final amountMatch = RegExp(
+        r'\b(?:kshs?|kes)\s*([\d,]+)(?:\.\d+)?',
+        caseSensitive: false,
+      ).firstMatch(confirmationBody);
+      final amount = int.tryParse(
+        amountMatch?.group(1)?.replaceAll(',', '') ?? '',
+      );
+      debugPrint(
+        'SAFARICOM CONFIRMATION: Safaricom amount=${amount ?? 'unknown'}',
+      );
+
+      final recipientMatch = RegExp(
+        r'\bto\s+([+\d\s().-]*\*{2,})',
+        caseSensitive: false,
+      ).firstMatch(confirmationBody);
+      final maskedRecipient = recipientMatch?.group(1) ?? '';
+      var visibleRecipientPrefix = normalizeIncomingCallNumber(
+        maskedRecipient.replaceAll('*', ''),
+      );
+      if (!visibleRecipientPrefix.startsWith('0') &&
+          visibleRecipientPrefix.length >= 7 &&
+          visibleRecipientPrefix.length <= 9) {
+        visibleRecipientPrefix = '0$visibleRecipientPrefix';
+      }
+      if (visibleRecipientPrefix.isEmpty) {
+        debugPrint(
+          'SAFARICOM CONFIRMATION: could not extract masked recipient prefix',
+        );
+        return;
+      }
+
+      debugPrint(
+        'SAFARICOM CONFIRMATION: amount=$amount, '
+        'maskedRecipientPrefix=$visibleRecipientPrefix',
+      );
+
+      final smsTimestamp = smsMessage.date;
+      if (smsTimestamp == null || smsTimestamp <= 0) {
+        debugPrint(
+          'SAFARICOM CONFIRMATION: missing SMS timestamp; leaving unresolved',
+        );
+        return;
+      }
+
+      final recipientDigits =
+          visibleRecipientPrefix.replaceAll(RegExp(r'\D'), '');
+      final nationalPrefix = recipientDigits.startsWith('0')
+          ? recipientDigits.substring(1)
+          : recipientDigits;
+      final diagnosticRows = await _sqliteService.queryCustom(
+        'transactions',
+        'amount = ? OR CAST(number AS TEXT) LIKE ? OR '
+            'CAST(number AS TEXT) LIKE ?',
+        [amount ?? -1, '$nationalPrefix%', '254$nationalPrefix%'],
+        columns: ['id', 'number', 'amount', 'status', 'timeStamp'],
+        orderBy: 'timeStamp DESC',
+      );
+
+      for (final row in diagnosticRows) {
+        final transactionId = row['id'];
+        final rawNumber = row['number']?.toString() ?? '';
+        final rawNumberDigits = rawNumber.replaceAll(RegExp(r'\D'), '');
+        var normalizedNumber = normalizeIncomingCallNumber(rawNumber);
+        if (normalizedNumber.length == 9 &&
+            !rawNumberDigits.startsWith('254')) {
+          normalizedNumber = '0$normalizedNumber';
+        }
+        final transactionAmount = int.tryParse(row['amount']?.toString() ?? '');
+        final transactionTimestamp =
+            int.tryParse(row['timeStamp']?.toString() ?? '');
+        final transactionStatus = row['status']?.toString() ?? '';
+        final amountMatched = transactionAmount == amount;
+        final recipientPrefixMatched =
+            normalizedNumber.startsWith(visibleRecipientPrefix);
+        const timestampCorrelationWindowMs = 2 * 60 * 1000;
+        final timestampMatched = transactionTimestamp != null &&
+            (transactionTimestamp - smsTimestamp).abs() <=
+                timestampCorrelationWindowMs;
+        final statusMatched =
+            transactionStatus == TransactionStatuses.advancedUssd ||
+                transactionStatus == TransactionStatuses.successfulPending;
+
+        if (!amountMatched ||
+            !recipientPrefixMatched ||
+            !timestampMatched ||
+            !statusMatched) {
+          debugPrint(
+            'SAFARICOM CONFIRMATION DIAGNOSTIC: '
+            'id=$transactionId, number=$rawNumber, '
+            'amount=${row['amount']}, status=$transactionStatus, '
+            'transactionTimestamp=${row['timeStamp']}, '
+            'smsTimestamp=$smsTimestamp, '
+            'normalizedNumber=$normalizedNumber, '
+            'normalizedSmsPrefix=$visibleRecipientPrefix, '
+            'amountMatched=$amountMatched, '
+            'recipientPrefixMatched=$recipientPrefixMatched, '
+            'timestampMatched=$timestampMatched, '
+            'statusMatched=$statusMatched',
+          );
+        }
+      }
+
+      final amountAndStatusMatches = await _sqliteService.queryCustom(
+        'transactions',
+        'status IN (?, ?)',
+        [
+          TransactionStatuses.advancedUssd,
+          TransactionStatuses.successfulPending,
+        ],
+        orderBy: 'timeStamp DESC',
+      );
+
+      final candidates = <Map<String, dynamic>>[];
+      for (final transaction in amountAndStatusMatches) {
+        final transactionTimestamp = int.tryParse(
+          transaction['timeStamp']?.toString() ?? '',
+        );
+        const timestampCorrelationWindowMs = 2 * 60 * 1000;
+        if (transactionTimestamp == null ||
+            (transactionTimestamp - smsTimestamp).abs() >
+                timestampCorrelationWindowMs) {
+          debugPrint(
+            'SAFARICOM CONFIRMATION: rejecting candidate '
+            'id=${transaction['id']} due to timestamp outside '
+            '${timestampCorrelationWindowMs}ms correlation window',
+          );
+          continue;
+        }
+
+        final rawNumber = transaction['number']?.toString() ?? '';
+        final rawNumberDigits = rawNumber.replaceAll(RegExp(r'\D'), '');
+        var normalizedNumber = normalizeIncomingCallNumber(rawNumber);
+        if (normalizedNumber.length == 9 &&
+            !rawNumberDigits.startsWith('254')) {
+          normalizedNumber = '0$normalizedNumber';
+        }
+
+        if (!normalizedNumber.startsWith(visibleRecipientPrefix)) {
+          debugPrint(
+            'SAFARICOM CONFIRMATION: rejecting candidate '
+            'id=${transaction['id']} due to recipient prefix',
+          );
+          continue;
+        }
+        candidates.add(transaction);
+      }
+
+      debugPrint(
+        'SAFARICOM CONFIRMATION: eligible candidates=${candidates.length}',
+      );
+
+      if (candidates.length != 1) {
+        debugPrint(
+          candidates.isEmpty
+              ? 'SAFARICOM CONFIRMATION: zero candidates; leaving unresolved'
+              : 'SAFARICOM CONFIRMATION: multiple candidates; '
+                  'leaving unresolved',
+        );
+        return;
+      }
+
+      final candidate = candidates.first;
+      final transactionId = candidate['id'];
+      final previousStatus = candidate['status']?.toString() ?? '';
+      debugPrint(
+        'SAFARICOM CONFIRMATION: transaction=$transactionId '
+        'statusBefore=$previousStatus amount=$amount',
+      );
+
+      final updatedRows = await _sqliteService.updateStuff(
+        {
+          'status': TransactionStatuses.doneConfirmed,
+          'ussdReply': '${confirmationBody.trim()}\n$interpunct '
+              '${candidate['ussdReply'] ?? ''}',
+          'timeStamp': DateTime.now().millisecondsSinceEpoch,
+          'canRetry': 0,
+        },
+        'id = ? AND status IN (?, ?)',
+        [
+          transactionId,
+          TransactionStatuses.advancedUssd,
+          TransactionStatuses.successfulPending,
+        ],
+        'transactions',
+      );
+
+      final updated = await _sqliteService.queryCustom(
+        'transactions',
+        'id = ?',
+        [transactionId],
+        limit: 1,
+      );
+      final updatedStatus = updated.firstOrNull?['status']?.toString();
+      debugPrint(
+        'SAFARICOM CONFIRMATION: transaction=$transactionId '
+        'statusAfter=$updatedStatus',
+      );
+
+      if (updatedRows == 1 &&
+          updatedStatus == TransactionStatuses.doneConfirmed) {
+        debugPrint(
+          'SAFARICOM CONFIRMATION: confirmed transaction=$transactionId',
+        );
+        final forwardingJobId = candidate['forwardingJobId']?.toString() ?? '';
+        final forwardingSender =
+            candidate['forwardingSenderDeviceName']?.toString() ?? '';
+        if (forwardingJobId.isNotEmpty && forwardingSender.isNotEmpty) {
+          debugPrint(
+            'SAFARICOM CONFIRMATION: sending forwarding ACK '
+            'for transaction=$transactionId',
+          );
+          await _sendForwardingConfirmation(
+            forwardingJobId: forwardingJobId,
+            recipientDeviceName: forwardingSender,
+            transactionId: transactionId.toString(),
+          );
+        }
+      }
+      return;
+    }
+
     int number = extract9DigitNumber(smsMessage.body ?? "");
 
     if (number == 0) {

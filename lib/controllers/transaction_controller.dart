@@ -2711,10 +2711,11 @@ class TransactionController {
     }
 
     // Successful (Confirmed):
-// These messages indicate that the recommendation/purchase has been
-// fully confirmed by the network.
+    // A purchase confirmation is final. Recommendation success/commission
+    // wording remains pending here because the later Safaricom SMS is the
+    // confirmation source for recommendations.
     if (RegExp(
-      r'successfully recommended offer|successfully purchased|total commission|continue connecting|have purchased',
+      r'successfully purchased|continue connecting|have purchased',
       caseSensitive: false,
     ).hasMatch(responseText)) {
       debugPrint(
@@ -2724,11 +2725,11 @@ class TransactionController {
       return TransactionStatuses.doneConfirmed;
     }
 
-// Successful (Pending):
+    // Successful (Pending):
 // The recommendation has been submitted successfully, but the final
 // confirmation message has not yet been received.
     if (RegExp(
-      r'submitted successfully',
+      r'submitted successfully|successfully recommended offer|total commission',
       caseSensitive: false,
     ).hasMatch(responseText)) {
       debugPrint(
@@ -3275,157 +3276,221 @@ class TransactionController {
       return;
     }
 
-    int number = extract9DigitNumber(smsMessage.body ?? "");
+    final body = smsMessage.body ?? '';
+    final purchaseConfirmed = RegExp(
+      r'thank\s+you\s+for\s+choosing\s+safaricom'
+      r'.*?you\s+have\s+purchased\s+.+?'
+      r'(?:for\s+\d+)?',
+      caseSensitive: false,
+      dotAll: true,
+    ).hasMatch(body);
+    final recommendationSubmitted = RegExp(
+      r'recommendation\s+for\s+\d+\s+submitted\s+successfully',
+      caseSensitive: false,
+    ).hasMatch(body);
+    final recommendationSuccessful = RegExp(
+      r'you\s+have\s+successfully\s+recommended\s+offer',
+      caseSensitive: false,
+    ).hasMatch(body);
+    final hasTotalCommission = RegExp(
+      r'total\s+commission',
+      caseSensitive: false,
+    ).hasMatch(body);
+    final recommendationFailed = RegExp(
+      r'recommendation\s+failed',
+      caseSensitive: false,
+    ).hasMatch(body);
 
-    if (number == 0) {
+    if (!purchaseConfirmed &&
+        !recommendationSubmitted &&
+        !recommendationSuccessful &&
+        !hasTotalCommission &&
+        !recommendationFailed) {
       return;
     }
 
-    int twentyMinuteAgo = DateTime.now().millisecondsSinceEpoch - 1200000;
-    int replyAmount = getAmount(smsMessage.body ?? "0");
+    final confirmed = purchaseConfirmed ||
+        recommendationSuccessful ||
+        hasTotalCommission;
+    final targetStatus = recommendationFailed
+        ? TransactionStatuses.secondAttempt
+        : confirmed
+            ? TransactionStatuses.doneConfirmed
+            : TransactionStatuses.successfulPending;
 
-    List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
+    // Safaricom confirmations can omit the M-PESA code and offer amount. Only
+    // use amount when the SMS ties a currency value directly to the offer or
+    // bundle; weekly Total Commission is not the purchase amount.
+    // A recipient can itself be ten digits, so only treat a ten-character
+    // token containing both a letter and a digit as an M-PESA code here.
+    final codeMatch = RegExp(
+      r'\b(?=[A-Z0-9]*[A-Z])(?=[A-Z0-9]*[0-9])[A-Z0-9]{10}\b',
+      caseSensitive: false,
+    ).firstMatch(body);
+    final code = codeMatch?.group(0) ?? '';
+    final recipientMatch = RegExp(
+      r'\b(?:to|for)\s+((?:\+?254|0)?[\d][\d\s().-]{7,15})',
+      caseSensitive: false,
+    ).firstMatch(body);
+    final recipientDigits =
+        recipientMatch?.group(1)?.replaceAll(RegExp(r'\D'), '') ?? '';
+    final recipientNumber = recipientDigits.length >= 9 &&
+            recipientDigits.length <= 12
+        ? normalizeIncomingCallNumber(recipientDigits)
+        : '';
+    final amountMatch = RegExp(
+      r'(?:offer|bundle|purchase|purchased)[^\n]{0,35}?(?:kshs?|kes)\s*([\d,]+)'
+      r'|(?:kshs?|kes)\s*([\d,]+)[^\n]{0,25}?(?:offer|bundle|purchase)',
+      caseSensitive: false,
+    ).firstMatch(body);
+    final confirmationAmount = int.tryParse(
+      (amountMatch?.group(1) ?? amountMatch?.group(2) ?? '')
+          .replaceAll(',', ''),
+    );
+    final smsTimestamp = smsMessage.date;
+
+    if (code.isEmpty && recipientNumber.isEmpty) {
+      debugPrint(
+        'SAFARICOM CONFIRMATION: no transaction code or recipient; '
+        'leaving unresolved',
+      );
+      return;
+    }
+    if (smsTimestamp == null || smsTimestamp <= 0) {
+      debugPrint(
+        'SAFARICOM CONFIRMATION: missing SMS timestamp; leaving unresolved',
+      );
+      return;
+    }
+
+    const confirmationWindowMs = 20 * 60 * 1000;
+    final eligibleTransactions = await _sqliteService.queryCustom(
       'transactions',
-      'number = ? AND timeStamp >= ? ',
+      'status IN (?, ?, ?) AND timeStamp BETWEEN ? AND ?',
       [
-        number,
-        twentyMinuteAgo,
+        TransactionStatuses.successfulPending,
+        TransactionStatuses.advancedUssd,
+        TransactionStatuses.alternativeExecuting,
+        smsTimestamp - confirmationWindowMs,
+        smsTimestamp + confirmationWindowMs,
       ],
       columns: [
         'id',
+        'transactionId',
+        'number',
+        'amount',
+        'timeStamp',
         'status',
         'ussdReply',
-        'amount',
         'source',
-        'ussdDialed',
-        'firstFailedTimeStamp'
+        'forwardingJobId',
+        'forwardingSenderDeviceName',
+        'firstFailedTimeStamp',
       ],
     );
 
-    if (rawStuff.isEmpty) {
+    var candidates = eligibleTransactions;
+    if (code.isNotEmpty) {
+      candidates = candidates
+          .where((row) => row['transactionId']?.toString() == code)
+          .toList();
+    }
+    if (recipientNumber.isNotEmpty) {
+      candidates = candidates.where((row) {
+        final storedNumber = normalizeIncomingCallNumber(
+          row['number']?.toString() ?? '',
+        );
+        final rawStoredDigits =
+            (row['number']?.toString() ?? '').replaceAll(RegExp(r'\D'), '');
+        final normalizedStoredNumber = storedNumber.length == 9 &&
+                !rawStoredDigits.startsWith('254')
+            ? '0$storedNumber'
+            : storedNumber;
+        return normalizedStoredNumber == recipientNumber;
+      }).toList();
+    }
+    if (confirmationAmount != null) {
+      candidates = candidates
+          .where((row) =>
+              int.tryParse(row['amount']?.toString() ?? '') ==
+              confirmationAmount)
+          .toList();
+    }
+
+    if (candidates.length != 1) {
+      debugPrint(
+        'SAFARICOM CONFIRMATION: ${candidates.isEmpty ? 'no' : 'ambiguous'} '
+        'eligible match; candidates=${candidates.length}, code=$code, '
+        'recipient=$recipientNumber, amount=$confirmationAmount. '
+        'Leaving transactions unchanged.',
+      );
       return;
     }
 
-    if (rawStuff.first['amount'] < getAmount(smsMessage.body ?? "1")) {}
-
-    int amount = rawStuff.isNotEmpty
-        ? rawStuff.first['amount'] ?? 0
-        : getAmount(smsMessage.body ?? "");
-
-    if (rawStuff.length == 1 &&
-        replyAmount != 0 &&
-        amount != 0 &&
-        (amount < replyAmount * 0.69 || amount > replyAmount * 1.31)) {
-      _sharedPreferencesService.setOffersMightHaveChanged(true);
-    }
-
-    String status = rawStuff.isNotEmpty ? rawStuff.first['status'] : '';
-    final isAlternativeExecution =
-        status == TransactionStatuses.alternativeExecuting;
-
-    if (status != TransactionStatuses.doneConfirmed) {
-      if (status != TransactionStatuses.advancedQueue &&
-          status != TransactionStatuses.advancedUssd &&
-          !isAlternativeExecution) {
-        status = TransactionStatuses.done;
-      }
-
-//     Thank You For Choosing Safaricom. You have purchased Tunukiwa Legacy Daily Data for 746234392. Continue connecting with Family & Friends!
-//     · You have successfully recommended offer to 0746234392. Total Commission this week is Ksh.5867.3. Keep Selling, be a Bingwa Sokoni!!
-//     · Recommendation for 0746234392 submitted successfully. Keep selling!! Be a Bingwa Sokoni Champion.
-
-      final body = smsMessage.body ?? '';
-
-      final bool purchaseConfirmed = RegExp(
-        r'thank\s+you\s+for\s+choosing\s+safaricom'
-        r'.*?you\s+have\s+purchased\s+.+?'
-        r'(?:for\s+\d+)?',
-        caseSensitive: false,
-        dotAll: true,
-      ).hasMatch(body);
-
-      final bool recommendationSubmitted = RegExp(
-        r'recommendation\s+for\s+\d+\s+submitted\s+successfully',
-        caseSensitive: false,
-      ).hasMatch(body);
-
-      final bool recommendationSuccessful = RegExp(
-        r'you\s+have\s+successfully\s+recommended\s+offer',
-        caseSensitive: false,
-      ).hasMatch(body);
-
-      if (purchaseConfirmed) {
-        status = TransactionStatuses.doneConfirmed;
-      } else if (recommendationSubmitted || recommendationSuccessful) {
-        status = TransactionStatuses.successfulPending;
-      }
-
-      if (RegExp(
-        r'Recommendation failed',
-        caseSensitive: false,
-      ).hasMatch(smsMessage.body ?? "")) {
-        if (isAlternativeExecution) {
-          status = TransactionStatuses.alternativeFailed;
-        } else {
-          status = TransactionStatuses.secondAttempt;
-
-          debugPrint('ALTERNATIVE TIMER: '
-              'transactionId=${rawStuff.first['id']}, '
-              'existingFirstFailedTimeStamp=${rawStuff.first['firstFailedTimeStamp']}, ');
-        }
-      }
-    }
-    if (rawStuff.isNotEmpty) {
-      //print("Updating advanced request");
-      await _sqliteService.updateOnly(
-        status == TransactionStatuses.secondAttempt
-            ? "UPDATE transactions SET ussdReply = ?, status = ?, firstFailedTimeStamp = COALESCE(firstFailedTimeStamp, ?) WHERE id = ?"
-            : "UPDATE transactions SET ussdReply = ?, status = ? WHERE id = ?",
-        status == TransactionStatuses.secondAttempt
-            ? [
-                "${smsMessage.body} \n$interpunct ${rawStuff.first['ussdReply']}",
-                status,
-                DateTime.now().millisecondsSinceEpoch,
-                rawStuff.first['id'],
-              ]
-            : [
-                "${smsMessage.body} \n$interpunct ${rawStuff.first['ussdReply']}",
-                status,
-                rawStuff.first['id'],
-              ],
+    final candidate = candidates.single;
+    final transactionId = candidate['id'];
+    final currentStatus = candidate['status']?.toString() ?? '';
+    final status = recommendationFailed
+        ? (currentStatus == TransactionStatuses.alternativeExecuting
+            ? TransactionStatuses.alternativeFailed
+            : TransactionStatuses.secondAttempt)
+        : targetStatus;
+    final updatedRows = await _sqliteService.updateStuff(
+      {
+        'ussdReply': '$body \n$interpunct ${candidate['ussdReply'] ?? ''}',
+        'status': status,
+        if (status == TransactionStatuses.secondAttempt)
+          'firstFailedTimeStamp': candidate['firstFailedTimeStamp'] ??
+              DateTime.now().millisecondsSinceEpoch,
+        if (status == TransactionStatuses.doneConfirmed) 'canRetry': 0,
+      },
+      'id = ? AND status IN (?, ?, ?)',
+      [
+        transactionId,
+        TransactionStatuses.successfulPending,
+        TransactionStatuses.advancedUssd,
+        TransactionStatuses.alternativeExecuting,
+      ],
+      'transactions',
+    );
+    if (updatedRows != 1) {
+      debugPrint(
+        'SAFARICOM CONFIRMATION: transaction=$transactionId was not updated '
+        '(row count=$updatedRows); leaving state unchanged',
       );
-      if (status == TransactionStatuses.doneConfirmed) {
-        final confirmedTx = await _sqliteService.queryCustom(
-          'transactions',
-          'id = ?',
-          [rawStuff.first['id']],
-          limit: 1,
+      return;
+    }
+
+    final number =
+        int.tryParse(candidate['number']?.toString() ?? '') ?? 0;
+    final amount = int.tryParse(candidate['amount']?.toString() ?? '') ?? 0;
+    debugPrint(
+      'SAFARICOM CONFIRMATION: updated transaction=$transactionId '
+      'from=$currentStatus to=$status',
+    );
+
+    if (status == TransactionStatuses.doneConfirmed) {
+      final forwardingJobId = candidate['forwardingJobId']?.toString() ?? '';
+      final forwardingSender =
+          candidate['forwardingSenderDeviceName']?.toString() ?? '';
+      if (forwardingJobId.isNotEmpty && forwardingSender.isNotEmpty) {
+        await _sendForwardingConfirmation(
+          forwardingJobId: forwardingJobId,
+          recipientDeviceName: forwardingSender,
+          transactionId: transactionId.toString(),
         );
-        final forwardingJobId =
-            confirmedTx.firstOrNull?['forwardingJobId']?.toString();
-        final forwardingSender =
-            confirmedTx.firstOrNull?['forwardingSenderDeviceName']?.toString();
-        if (forwardingJobId != null &&
-            forwardingJobId.isNotEmpty &&
-            forwardingSender != null &&
-            forwardingSender.isNotEmpty) {
-          await _sendForwardingConfirmation(
-            forwardingJobId: forwardingJobId,
-            recipientDeviceName: forwardingSender,
-            transactionId: rawStuff.first['id'].toString(),
-          );
-        }
       }
-      processReply(
-        number,
-        status,
-        (rawStuff.firstOrNull?['source'] ?? 'unknown').split(' ')[0],
-        (rawStuff.firstOrNull?['source'] ?? 'unknown').split(' ').length > 1
-            ? (rawStuff.firstOrNull?['source'] ?? 'unknown').split(' ')[1]
-            : '',
-        amount,
-      );
     }
+
+    processReply(
+      number,
+      status,
+      (candidate['source'] ?? 'unknown').toString().split(' ').first,
+      (candidate['source'] ?? 'unknown').toString().split(' ').length > 1
+          ? (candidate['source'] ?? 'unknown').toString().split(' ')[1]
+          : '',
+      amount,
+    );
   }
 
   String alterMpesaMessage(String smsMessage, int amount) {

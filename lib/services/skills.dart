@@ -316,7 +316,7 @@ Future<bool> setClientBatchUploadCount(int count) async {
 //
 // void main() {
 //   // Example usage:
-//   // String phone = "0708104628"; // 11 digits
+//   // String phone = "0078104628"; // 11 digits
 //   String phone = "0115584442"; // 11 digits
 //   // String phone = "0110382792"; // 11 digits
 //   String amt = "50"; // 3 digits

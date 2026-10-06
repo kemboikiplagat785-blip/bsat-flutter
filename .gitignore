@@ -56,3 +56,5 @@ server/serviceAccountKey.json
 
 # Android debug keystore
 android/app/keys/
+# Widget Preview related
+.widget_preview/

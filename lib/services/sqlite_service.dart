@@ -18,7 +18,7 @@ class SQLiteService {
     final path = join(databasesPath, 'bsat_app.db');
     final db = await openDatabase(
       path,
-      version: 17,
+      version: 18,
       onCreate: onCreate,
       onUpgrade: onUpgrade,
       singleInstance: true,
@@ -34,6 +34,33 @@ class SQLiteService {
   }
 
   Future<void> _ensureCriticalSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS forwardingConfirmations (
+        forwardingJobId TEXT PRIMARY KEY,
+        recipientDeviceName TEXT NOT NULL,
+        transactionId TEXT,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        nextAttemptAt INTEGER NOT NULL DEFAULT 0,
+        resultStatus TEXT NOT NULL DEFAULT 'transaction-confirmed',
+        requiredTopUp INTEGER,
+        targetAmount INTEGER
+      )
+    ''');
+    for (final column in const <String, String>{
+      'resultStatus': "TEXT NOT NULL DEFAULT 'transaction-confirmed'",
+      'requiredTopUp': 'INTEGER',
+      'targetAmount': 'INTEGER',
+    }.entries) {
+      try {
+        await db.query('forwardingConfirmations',
+            columns: [column.key], limit: 1);
+      } catch (_) {
+        await db.execute(
+          'ALTER TABLE forwardingConfirmations ADD COLUMN '
+          '${column.key} ${column.value}',
+        );
+      }
+    }
     try {
       await db.execute('''
         CREATE TABLE IF NOT EXISTS ussdCodeVariants (
@@ -76,6 +103,23 @@ class SQLiteService {
         'ALTER TABLE transactions ADD COLUMN forwardingRecipientDeviceName TEXT',
       );
     } catch (_) {}
+    for (final definition in const [
+      'awaitingTopUp INTEGER NOT NULL DEFAULT 0',
+      'requiredTopUp INTEGER',
+      'targetAmount INTEGER',
+      'targetOfferId INTEGER',
+      'parentTransactionId INTEGER',
+      'topUpTransactionId TEXT',
+    ]) {
+      try {
+        await db.execute('ALTER TABLE transactions ADD COLUMN $definition');
+      } catch (_) {}
+    }
+    try {
+      await db.query('replies', columns: ['targetOfferId'], limit: 1);
+    } catch (_) {
+      await db.execute('ALTER TABLE replies ADD COLUMN targetOfferId INTEGER');
+    }
     try {
       await db.execute(
         'ALTER TABLE transactions ADD COLUMN alternativeExecuteAt INTEGER',
@@ -225,7 +269,13 @@ class SQLiteService {
         forwardingJobId TEXT,
         forwardingSenderDeviceName TEXT,
         forwardingRecipientDeviceName TEXT,
-        alternativeExecuteAt INTEGER
+        alternativeExecuteAt INTEGER,
+        awaitingTopUp INTEGER NOT NULL DEFAULT 0,
+        requiredTopUp INTEGER,
+        targetAmount INTEGER,
+        targetOfferId INTEGER,
+        parentTransactionId INTEGER,
+        topUpTransactionId TEXT
       )
     ''');
 
@@ -287,7 +337,8 @@ class SQLiteService {
         conditionAmount INTEGER,
         dialSim INTEGER,
         reply TEXT,
-        amounts TEXT
+        amounts TEXT,
+        targetOfferId INTEGER
       )
     ''');
 
@@ -613,6 +664,14 @@ class SQLiteService {
         'ALTER TABLE transactions ADD COLUMN alternativeExecuteAt INTEGER',
       );
     } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN targetOfferId INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute('ALTER TABLE replies ADD COLUMN targetOfferId INTEGER');
+    } catch (_) {}
 
     // Legacy ussdCodes -> ussdCodeVariants data copy now lives in
     // backfillOrphanedUssdCodeVariants(), called unconditionally from
@@ -793,6 +852,65 @@ class SQLiteService {
   Future<int> insertStuff(Map<String, dynamic> row, String table) async {
     final db = await database;
     return db.insert(table, row);
+  }
+
+  Future<void> queueForwardingConfirmation({
+    required String forwardingJobId,
+    required String recipientDeviceName,
+    String? transactionId,
+    String resultStatus = 'transaction-confirmed',
+    int? requiredTopUp,
+    int? targetAmount,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'forwardingConfirmations',
+      {
+        'forwardingJobId': forwardingJobId,
+        'recipientDeviceName': recipientDeviceName,
+        'transactionId': transactionId ?? '',
+        'attempt': 0,
+        'nextAttemptAt': 0,
+        'resultStatus': resultStatus,
+        'requiredTopUp': requiredTopUp,
+        'targetAmount': targetAmount,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> dueForwardingConfirmations(
+    int now,
+  ) async {
+    final db = await database;
+    return db.query(
+      'forwardingConfirmations',
+      where: 'nextAttemptAt <= ?',
+      whereArgs: [now],
+    );
+  }
+
+  Future<void> scheduleForwardingConfirmationRetry(
+    String forwardingJobId, {
+    required int attempt,
+    required int nextAttemptAt,
+  }) async {
+    final db = await database;
+    await db.update(
+      'forwardingConfirmations',
+      {'attempt': attempt, 'nextAttemptAt': nextAttemptAt},
+      where: 'forwardingJobId = ?',
+      whereArgs: [forwardingJobId],
+    );
+  }
+
+  Future<void> removeForwardingConfirmation(String forwardingJobId) async {
+    final db = await database;
+    await db.delete(
+      'forwardingConfirmations',
+      where: 'forwardingJobId = ?',
+      whereArgs: [forwardingJobId],
+    );
   }
 
   Future<List<Map<String, dynamic>>> queryAll(

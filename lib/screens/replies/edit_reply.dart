@@ -27,6 +27,9 @@ class _EditReplyPageState extends State<EditReplyPage> {
 
   List<SubscriptionInfo> sims = [];
   List<int> _amountsForReply = [];
+  List<Map<String, dynamic>> _targetOffers = [];
+  int? _targetOfferId;
+  bool _targetOffersLoaded = false;
 
   int _characterCount = 0;
 
@@ -44,6 +47,8 @@ class _EditReplyPageState extends State<EditReplyPage> {
       );
 
       if (replyData.isNotEmpty) {
+        final savedTargetOfferId =
+            int.tryParse(replyData[0]['targetOfferId']?.toString() ?? '');
         setState(() {
           _amountsForReply =
               List<int>.from(jsonDecode(replyData[0]['amounts'] ?? '[]'));
@@ -52,9 +57,34 @@ class _EditReplyPageState extends State<EditReplyPage> {
           //     replyData[0]['conditionAmount'].toString();
           _selectedOption = replyData[0]['condition'];
           _dialSim = replyData[0]['dialSim'];
+          _targetOfferId = _targetOffersLoaded &&
+                  !_targetOffers.any((offer) =>
+                      int.tryParse(offer['id']?.toString() ?? '') ==
+                      savedTargetOfferId)
+              ? null
+              : savedTargetOfferId;
         });
       }
     }
+  }
+
+  Future<void> _loadTargetOffers() async {
+    final offers = await _sqliteService.queryCustom(
+      'ussdCodes',
+      '1 = 1',
+      const [],
+      orderBy: 'amount ASC, id ASC',
+    );
+    if (!mounted) return;
+    setState(() {
+      _targetOffers = offers;
+      if (_targetOfferId != null &&
+          !offers.any((offer) =>
+              int.tryParse(offer['id']?.toString() ?? '') == _targetOfferId)) {
+        _targetOfferId = null;
+      }
+      _targetOffersLoaded = true;
+    });
   }
 
   void _processAmountForReply() {
@@ -84,6 +114,10 @@ class _EditReplyPageState extends State<EditReplyPage> {
       'dialSim': _dialSim,
       'conditionAmount': 1,
       'amounts': jsonEncode(_amountsForReply),
+      'targetOfferId':
+          _selectedOption == TransactionStatuses.unavailableOfferMap.keys.first
+              ? _targetOfferId
+              : null,
     };
 
     if (widget.replyId >= 0) {
@@ -114,6 +148,11 @@ class _EditReplyPageState extends State<EditReplyPage> {
 
   void updateDB() async {
     await _sqliteService.addColumnIfNotExists('replies', 'amounts', 'TEXT');
+    await _sqliteService.addColumnIfNotExists(
+      'replies',
+      'targetOfferId',
+      'INTEGER',
+    );
   }
 
   @override
@@ -122,6 +161,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
     updateDB();
     _getAndProcessCards();
     _populateFields();
+    _loadTargetOffers();
   }
 
   @override
@@ -289,6 +329,74 @@ class _EditReplyPageState extends State<EditReplyPage> {
                         ],
                       ),
                     ),
+
+                    const SizedBox(height: kPagePadding),
+
+                    if (_selectedOption ==
+                            TransactionStatuses
+                                .unavailableOfferMap.keys.first &&
+                        _targetOffersLoaded)
+                      Container(
+                        padding: kPagePaddingInsets,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).cardColor,
+                          borderRadius: BorderRadius.circular(kBorderRadius),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Target offer (optional):'),
+                            const SizedBox(height: kPagePadding / 2),
+                            DropdownButtonFormField<int?>(
+                              initialValue: _targetOfferId,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                border: OutlineInputBorder(),
+                              ),
+                              items: [
+                                const DropdownMenuItem<int?>(
+                                  value: null,
+                                  child: Text('No target offer'),
+                                ),
+                                ..._targetOffers.where((offer) {
+                                  return int.tryParse(
+                                          offer['id']?.toString() ?? '') !=
+                                      null;
+                                }).map((offer) {
+                                  final amount = int.tryParse(
+                                          offer['amount']?.toString() ?? '') ??
+                                      0;
+                                  final name =
+                                      offer['offerName']?.toString().trim() ??
+                                          '';
+                                  final displayName = name.isEmpty ||
+                                          name.toLowerCase() ==
+                                              'ksh $amount'.toLowerCase()
+                                      ? ''
+                                      : ' — $name';
+                                  return DropdownMenuItem<int?>(
+                                    value: int.tryParse(
+                                        offer['id']?.toString() ?? ''),
+                                    child: Text(
+                                      'KSh $amount$displayName',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  );
+                                }),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _targetOfferId = value;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: kPagePadding / 2),
+                            const Text(
+                              'The selected offer amount determines the required top-up; reply text is not parsed.',
+                            ),
+                          ],
+                        ),
+                      ),
 
                     const SizedBox(height: kPagePadding),
 

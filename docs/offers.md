@@ -18,6 +18,7 @@
 
 ## Important Behaviors
 - Matching: Incoming M-PESA SMS amounts are mapped to the nearest matching offer; paused/inactive offers are ignored.
+- Unavailable-offer top-ups: In **My Replies**, choose the **On unavailable offer** condition, add the original payment amount to its amount condition, and optionally select a target offer. The selected offer ID is stored with that reply configuration; its configured amount determines the target transaction amount and required top-up. Reply text remains customer-facing content and is never parsed. Without an explicit target offer, existing next-supported-amount behavior remains as a legacy fallback.
 - Pausing: If you suspect offer changes, mark offers as paused; the transaction flow will skip them.
 - Advanced/queued USSD: Some flows need the app active and required permissions (SMS/phone/accessibility).
 

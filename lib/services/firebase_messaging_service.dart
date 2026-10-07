@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:bsat/controllers/transaction_controller.dart';
+import 'package:bsat/utils/top_up.dart';
 import 'package:bsat/main.dart';
 import 'package:bsat/screens/online_management/paired_devices.dart';
 import 'package:bsat/services/backend_service.dart';
@@ -600,6 +601,9 @@ Future<bool> _processIncomingAcknowledgement(
       case 'FORWARDED_SMS':
         await _handleForwardedSmsAck(message);
         break;
+      case 'FORWARDED_SMS_ACK':
+        await _handleForwardedSmsAck(message);
+        break;
       case 'REQUEST_CONTACTS_FROM_DEVICE':
         await _handleForwardedSmsAck(message);
         break;
@@ -871,6 +875,22 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
     'forwardingJobId=$forwardingJobId',
   );
 
+  // Receipt of this message means Phone A has durably handled the final ACK.
+  // Remove Phone B's retry record only for this explicit receipt kind.
+  if (ackKind == 'confirmation_received') {
+    if (forwardingJobId.isNotEmpty) {
+      await SQLiteService().removeForwardingConfirmation(forwardingJobId);
+      await SQLiteService().updateStuff(
+        {'awaitingTopUp': 0},
+        'forwardingJobId = ?',
+        [forwardingJobId],
+        'transactions',
+      );
+    }
+    await _persistAckState(message, ackScope: 'forwarded_sms_confirmation');
+    return;
+  }
+
   if (forwardingJobId.isEmpty) {
     debugPrint(
       'FORWARDED_SMS ACK received without forwardingJobId',
@@ -944,10 +964,63 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
     return;
   }
 
+  final resultStatus = message.data['resultStatus']?.toString() ?? '';
+  var awaitingTopUp = false;
+  int? requiredTopUp;
+  int? targetAmount;
+  int? unavailableNumber;
+  String unavailableFirstName = '';
+  String unavailableLastName = '';
+  int unavailableAmount = 0;
+  int? resolvedTargetOfferId;
+  final sourceTransaction = beforeAckRows.first;
+  if (resultStatus == TransactionStatuses.unavailableOffer) {
+    // The origin transaction carries the configured target offer association.
+    final amount =
+        int.tryParse(sourceTransaction['amount']?.toString() ?? '') ?? 0;
+    unavailableAmount = amount;
+    final controller = TransactionController();
+    final storedTargetOfferId =
+        int.tryParse(sourceTransaction['targetOfferId']?.toString() ?? '');
+    final configuredTarget = storedTargetOfferId != null
+        ? (
+            id: storedTargetOfferId,
+            amount: await controller.getOfferAmountById(storedTargetOfferId),
+          )
+        : await controller.findConfiguredUnavailableTarget(amount);
+    resolvedTargetOfferId = configuredTarget?.id ?? storedTargetOfferId;
+    final resolvedTargetAmount = configuredTarget?.amount;
+    final requiredAmount =
+        calculateRequiredTopUp(amount, resolvedTargetAmount);
+    final hasReply = await controller.hasConfiguredReplyFor(
+      TransactionStatuses.unavailableOffer,
+      amount,
+    );
+    if (requiredAmount != null && hasReply) {
+      awaitingTopUp = true;
+      targetAmount = resolvedTargetAmount;
+      requiredTopUp = requiredAmount;
+    }
+
+    unavailableNumber =
+        int.tryParse(sourceTransaction['number']?.toString() ?? '') ?? 0;
+    final source = sourceTransaction['source']?.toString().trim() ?? '';
+    final sourceParts = source.split(RegExp(r'\s+'));
+    unavailableFirstName = sourceParts.isEmpty ? '' : sourceParts.first;
+    unavailableLastName =
+        sourceParts.length < 2 ? '' : sourceParts.skip(1).join(' ');
+  }
+
   final updatedRows = await SQLiteService().updateStuff(
     {
-      'status': TransactionStatuses.forwardedConfirmed,
+      'status': awaitingTopUp
+          ? TransactionStatuses.forwardedPending
+          : TransactionStatuses.forwardedConfirmed,
       'canRetry': 0,
+      'awaitingTopUp': awaitingTopUp ? 1 : 0,
+      'requiredTopUp': requiredTopUp,
+      'targetAmount': targetAmount,
+      if (resolvedTargetOfferId != null) 'targetOfferId': resolvedTargetOfferId,
     },
     'forwardingJobId = ?',
     [forwardingJobId],
@@ -964,6 +1037,43 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
     message,
     ackScope: 'forwarded_sms',
   );
+
+  if (resultStatus == TransactionStatuses.unavailableOffer &&
+      unavailableNumber != null) {
+    await TransactionController().processReply(
+      unavailableNumber,
+      TransactionStatuses.unavailableOffer,
+      unavailableFirstName,
+      unavailableLastName,
+      unavailableAmount,
+    );
+  }
+
+  // Send a receipt after the update (including idempotent duplicate delivery).
+  // Phone B retries the final confirmation until this receipt arrives.
+  final senderDeviceName =
+      await SharedPreferencesService().getDeviceName() ?? '';
+  final recipientDeviceName =
+      message.data['senderDeviceName']?.toString() ?? '';
+  if (senderDeviceName.isNotEmpty && recipientDeviceName.isNotEmpty) {
+    await BackendService().post(
+      '/api/fcm/send-secure',
+      body: {
+        'title': 'BSAT Online Forwarding',
+        'body': 'Forwarding confirmation received',
+        'senderDeviceName': senderDeviceName,
+        'recipientDeviceName': recipientDeviceName,
+        'data': {
+          'type': 'forwarded_sms_ack',
+          'ackKind': 'confirmation_received',
+          'status': 'received',
+          'forwardingJobId': forwardingJobId,
+          'senderDeviceName': senderDeviceName,
+          'recipientDeviceName': recipientDeviceName,
+        },
+      },
+    );
+  }
 }
 
 Future<void> _handleDataRequestAck(RemoteMessage message) async {

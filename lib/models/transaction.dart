@@ -17,6 +17,12 @@ class MyTransaction {
   String? forwardingJobId;
   String? forwardingSenderDeviceName;
   String? forwardingRecipientDeviceName;
+  final int? parentTransactionId;
+  final int? requiredTopUp;
+  final int? targetAmount;
+  final int? targetOfferId;
+  final bool awaitingTopUp;
+  final String? topUpTransactionId;
 
   MyTransaction({
     required this.id,
@@ -37,6 +43,12 @@ class MyTransaction {
     this.forwardingJobId,
     this.forwardingSenderDeviceName,
     this.forwardingRecipientDeviceName,
+    this.parentTransactionId,
+    this.requiredTopUp,
+    this.targetAmount,
+    this.targetOfferId,
+    this.awaitingTopUp = false,
+    this.topUpTransactionId,
   });
 
   factory MyTransaction.fromMap(Map<String, dynamic> map) {
@@ -60,6 +72,13 @@ class MyTransaction {
       forwardingSenderDeviceName: map['forwardingSenderDeviceName']?.toString(),
       forwardingRecipientDeviceName:
           map['forwardingRecipientDeviceName']?.toString(),
+      parentTransactionId: int.tryParse(map['parentTransactionId']?.toString() ?? ''),
+      requiredTopUp: int.tryParse(map['requiredTopUp']?.toString() ?? ''),
+      targetAmount: int.tryParse(map['targetAmount']?.toString() ?? ''),
+      targetOfferId: int.tryParse(map['targetOfferId']?.toString() ?? ''),
+      awaitingTopUp: int.tryParse(map['awaitingTopUp']?.toString() ?? '') == 1 ||
+          map['awaitingTopUp'] == true,
+      topUpTransactionId: map['topUpTransactionId']?.toString(),
     );
   }
 
@@ -84,6 +103,12 @@ class MyTransaction {
       'forwardingJobId': forwardingJobId,
       'forwardingSenderDeviceName': forwardingSenderDeviceName,
       'forwardingRecipientDeviceName': forwardingRecipientDeviceName,
+      'parentTransactionId': parentTransactionId,
+      'requiredTopUp': requiredTopUp,
+      'targetAmount': targetAmount,
+      'targetOfferId': targetOfferId,
+      'awaitingTopUp': awaitingTopUp ? 1 : 0,
+      'topUpTransactionId': topUpTransactionId,
     };
   }
 }

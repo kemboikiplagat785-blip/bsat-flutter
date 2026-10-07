@@ -21,6 +21,7 @@ import '../models/ussd_code.dart';
 import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
 import '../utils/forwarding_job_id.dart';
+import '../utils/top_up.dart';
 
 // import '../services/skills.dart';
 import '../services/skills.dart';
@@ -34,11 +35,47 @@ import '../services/main_engine_ussd_bridge.dart';
 /// dials the mapped USSD (advanced or normal), records outcomes to SQLite,
 /// and emits replies/side effects (auto-save contacts, send confirmations).
 class TransactionController {
+  static Timer? _forwardingConfirmationTimer;
+  static final Set<String> _activeTopUpTransactionCodes = <String>{};
   final PhoneService _phoneService = PhoneService();
   final SQLiteService _sqliteService = SQLiteService();
   final _paymentOps = PaymentOps();
 
   final _sharedPreferencesService = SharedPreferencesService();
+
+  TransactionController() {
+    _forwardingConfirmationTimer ??= Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _retryPendingForwardingConfirmations(),
+    );
+  }
+
+  Future<void> _retryPendingForwardingConfirmations() async {
+    final due = await _sqliteService
+        .dueForwardingConfirmations(DateTime.now().millisecondsSinceEpoch);
+
+    for (final row in due) {
+      final forwardingJobId = (row['forwardingJobId'] ?? '').toString();
+      final recipientDeviceName = (row['recipientDeviceName'] ?? '').toString();
+      final transactionId = row['transactionId']?.toString();
+      final attempt = int.tryParse(row['attempt']?.toString() ?? '') ?? 1;
+
+      if (forwardingJobId.isEmpty || recipientDeviceName.isEmpty) {
+        continue;
+      }
+
+      await _deliverForwardingConfirmation(
+        forwardingJobId: forwardingJobId,
+        recipientDeviceName: recipientDeviceName,
+        transactionId: transactionId,
+        attempt: attempt,
+        resultStatus: row['resultStatus']?.toString() ??
+            TransactionStatuses.doneConfirmed,
+        requiredTopUp: int.tryParse(row['requiredTopUp']?.toString() ?? ''),
+        targetAmount: int.tryParse(row['targetAmount']?.toString() ?? ''),
+      );
+    }
+  }
 
   /// Process a single payment SMS into a transaction.
   /// Steps (in order):
@@ -56,6 +93,37 @@ class TransactionController {
     required String forwardingJobId,
     required String recipientDeviceName,
     String? transactionId,
+    String resultStatus = TransactionStatuses.doneConfirmed,
+    int? requiredTopUp,
+    int? targetAmount,
+  }) async {
+    await _sqliteService.queueForwardingConfirmation(
+      forwardingJobId: forwardingJobId,
+      recipientDeviceName: recipientDeviceName,
+      transactionId: transactionId,
+      resultStatus: resultStatus,
+      requiredTopUp: requiredTopUp,
+      targetAmount: targetAmount,
+    );
+    await _deliverForwardingConfirmation(
+      forwardingJobId: forwardingJobId,
+      recipientDeviceName: recipientDeviceName,
+      transactionId: transactionId,
+      attempt: 1,
+      resultStatus: resultStatus,
+      requiredTopUp: requiredTopUp,
+      targetAmount: targetAmount,
+    );
+  }
+
+  Future<void> _deliverForwardingConfirmation({
+    required String forwardingJobId,
+    required String recipientDeviceName,
+    String? transactionId,
+    required int attempt,
+    required String resultStatus,
+    int? requiredTopUp,
+    int? targetAmount,
   }) async {
     final senderDeviceName =
         await SharedPreferencesService().getDeviceName() ?? '';
@@ -65,6 +133,13 @@ class TransactionController {
         'FORWARDED_SMS CONFIRMATION: '
         'Missing sender/recipient device name. '
         'sender=$senderDeviceName, recipient=$recipientDeviceName',
+      );
+      await _sqliteService.scheduleForwardingConfirmationRetry(
+        forwardingJobId,
+        attempt: attempt,
+        nextAttemptAt: DateTime.now()
+            .add(const Duration(minutes: 5))
+            .millisecondsSinceEpoch,
       );
       return;
     }
@@ -81,6 +156,9 @@ class TransactionController {
             'type': 'forwarded_sms_ack',
             'ackKind': 'confirmed',
             'status': TransactionStatuses.doneConfirmed,
+            'resultStatus': resultStatus,
+            if (requiredTopUp != null) 'requiredTopUp': requiredTopUp,
+            if (targetAmount != null) 'targetAmount': targetAmount,
             'forwardingJobId': forwardingJobId,
             'transactionId': transactionId ?? '',
             'senderDeviceName': senderDeviceName,
@@ -101,6 +179,17 @@ class TransactionController {
         'FORWARDED_SMS CONFIRMATION FAILED: $e',
       );
     }
+
+    const retrySeconds = [5, 15, 30, 60, 120, 300];
+    final delaySeconds =
+        retrySeconds[(attempt - 1).clamp(0, retrySeconds.length - 1).toInt()];
+    await _sqliteService.scheduleForwardingConfirmationRetry(
+      forwardingJobId,
+      attempt: attempt,
+      nextAttemptAt: DateTime.now()
+          .add(Duration(seconds: delaySeconds))
+          .millisecondsSinceEpoch,
+    );
   }
 
 // ADD THIS NEW PUBLIC METHOD HERE
@@ -108,11 +197,17 @@ class TransactionController {
     required String forwardingJobId,
     required String recipientDeviceName,
     String? transactionId,
+    String resultStatus = TransactionStatuses.doneConfirmed,
+    int? requiredTopUp,
+    int? targetAmount,
   }) async {
     await _sendForwardingConfirmation(
       forwardingJobId: forwardingJobId,
       recipientDeviceName: recipientDeviceName,
       transactionId: transactionId,
+      resultStatus: resultStatus,
+      requiredTopUp: requiredTopUp,
+      targetAmount: targetAmount,
     );
   }
 
@@ -170,6 +265,7 @@ class TransactionController {
     String? address,
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
+    int? parentTransactionId,
   }) async {
     TransactionMessage fakeMessage = TransactionMessage(
       body: smsBody,
@@ -181,6 +277,7 @@ class TransactionController {
       fakeMessage,
       forwardingJobId: forwardingJobId,
       forwardingSenderDeviceName: forwardingSenderDeviceName,
+      parentTransactionId: parentTransactionId,
     );
   }
 
@@ -188,6 +285,7 @@ class TransactionController {
     TransactionMessage smsMessage, {
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
+    int? parentTransactionId,
   }) async {
     // if (DateTime.now().millisecondsSinceEpoch > 1772303182000) return;
 
@@ -313,6 +411,199 @@ class TransactionController {
       );
     }
 
+    // Match only by customer, exact required amount, and persisted awaiting
+    // state. If two rows qualify, leave this payment to the normal pipeline.
+    final topUpCandidates = parentTransactionId == null
+        ? await _sqliteService.queryCustom(
+            'transactions',
+            'number = ? AND requiredTopUp = ? AND awaitingTopUp = 1 AND '
+                'status IN (?, ?)',
+            [
+              number,
+              amount,
+              TransactionStatuses.unavailableOffer,
+              TransactionStatuses.forwardedPending,
+            ],
+          )
+        : <Map<String, dynamic>>[];
+    final matchingTopUpCandidates = topUpCandidates.where((candidate) {
+      final candidateNumber =
+          int.tryParse(candidate['number']?.toString() ?? '');
+      final candidateRequiredTopUp =
+          int.tryParse(candidate['requiredTopUp']?.toString() ?? '');
+      return candidateNumber != null &&
+          candidateRequiredTopUp != null &&
+          matchesTopUpPayment(
+            expectedCustomerNumber: candidateNumber,
+            paymentCustomerNumber: number,
+            requiredTopUp: candidateRequiredTopUp,
+            paymentAmount: amount,
+          );
+    }).toList();
+    if (parentTransactionId == null) {
+      final claimedTopUpRows = await _sqliteService.queryCustom(
+        'transactions',
+        'number = ? AND topUpTransactionId = ?',
+        [number, mpesaCode],
+        columns: ['id'],
+        limit: 1,
+      );
+      if (claimedTopUpRows.isNotEmpty) {
+        final claimedParentId =
+            int.tryParse(claimedTopUpRows.first['id']?.toString() ?? '');
+        if (claimedParentId != null) {
+          final claimedChild = await _sqliteService.queryCustom(
+            'transactions',
+            'parentTransactionId = ?',
+            [claimedParentId],
+            columns: ['id'],
+            limit: 1,
+          );
+          if (claimedChild.isNotEmpty) {
+            return int.tryParse(claimedChild.first['id']?.toString() ?? '');
+          }
+          if (_activeTopUpTransactionCodes.contains(mpesaCode)) return null;
+          final parentRows = await _sqliteService.queryCustom(
+            'transactions',
+            'id = ?',
+            [claimedParentId],
+            columns: ['targetAmount'],
+            limit: 1,
+          );
+          final claimedTarget = parentRows.isEmpty
+              ? null
+              : int.tryParse(
+                  parentRows.first['targetAmount']?.toString() ?? '');
+          if (claimedTarget != null) {
+            _activeTopUpTransactionCodes.add(mpesaCode);
+            try {
+              return await makeTransactionGivenSmsBody(
+                alterMpesaMessage(smsMessage.body ?? '', claimedTarget),
+                address: smsMessage.address,
+                parentTransactionId: claimedParentId,
+              );
+            } finally {
+              _activeTopUpTransactionCodes.remove(mpesaCode);
+            }
+          }
+          return null;
+        }
+      }
+    }
+    if (matchingTopUpCandidates.length == 1) {
+      final original = matchingTopUpCandidates.single;
+      final originalId = int.tryParse(original['id'].toString());
+      final targetAmount =
+          int.tryParse(original['targetAmount']?.toString() ?? '');
+      if (originalId != null &&
+          targetAmount != null &&
+          targetAmount ==
+              combinedTransactionAmount(
+                int.tryParse(original['amount']?.toString() ?? '') ?? 0,
+                amount,
+              )) {
+        final claimed = await _sqliteService.updateStuff(
+          {'awaitingTopUp': 0, 'topUpTransactionId': mpesaCode},
+          'id = ? AND awaitingTopUp = 1',
+          [originalId],
+          'transactions',
+        );
+        if (claimed == 1) {
+          if (_activeTopUpTransactionCodes.contains(mpesaCode)) return null;
+          _activeTopUpTransactionCodes.add(mpesaCode);
+          final existingCombined = await _sqliteService.queryCustom(
+            'transactions',
+            'parentTransactionId = ?',
+            [originalId],
+            columns: ['id'],
+            limit: 1,
+          );
+          if (existingCombined.isNotEmpty) {
+            _activeTopUpTransactionCodes.remove(mpesaCode);
+            return int.tryParse(existingCombined.first['id'].toString());
+          }
+
+          final combinedSms = alterMpesaMessage(
+            smsMessage.body ?? '',
+            combinedTransactionAmount(
+              int.tryParse(original['amount']?.toString() ?? '') ?? 0,
+              amount,
+            ),
+          );
+          try {
+            int? combinedId = await makeTransactionGivenSmsBody(
+              combinedSms,
+              address: smsMessage.address,
+              parentTransactionId: originalId,
+            );
+            if (combinedId == null) {
+              final forwardedRows = await _sqliteService.queryCustom(
+                'transactions',
+                'parentTransactionId = ?',
+                [originalId],
+                columns: ['id'],
+                orderBy: 'id DESC',
+                limit: 1,
+              );
+              if (forwardedRows.isNotEmpty) {
+                combinedId =
+                    int.tryParse(forwardedRows.first['id']?.toString() ?? '');
+              }
+            }
+            if (combinedId == null) {
+              await _sqliteService.updateStuff(
+                {'awaitingTopUp': 1, 'topUpTransactionId': null},
+                'id = ? AND forwardingJobId IS NULL',
+                [originalId],
+                'transactions',
+              );
+              return null;
+            }
+
+            final combinedRows = await _sqliteService.queryCustom(
+              'transactions',
+              'id = ?',
+              [combinedId],
+              columns: [
+                'forwardingJobId',
+                'forwardingSenderDeviceName',
+                'forwardingRecipientDeviceName',
+                'status',
+              ],
+              limit: 1,
+            );
+            if (combinedRows.isNotEmpty &&
+                (combinedRows.first['forwardingJobId']?.toString().isNotEmpty ??
+                    false)) {
+              await _sqliteService.updateStuff(
+                {
+                  'forwardingJobId': combinedRows.first['forwardingJobId'],
+                  'forwardingSenderDeviceName':
+                      combinedRows.first['forwardingSenderDeviceName'],
+                  'forwardingRecipientDeviceName':
+                      combinedRows.first['forwardingRecipientDeviceName'],
+                },
+                'id = ?',
+                [originalId],
+                'transactions',
+              );
+            }
+            return combinedId;
+          } catch (_) {
+            await _sqliteService.updateStuff(
+              {'awaitingTopUp': 1, 'topUpTransactionId': null},
+              'id = ? AND forwardingJobId IS NULL',
+              [originalId],
+              'transactions',
+            );
+            rethrow;
+          } finally {
+            _activeTopUpTransactionCodes.remove(mpesaCode);
+          }
+        }
+      }
+    }
+
     // if()
 
     int? transactionID = (await forwardIfNeeded(
@@ -323,6 +614,7 @@ class TransactionController {
       number,
       name,
       autoSaveContacts,
+      parentTransactionId: parentTransactionId,
     ));
 
     if (transactionID != null) {
@@ -354,6 +646,7 @@ class TransactionController {
         reply: 'Offers might have changed. Please check/retry.',
         canRetry: false,
         source: getName(smsMessage.body ?? ""),
+        parentTransactionId: parentTransactionId,
       );
     }
 
@@ -361,15 +654,17 @@ class TransactionController {
         smsMessage.body!.contains(
           RegExp('airtel money', caseSensitive: false),
         )) {
-      processReply(
-        number,
-        TransactionStatuses.unavailableOffer,
-        name.split(' ')[0],
-        name.trim().split(RegExp(r'\s+')).length > 1
-            ? name.trim().split(RegExp(r'\s+'))[1]
-            : '',
-        amount,
-      );
+      if (forwardingJobId == null) {
+        processReply(
+          number,
+          TransactionStatuses.unavailableOffer,
+          name.split(' ')[0],
+          name.trim().split(RegExp(r'\s+')).length > 1
+              ? name.trim().split(RegExp(r'\s+'))[1]
+              : '',
+          amount,
+        );
+      }
 
       return await dontProcess(
         smsMessage.body ?? "",
@@ -382,6 +677,8 @@ class TransactionController {
         reply: 'Invalid number',
         canRetry: false,
         source: name,
+        forwardingJobId: forwardingJobId,
+        forwardingSenderDeviceName: forwardingSenderDeviceName,
       );
     }
 
@@ -415,6 +712,7 @@ class TransactionController {
           number,
           name,
           autoSaveContacts,
+          parentTransactionId: parentTransactionId,
         );
         if (transactionID != null) {
           return transactionID;
@@ -424,23 +722,34 @@ class TransactionController {
       if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0]
           .toString()
           .isEmpty) {
+        final configuredTarget = await findConfiguredUnavailableTarget(amount);
+        final targetOfferId = configuredTarget?.id;
+        final targetAmount = configuredTarget?.amount;
+        final requiredTopUp = calculateRequiredTopUp(amount, targetAmount);
+        final shouldAwaitTopUp = requiredTopUp != null &&
+            (forwardingJobId != null ||
+                await hasConfiguredReplyFor(
+                  TransactionStatuses.unavailableOffer,
+                  amount,
+                ));
+
         int forwardingLimit =
             await _sharedPreferencesService.getForwardUnavailableLimit() ?? 0;
 
-        if (forwardingLimit > 0 && amount < forwardingLimit) {
-          bool forwarded = await forwardToAllAvenues(smsMessage.body ?? "");
+        // The legacy all-avenues fan-out can return before the unavailable
+        // transaction is persisted. When this payment qualifies for top-up,
+        // leave it to the persisted Unavailable Offer path below; any
+        // subsequent combined transaction uses normal amount-based forwarding.
+        if (!shouldAwaitTopUp &&
+            forwardingLimit > 0 &&
+            amount < forwardingLimit) {
+          bool forwarded = await forwardToAllAvenues(
+            smsMessage.body ?? "",
+            parentTransactionId: parentTransactionId,
+          );
           if (forwarded) return null;
         }
 
-        processReply(
-          number,
-          TransactionStatuses.unavailableOffer,
-          name.split(' ')[0],
-          name.trim().split(RegExp(r'\s+')).length > 1
-              ? name.trim().split(RegExp(r'\s+'))[1]
-              : '',
-          amount,
-        );
         if (autoSaveContacts) {
           await contactService.addNewContact(
             name,
@@ -448,7 +757,7 @@ class TransactionController {
           );
         }
 
-        return await dontProcess(
+        final unavailableTransactionId = await dontProcess(
           smsMessage.body ?? "",
           mpesaCode,
           number,
@@ -456,11 +765,32 @@ class TransactionController {
           amount,
           -1,
           status: TransactionStatuses.unavailableOffer,
-          reply:
-              'No offer found for this amount. Attempted forwarding to all paired devices, but no devices available to forward to.',
+          reply: shouldAwaitTopUp
+              ? 'No offer found for this amount. Awaiting KSh '
+                  '$requiredTopUp to reach KSh $targetAmount.'
+              : 'No offer found for this amount. Attempted forwarding to all paired devices, but no devices available to forward to.',
           canRetry: false,
           source: name,
+          forwardingJobId: forwardingJobId,
+          forwardingSenderDeviceName: forwardingSenderDeviceName,
+          parentTransactionId: parentTransactionId,
+          awaitingTopUp: shouldAwaitTopUp,
+          requiredTopUp: shouldAwaitTopUp ? requiredTopUp : null,
+          targetAmount: shouldAwaitTopUp ? targetAmount : null,
+          targetOfferId: targetOfferId,
         );
+        if (forwardingJobId == null) {
+          await processReply(
+            number,
+            TransactionStatuses.unavailableOffer,
+            name.split(' ')[0],
+            name.trim().split(RegExp(r'\s+')).length > 1
+                ? name.trim().split(RegExp(r'\s+'))[1]
+                : '',
+            amount,
+          );
+        }
+        return unavailableTransactionId;
       }
 
       amount = ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6];
@@ -495,6 +825,7 @@ class TransactionController {
         reply: 'Offer paused. Please check/retry.',
         canRetry: false,
         source: name,
+        parentTransactionId: parentTransactionId,
       );
     }
 
@@ -523,6 +854,7 @@ class TransactionController {
             reply: 'Auto-renewal failed: ${reply[0]}',
             canRetry: true,
             source: name,
+            parentTransactionId: parentTransactionId,
           );
         }
       } else {
@@ -542,6 +874,7 @@ class TransactionController {
           ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
           source: name,
           canRetry: true,
+          parentTransactionId: parentTransactionId,
         );
       }
     }
@@ -608,6 +941,7 @@ class TransactionController {
         reply: requestResponse[0],
         canRetry: false,
         source: name,
+        parentTransactionId: parentTransactionId,
       );
     }
 
@@ -623,6 +957,7 @@ class TransactionController {
         'transactionId': mpesaCode,
         'forwardingJobId': forwardingJobId,
         'forwardingSenderDeviceName': forwardingSenderDeviceName,
+        'parentTransactionId': parentTransactionId,
         'number': number,
         'date': getNormalDate(DateTime.now()),
         'time': getNormalTime(DateTime.now()),
@@ -662,15 +997,18 @@ class TransactionController {
     //   return;
     // }
 
-    await processReply(
-      number,
-      requestResponse[1],
-      name.split(' ')[0],
-      name.trim().split(RegExp(r'\s+')).length > 1
-          ? name.trim().split(RegExp(r'\s+'))[1]
-          : '',
-      amount,
-    );
+    if (requestResponse[1] != TransactionStatuses.unavailableOffer ||
+        forwardingJobId == null) {
+      await processReply(
+        number,
+        requestResponse[1],
+        name.split(' ')[0],
+        name.trim().split(RegExp(r'\s+')).length > 1
+            ? name.trim().split(RegExp(r'\s+'))[1]
+            : '',
+        amount,
+      );
+    }
 
 // ONLINE FORWARDING: notify Phone A only after Phone B confirms the transaction.
     if (requestResponse[1] == TransactionStatuses.doneConfirmed &&
@@ -682,6 +1020,21 @@ class TransactionController {
         forwardingJobId: forwardingJobId,
         recipientDeviceName: forwardingSenderDeviceName,
         transactionId: mpesaCode,
+      );
+    }
+
+    // Unavailable Offer is terminal for this forwarded attempt too. Report it
+    // to the origin device so its job does not remain pending indefinitely.
+    if (requestResponse[1] == TransactionStatuses.unavailableOffer &&
+        forwardingJobId != null &&
+        forwardingJobId.isNotEmpty &&
+        forwardingSenderDeviceName != null &&
+        forwardingSenderDeviceName.isNotEmpty) {
+      await _sendForwardingConfirmation(
+        forwardingJobId: forwardingJobId,
+        recipientDeviceName: forwardingSenderDeviceName,
+        transactionId: mpesaCode,
+        resultStatus: TransactionStatuses.unavailableOffer,
       );
     }
 
@@ -700,6 +1053,7 @@ class TransactionController {
     String? status,
     int? txId,
     String? forwardingRecipientDeviceName,
+    int? parentTransactionId,
   }) async {
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
@@ -762,6 +1116,7 @@ class TransactionController {
           canRetry: false,
           source: name,
           id: txId,
+          parentTransactionId: parentTransactionId,
         );
       }
     }
@@ -971,6 +1326,8 @@ class TransactionController {
           int? transactionId = txId;
 
           if (transactionId == null) {
+            final unavailableTarget =
+                await findConfiguredUnavailableTarget(amount);
             transactionId = await dontProcess(
               smsMessageBody,
               mpesaCode,
@@ -985,6 +1342,8 @@ class TransactionController {
               forwardingJobId: forwardingJobId,
               forwardingSenderDeviceName: senderDeviceName,
               forwardingRecipientDeviceName: recipientDeviceName,
+              parentTransactionId: parentTransactionId,
+              targetOfferId: unavailableTarget?.id,
             );
           } else {
             final Map<String, dynamic> updateData = {
@@ -1152,7 +1511,10 @@ class TransactionController {
     return null;
   }
 
-  Future<bool> forwardToAllAvenues(String message) async {
+  Future<bool> forwardToAllAvenues(
+    String message, {
+    int? parentTransactionId,
+  }) async {
     Map<String, dynamic> similarTransaction = await _sqliteService.queryCustom(
       'transactions',
       'initialMessage = ? AND status = ?',
@@ -1205,6 +1567,7 @@ class TransactionController {
           forwardingJobId: forwardingJobId,
           forwardingSenderDeviceName: senderDeviceName,
           forwardingRecipientDeviceName: recipientDeviceName,
+          parentTransactionId: parentTransactionId,
         );
         final storedRows = transactionId == null
             ? <Map<String, dynamic>>[]
@@ -1271,7 +1634,8 @@ class TransactionController {
     int yesterdayMidnight = getTodayMidnightMillis() - 86400000;
     List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
       'transactions',
-      'status IN (?, ?) AND number = ? AND timeStamp >= ?',
+      'status IN (?, ?) AND number = ? AND timeStamp >= ? AND '
+          'COALESCE(awaitingTopUp, 0) != 1',
       [
         TransactionStatuses.secondAttempt,
         TransactionStatuses.unavailableOffer,
@@ -1336,6 +1700,140 @@ class TransactionController {
       ...reply,
       amount,
     ];
+  }
+
+  Future<bool> hasConfiguredReplyFor(String status, int amount) async {
+    final condition = TransactionStatuses.statuses.entries
+        .where((entry) => entry.value == status)
+        .map((entry) => entry.key)
+        .firstOrNull;
+    if (condition == null) return false;
+    final rows = await _sqliteService.queryCustom(
+      'replies',
+      'condition = ? AND conditionAmount = 1',
+      [condition],
+      columns: ['reply', 'amounts'],
+    );
+    for (final row in rows) {
+      if ((row['reply']?.toString().trim().isEmpty ?? true)) continue;
+      final rawAmounts = row['amounts']?.toString() ?? '';
+      if (rawAmounts.isEmpty || rawAmounts == '[]' || rawAmounts == '""') {
+        return true;
+      }
+      try {
+        final amounts = (jsonDecode(rawAmounts) as List)
+            .map((value) => int.tryParse(value.toString()))
+            .whereType<int>();
+        if (amounts.contains(amount)) return true;
+      } catch (_) {}
+    }
+    return false;
+  }
+
+  Future<({int id, int? amount})?> findConfiguredUnavailableTarget(
+    int amount,
+  ) async {
+    final reply = await _findReplyFor(
+      TransactionStatuses.unavailableOffer,
+      amount,
+    );
+    final offerId = int.tryParse(reply?['targetOfferId']?.toString() ?? '');
+    if (offerId == null) return null;
+    return (
+      id: offerId,
+      amount: await getOfferAmountById(offerId),
+    );
+  }
+
+  Future<int?> getOfferAmountById(int offerId) async {
+    final rows = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'id = ?',
+      [offerId],
+      columns: ['amount'],
+      limit: 1,
+    );
+    return rows.isEmpty
+        ? null
+        : int.tryParse(rows.first['amount']?.toString() ?? '');
+  }
+
+  Future<Map<String, dynamic>?> _findReplyFor(
+    String transactionStatus,
+    int amount,
+  ) async {
+    final condition = TransactionStatuses.statuses.entries
+        .where((entry) => entry.value == transactionStatus)
+        .map((entry) => entry.key)
+        .firstOrNull;
+    if (condition == null) return null;
+
+    final replies = await _sqliteService.queryCustom(
+      'replies',
+      '''conditionAmount = 1 AND condition = ? AND (
+        amounts LIKE ? OR
+        amounts LIKE ? OR
+        amounts LIKE ? OR
+        amounts LIKE ? OR
+        amounts = '[]' OR amounts = ""
+      )''',
+      [
+        condition,
+        '[$amount,%',
+        '%,$amount,%',
+        '%,$amount]',
+        '[$amount]',
+      ],
+      orderBy:
+          'CASE WHEN amounts IS NULL OR amounts = "" THEN 1 ELSE 0 END, CAST(amounts AS INTEGER) ASC',
+    );
+    if (replies.isEmpty) return null;
+
+    final matchingReplies = replies.where((reply) {
+      final rawAmounts = reply['amounts']?.toString();
+      if (rawAmounts == null || rawAmounts.isEmpty) return true;
+      try {
+        return (jsonDecode(rawAmounts) as List).contains(amount);
+      } catch (error) {
+        debugPrint('Error parsing amounts JSON: $error');
+        return false;
+      }
+    }).toList();
+    return (matchingReplies.isEmpty ? replies : matchingReplies).first;
+  }
+
+  Future<int?> findNextSupportedAmount(int amount) async {
+    final candidates = <int>{};
+    final offers = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'enabled = 1 AND amount > ?',
+      [amount],
+      columns: ['amount'],
+    );
+    for (final row in offers) {
+      final value = int.tryParse(row['amount']?.toString() ?? '');
+      if (value != null && value > amount) candidates.add(value);
+    }
+
+    for (final device in await _sqliteService.queryAll('forwardingDevices')) {
+      if ((device['paused'] ?? 0) == 1) continue;
+      final raw = device['amounts_to_forward']?.toString() ?? '';
+      for (final token in raw.replaceAll(RegExp(r'[\[\]"]'), '').split(',')) {
+        final value = int.tryParse(token.trim());
+        if (value != null && value > amount) candidates.add(value);
+      }
+    }
+    for (final device in await _sqliteService.queryAll('forwarded')) {
+      if ((device['paused'] ?? 0) == 1) continue;
+      final raw = device['amounts']?.toString() ?? '';
+      for (final token in raw.replaceAll(RegExp(r'[\[\]"]'), '').split(',')) {
+        final value = int.tryParse(token.trim());
+        if (value != null && value > amount) candidates.add(value);
+      }
+    }
+    if (candidates.isEmpty) return null;
+    final sorted = candidates.toList()..sort();
+    return sorted.first;
   }
 
   Future<void> runScheduled() async {
@@ -2017,6 +2515,11 @@ class TransactionController {
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
     String? forwardingRecipientDeviceName,
+    int? parentTransactionId,
+    bool awaitingTopUp = false,
+    int? requiredTopUp,
+    int? targetAmount,
+    int? targetOfferId,
   }) async {
     List<Map<String, dynamic>> transactions = await _sqliteService.queryCustom(
       'transactions',
@@ -2028,7 +2531,7 @@ class TransactionController {
       await _sqliteService.deleteStuff(id, 'transactions');
     }
 
-    return await _sqliteService.insertStuff(
+    final insertedId = await _sqliteService.insertStuff(
       {
         'id': id,
         'initialMessage': initialMessage,
@@ -2036,6 +2539,11 @@ class TransactionController {
         'forwardingJobId': forwardingJobId,
         'forwardingSenderDeviceName': forwardingSenderDeviceName,
         'forwardingRecipientDeviceName': forwardingRecipientDeviceName,
+        'parentTransactionId': parentTransactionId,
+        'awaitingTopUp': awaitingTopUp ? 1 : 0,
+        'requiredTopUp': requiredTopUp,
+        'targetAmount': targetAmount,
+        'targetOfferId': targetOfferId,
         'number': number,
         'date': getNormalDate(DateTime.now()),
         'time': getNormalTime(DateTime.now()),
@@ -2057,6 +2565,24 @@ class TransactionController {
       },
       'transactions',
     );
+
+    // Early terminal paths bypass the normal post-USSD result handling.
+    if (forwardingJobId != null &&
+        forwardingJobId.isNotEmpty &&
+        forwardingSenderDeviceName != null &&
+        forwardingSenderDeviceName.isNotEmpty &&
+        (status == TransactionStatuses.unavailableOffer ||
+            status == TransactionStatuses.doneConfirmed)) {
+      await _sendForwardingConfirmation(
+        forwardingJobId: forwardingJobId,
+        recipientDeviceName: forwardingSenderDeviceName,
+        transactionId: transactionId,
+        resultStatus: status ?? TransactionStatuses.doneConfirmed,
+        requiredTopUp: requiredTopUp,
+        targetAmount: targetAmount,
+      );
+    }
+    return insertedId;
   }
 
   Future<void> _checkDelayedAlternativeForwards({
@@ -2601,59 +3127,11 @@ class TransactionController {
     String lastName,
     int amount,
   ) async {
-    String message = "";
-
-    int condition = TransactionStatuses.statuses.keys.firstWhere(
-      (key) => TransactionStatuses.statuses[key] == transactionStatus,
-      orElse: () => -1,
-    );
-
-    List<Map<String, dynamic>> replies = await _sqliteService.queryCustom(
-      'replies',
-      '''conditionAmount = 1 AND condition = ? AND (
-        amounts LIKE ? OR
-        amounts LIKE ? OR
-        amounts LIKE ? OR
-        amounts LIKE ? OR
-        amounts = '[]' OR amounts = ""
-      )''',
-      [
-        condition,
-        '[$amount,%',
-        '%,$amount,%',
-        '%,$amount]',
-        '[$amount]',
-      ],
-      orderBy:
-          'CASE WHEN amounts IS NULL OR amounts = "" THEN 1 ELSE 0 END, CAST(amounts AS INTEGER) ASC',
-    );
-
-    List<Map<String, dynamic>> matchingReplies = replies.where((reply) {
-      String? amounts = reply['amounts'];
-
-      if (amounts == null || amounts.isEmpty) {
-        return true;
-      }
-
-      try {
-        List<dynamic> amountsList = jsonDecode(amounts);
-
-        return amountsList.contains(amount);
-      } catch (e) {
-        debugPrint('Error parsing amounts JSON: $e');
-        return false;
-      }
-    }).toList();
-
-    if (matchingReplies.isEmpty) {
-      matchingReplies = replies;
-    }
-
-    //print("Matching replies: $matchingReplies");
-
-    if (matchingReplies.isNotEmpty) {
+    final reply = await _findReplyFor(transactionStatus, amount);
+    var message = '';
+    if (reply != null) {
       message = fillReplyTemplate(
-        matchingReplies.first['reply'],
+        reply['reply'],
         number: number,
         firstName: firstName,
         lastName: lastName,
@@ -3309,9 +3787,8 @@ class TransactionController {
       return;
     }
 
-    final confirmed = purchaseConfirmed ||
-        recommendationSuccessful ||
-        hasTotalCommission;
+    final confirmed =
+        purchaseConfirmed || recommendationSuccessful || hasTotalCommission;
     final targetStatus = recommendationFailed
         ? TransactionStatuses.secondAttempt
         : confirmed
@@ -3334,10 +3811,10 @@ class TransactionController {
     ).firstMatch(body);
     final recipientDigits =
         recipientMatch?.group(1)?.replaceAll(RegExp(r'\D'), '') ?? '';
-    final recipientNumber = recipientDigits.length >= 9 &&
-            recipientDigits.length <= 12
-        ? normalizeIncomingCallNumber(recipientDigits)
-        : '';
+    final recipientNumber =
+        recipientDigits.length >= 9 && recipientDigits.length <= 12
+            ? normalizeIncomingCallNumber(recipientDigits)
+            : '';
     final amountMatch = RegExp(
       r'(?:offer|bundle|purchase|purchased)[^\n]{0,35}?(?:kshs?|kes)\s*([\d,]+)'
       r'|(?:kshs?|kes)\s*([\d,]+)[^\n]{0,25}?(?:offer|bundle|purchase)',
@@ -3402,10 +3879,10 @@ class TransactionController {
         );
         final rawStoredDigits =
             (row['number']?.toString() ?? '').replaceAll(RegExp(r'\D'), '');
-        final normalizedStoredNumber = storedNumber.length == 9 &&
-                !rawStoredDigits.startsWith('254')
-            ? '0$storedNumber'
-            : storedNumber;
+        final normalizedStoredNumber =
+            storedNumber.length == 9 && !rawStoredDigits.startsWith('254')
+                ? '0$storedNumber'
+                : storedNumber;
         return normalizedStoredNumber == recipientNumber;
       }).toList();
     }
@@ -3461,8 +3938,7 @@ class TransactionController {
       return;
     }
 
-    final number =
-        int.tryParse(candidate['number']?.toString() ?? '') ?? 0;
+    final number = int.tryParse(candidate['number']?.toString() ?? '') ?? 0;
     final amount = int.tryParse(candidate['amount']?.toString() ?? '') ?? 0;
     debugPrint(
       'SAFARICOM CONFIRMATION: updated transaction=$transactionId '
@@ -4048,13 +4524,28 @@ class TransactionController {
       );
     }
 
+    final mergedTransaction = purgeTransaction.toMap();
+    for (final field in const [
+      'parentTransactionId',
+      'awaitingTopUp',
+      'requiredTopUp',
+      'targetAmount',
+      'targetOfferId',
+      'topUpTransactionId',
+    ]) {
+      if (originalTransaction.containsKey(field)) {
+        mergedTransaction[field] = originalTransaction[field];
+      }
+    }
+
     await _sqliteService.deleteStuff(toMergeId, 'transactions');
     await _sqliteService.deleteStuff(toPurgeId, 'transactions');
 
     purgeTransaction.id = toMergeId;
+    mergedTransaction['id'] = toMergeId;
 
     await _sqliteService.insertStuff(
-      purgeTransaction.toMap(),
+      mergedTransaction,
       'transactions',
     );
   }

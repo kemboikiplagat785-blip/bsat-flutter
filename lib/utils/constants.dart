@@ -69,6 +69,9 @@ class TransactionStatuses {
   static const forwardedOnline = "transaction-forwarded-online";
   static const alternativeExecuting = "transaction-alternative-executing";
   static const alternativeFailed = "transaction-alternative-failed";
+  static const alternativeAmbiguous = "transaction-alternative-ambiguous";
+  static const alternativeDeliveryPending =
+      "transaction-alternative-delivery-pending";
   static const successfulPending = 'successful-pending';
 
   static const doneMap = {0: done};

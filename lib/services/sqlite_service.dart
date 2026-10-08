@@ -46,6 +46,80 @@ class SQLiteService {
         targetAmount INTEGER
       )
     ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS alternativeJobs (
+        forwardingJobId TEXT PRIMARY KEY,
+        transactionId TEXT NOT NULL,
+        localTransactionId INTEGER,
+        state TEXT NOT NULL,
+        ussdCode TEXT NOT NULL,
+        isAdvanced INTEGER NOT NULL DEFAULT 0,
+        smsMessage TEXT NOT NULL DEFAULT '',
+        senderDeviceName TEXT NOT NULL DEFAULT '',
+        recipientDeviceName TEXT NOT NULL DEFAULT '',
+        resultStatus TEXT,
+        ussdReply TEXT,
+        resultDeliveryState TEXT NOT NULL DEFAULT 'none',
+        resultAttempt INTEGER NOT NULL DEFAULT 0,
+        resultNextAttemptAt INTEGER NOT NULL DEFAULT 0,
+        executionStartedAt INTEGER,
+        createdAt INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+    final alternativeJobColumns = await db.rawQuery(
+      'PRAGMA table_info(alternativeJobs)',
+    );
+    final existingAlternativeJobColumns = alternativeJobColumns
+        .map((column) => column['name']?.toString())
+        .whereType<String>()
+        .toSet();
+    for (final definition in const <String, String>{
+      'resultDeliveryState': "TEXT NOT NULL DEFAULT 'none'",
+      'resultAttempt': 'INTEGER NOT NULL DEFAULT 0',
+      'resultNextAttemptAt': 'INTEGER NOT NULL DEFAULT 0',
+      'executionStartedAt': 'INTEGER',
+    }.entries) {
+      if (!existingAlternativeJobColumns.contains(definition.key)) {
+        await db.execute(
+          'ALTER TABLE alternativeJobs ADD COLUMN '
+          '${definition.key} ${definition.value}',
+        );
+      }
+    }
+    final transactionColumns = await db.rawQuery(
+      'PRAGMA table_info(transactions)',
+    );
+    final existingTransactionColumns = transactionColumns
+        .map((column) => column['name']?.toString())
+        .whereType<String>()
+        .toSet();
+    if (!existingTransactionColumns
+        .contains('alternativeConfirmationDelivered')) {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN '
+        'alternativeConfirmationDelivered INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    await db.update(
+      'alternativeJobs',
+      {
+        'resultDeliveryState': 'pending',
+        'resultNextAttemptAt': 0,
+      },
+      where: 'resultDeliveryState = ? AND state IN (?, ?) '
+          'AND resultStatus IS NOT NULL AND resultStatus != ? '
+          'AND resultStatus NOT IN (?, ?) AND resultStatus != ?',
+      whereArgs: [
+        'none',
+        'completed',
+        'ambiguous',
+        '',
+        'successful-pending',
+        'transaction-advanced-ussd',
+        'unknown',
+      ],
+    );
     for (final column in const <String, String>{
       'resultStatus': "TEXT NOT NULL DEFAULT 'transaction-confirmed'",
       'requiredTopUp': 'INTEGER',
@@ -123,6 +197,21 @@ class SQLiteService {
     try {
       await db.execute(
         'ALTER TABLE transactions ADD COLUMN alternativeExecuteAt INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN alternativeRequestCode TEXT',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN alternativeRequestIsAdvanced INTEGER',
+      );
+    } catch (_) {}
+    try {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN alternativeDeliveryNextAttemptAt INTEGER',
       );
     } catch (_) {}
   }
@@ -270,6 +359,10 @@ class SQLiteService {
         forwardingSenderDeviceName TEXT,
         forwardingRecipientDeviceName TEXT,
         alternativeExecuteAt INTEGER,
+        alternativeRequestCode TEXT,
+        alternativeRequestIsAdvanced INTEGER,
+        alternativeDeliveryNextAttemptAt INTEGER,
+        alternativeConfirmationDelivered INTEGER NOT NULL DEFAULT 0,
         awaitingTopUp INTEGER NOT NULL DEFAULT 0,
         requiredTopUp INTEGER,
         targetAmount INTEGER,
@@ -854,6 +947,87 @@ class SQLiteService {
     return db.insert(table, row);
   }
 
+  Future<bool> reserveAlternativeJob(Map<String, dynamic> row) async {
+    final db = await database;
+    final insertedId = await db.insert(
+      'alternativeJobs',
+      row,
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+    return insertedId != -1;
+  }
+
+  Future<int> deleteAlternativeJob(
+    String forwardingJobId, {
+    required String expectedState,
+  }) async {
+    final db = await database;
+    return db.delete(
+      'alternativeJobs',
+      where: 'forwardingJobId = ? AND state = ?',
+      whereArgs: [forwardingJobId, expectedState],
+    );
+  }
+
+  Future<int> claimAlternativeResultDelivery({
+    required String forwardingJobId,
+    required int now,
+    required int nextAttemptAt,
+    required int attempt,
+  }) async {
+    final db = await database;
+    return db.update(
+      'alternativeJobs',
+      {
+        'resultAttempt': attempt,
+        'resultNextAttemptAt': nextAttemptAt,
+      },
+      where: 'forwardingJobId = ? AND resultDeliveryState = ? '
+          'AND resultNextAttemptAt <= ?',
+      whereArgs: [forwardingJobId, 'pending', now],
+    );
+  }
+
+  Future<Map<String, dynamic>?> getAlternativeJob(
+    String forwardingJobId,
+  ) async {
+    final rows = await queryCustom(
+      'alternativeJobs',
+      'forwardingJobId = ?',
+      [forwardingJobId],
+      limit: 1,
+    );
+    return rows.firstOrNull;
+  }
+
+  Future<List<Map<String, dynamic>>> getAlternativeJobsByState(
+    String state,
+  ) async {
+    return queryCustom(
+      'alternativeJobs',
+      'state = ?',
+      [state],
+    );
+  }
+
+  Future<int> updateAlternativeJob(
+    String forwardingJobId,
+    Map<String, dynamic> values, {
+    String? expectedState,
+  }) async {
+    final db = await database;
+    return db.update(
+      'alternativeJobs',
+      values,
+      where: expectedState == null
+          ? 'forwardingJobId = ?'
+          : 'forwardingJobId = ? AND state = ?',
+      whereArgs: expectedState == null
+          ? [forwardingJobId]
+          : [forwardingJobId, expectedState],
+    );
+  }
+
   Future<void> queueForwardingConfirmation({
     required String forwardingJobId,
     required String recipientDeviceName,
@@ -879,6 +1053,32 @@ class SQLiteService {
     );
   }
 
+  Future<bool> queueForwardingConfirmationIfAbsent({
+    required String forwardingJobId,
+    required String recipientDeviceName,
+    String? transactionId,
+    String resultStatus = 'transaction-confirmed',
+    int? requiredTopUp,
+    int? targetAmount,
+  }) async {
+    final db = await database;
+    final insertedId = await db.insert(
+      'forwardingConfirmations',
+      {
+        'forwardingJobId': forwardingJobId,
+        'recipientDeviceName': recipientDeviceName,
+        'transactionId': transactionId ?? '',
+        'attempt': 0,
+        'nextAttemptAt': 0,
+        'resultStatus': resultStatus,
+        'requiredTopUp': requiredTopUp,
+        'targetAmount': targetAmount,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+    return insertedId != -1;
+  }
+
   Future<List<Map<String, dynamic>>> dueForwardingConfirmations(
     int now,
   ) async {
@@ -902,6 +1102,38 @@ class SQLiteService {
       where: 'forwardingJobId = ?',
       whereArgs: [forwardingJobId],
     );
+  }
+
+  Future<Map<String, dynamic>?> getForwardingConfirmation(
+    String forwardingJobId,
+  ) async {
+    final db = await database;
+    final rows = await db.query(
+      'forwardingConfirmations',
+      where: 'forwardingJobId = ?',
+      whereArgs: [forwardingJobId],
+      limit: 1,
+    );
+    return rows.firstOrNull;
+  }
+
+  Future<void> acknowledgeForwardingConfirmation(
+    String forwardingJobId,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.update(
+        'transactions',
+        {'alternativeConfirmationDelivered': 1},
+        where: 'forwardingJobId = ? AND alternativeRequestCode IS NOT NULL',
+        whereArgs: [forwardingJobId],
+      );
+      await txn.delete(
+        'forwardingConfirmations',
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+      );
+    });
   }
 
   Future<void> removeForwardingConfirmation(String forwardingJobId) async {

@@ -101,22 +101,17 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
   // CHECK_UPDATE is a one-way app update notification, not a paired-device
   // forwarding request. Replying through the forwarding ACK path can lack the
   // sender/recipient fields that endpoint requires.
-  if ((type ?? '').toUpperCase() != 'CHECK_UPDATE') {
+  if ((type ?? '').toUpperCase() != 'CHECK_UPDATE' &&
+      (type ?? '').toUpperCase() != 'PROCESS_ALT_REQUEST' &&
+      (type ?? '').toUpperCase() != 'FORWARDED_ALT_RESULT') {
     await _sendImmediateAck(message, originalType: type);
   }
 
   switch (type) {
     case 'process_alt_request':
-      if (!(await subscribedToOnline("Online"))) {
-        if (!(await PaymentOps().deductSingleToken())) {
-          return;
-        }
-      }
-
       String ussdCode = message.data['ussdCode'] ?? '';
-      int simSubId = await PhoneService().mostCommonDialSim();
-      int amount = getAmount(message.data['smsMessage'] ?? '') ?? 0;
-      int number = extract9DigitNumber(message.data['smsMessage'] ?? '') ?? 0;
+      int amount = getAmount(message.data['smsMessage'] ?? '');
+      int number = extract9DigitNumber(message.data['smsMessage'] ?? '');
       final dynamic isAdvancedRaw = message.data['isAdvanced'];
       final bool isAdvanced = isAdvancedRaw == true ||
           isAdvancedRaw == 1 ||
@@ -124,6 +119,10 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       final forwardingJobId = message.data['forwardingJobId']?.toString();
       final forwardingSenderDeviceName =
           message.data['senderDeviceName']?.toString();
+      final transactionId = message.data['transactionId']?.toString() ?? '';
+      final forwardingRecipientDeviceName =
+          message.data['recipientDeviceName']?.toString() ?? '';
+      final smsMessage = message.data['smsMessage']?.toString() ?? '';
       debugPrint(
         'ALT REQUEST: received jobId=${forwardingJobId ?? ''}, '
         'sender=${forwardingSenderDeviceName ?? ''}, '
@@ -132,19 +131,110 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         'recipient=${message.data['recipientDeviceName'] ?? ''}',
       );
 
-      await TransactionController().transactGivenUssdAndDialSim(
-        ussdCode,
-        simSubId,
-        amount,
-        isAdvanced,
-        number,
-        message: message.data['smsMessage'] ?? '',
+      final controller = TransactionController();
+      if (forwardingJobId == null ||
+          forwardingJobId.isEmpty ||
+          forwardingSenderDeviceName == null ||
+          forwardingSenderDeviceName.isEmpty ||
+          transactionId.isEmpty ||
+          ussdCode.isEmpty) {
+        debugPrint(
+          'ALT DELIVERY: legacy/incomplete request; using direct execution',
+        );
+        if (!(await subscribedToOnline("Online")) &&
+            !(await PaymentOps().deductSingleToken())) {
+          return;
+        }
+        final simSubId = await PhoneService().mostCommonDialSim();
+        await _sendImmediateAck(
+          message,
+          originalType: type,
+          ackKind: 'received',
+          status: 'received',
+        );
+        await controller.transactGivenUssdAndDialSim(
+          ussdCode,
+          simSubId,
+          amount,
+          isAdvanced,
+          number,
+          message: smsMessage,
+          forwardingJobId: forwardingJobId,
+          forwardingTransactionId: transactionId,
+          forwardingSenderDeviceName: forwardingSenderDeviceName,
+          forwardingRecipientDeviceName: forwardingRecipientDeviceName,
+        );
+        break;
+      }
+
+      var existingJob = await controller.getAlternativeRequest(forwardingJobId);
+      if (existingJob != null) {
+        if (existingJob['state'] == 'eligibility_pending') {
+          debugPrint(
+            'ALT DELIVERY: job=$forwardingJobId is still checking eligibility',
+          );
+          return;
+        }
+        await _sendImmediateAck(
+          message,
+          originalType: type,
+          ackKind: 'alternative_received',
+          status: 'alternative-received',
+        );
+        await controller.processReservedAlternativeRequest(forwardingJobId);
+        break;
+      }
+
+      final reserved = await controller.reserveAlternativeRequest(
         forwardingJobId: forwardingJobId,
-        forwardingTransactionId: message.data['transactionId']?.toString(),
-        forwardingSenderDeviceName: forwardingSenderDeviceName,
-        forwardingRecipientDeviceName:
-            message.data['recipientDeviceName']?.toString(),
+        transactionId: transactionId,
+        ussdCode: ussdCode,
+        isAdvanced: isAdvanced,
+        smsMessage: smsMessage,
+        senderDeviceName: forwardingSenderDeviceName,
+        recipientDeviceName: forwardingRecipientDeviceName,
       );
+      if (!reserved) {
+        existingJob = await controller.getAlternativeRequest(forwardingJobId);
+        if (existingJob == null ||
+            existingJob['state'] == 'eligibility_pending') {
+          debugPrint(
+            'ALT DELIVERY: unable to claim job=$forwardingJobId yet',
+          );
+          return;
+        }
+        await _sendImmediateAck(
+          message,
+          originalType: type,
+          ackKind: 'alternative_received',
+          status: 'alternative-received',
+        );
+        await controller.processReservedAlternativeRequest(forwardingJobId);
+        break;
+      }
+
+      if (!(await subscribedToOnline("Online")) &&
+          !(await PaymentOps().deductSingleToken())) {
+        await controller.discardIneligibleAlternativeRequest(forwardingJobId);
+        debugPrint(
+          'ALT DELIVERY: eligibility failed for new job=$forwardingJobId',
+        );
+        return;
+      }
+      if (!await controller.activateAlternativeRequest(forwardingJobId)) {
+        debugPrint(
+          'ALT DELIVERY: job=$forwardingJobId was claimed by another handler',
+        );
+        return;
+      }
+
+      await _sendImmediateAck(
+        message,
+        originalType: type,
+        ackKind: 'alternative_received',
+        status: 'alternative-received',
+      );
+      await controller.processReservedAlternativeRequest(forwardingJobId);
       break;
 
     case 'forwarded_alt_result':
@@ -492,6 +582,8 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
 Future<void> _sendImmediateAck(
   RemoteMessage message, {
   String? originalType,
+  String ackKind = 'received',
+  String status = 'received',
 }) async {
   // Build a safe acknowledgement payload and ensure required fields (title, body,
   // senderDeviceName, recipientDeviceName) are provided to the backend.
@@ -513,13 +605,13 @@ Future<void> _sendImmediateAck(
 
   final payload = {
     'type': 'MESSAGE_ACK',
-    'ackKind': 'received',
+    'ackKind': ackKind,
     'messageId': message.messageId?.toString() ?? '',
     'requestId': message.data['requestId']?.toString() ?? '',
     'transactionId': message.data['transactionId']?.toString() ?? '',
     'forwardingJobId': message.data['forwardingJobId']?.toString() ?? '',
     'originalType': originalType ?? '',
-    'status': 'received',
+    'status': status,
     'receivedAt': DateTime.now().millisecondsSinceEpoch.toString(),
     'senderDeviceName': senderDeviceName,
     'recipientDeviceName': recipientDeviceName,
@@ -596,6 +688,9 @@ Future<bool> _processIncomingAcknowledgement(
     switch (originalType) {
       case 'PROCESS_ALT_REQUEST':
         await _handleProcessAltRequestAck(message);
+        break;
+      case 'FORWARDED_ALT_RESULT':
+        await _handleForwardedAltResultAck(message);
         break;
 
       case 'FORWARDED_SMS':
@@ -728,21 +823,76 @@ Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
   final transactionId = message.data['transactionId']?.toString() ?? '';
 
   final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
+  final ackKind = message.data['ackKind']?.toString().toLowerCase() ?? '';
+  final status = message.data['status']?.toString().toLowerCase() ?? '';
 
   debugPrint(
     'PROCESS_ALT_REQUEST ACK received: '
     'transactionId=$transactionId, '
-    'forwardingJobId=$forwardingJobId. '
-    'This is delivery only; waiting for execution result.',
+    'forwardingJobId=$forwardingJobId, ackKind=$ackKind, status=$status',
   );
 
-  // IMPORTANT:
-  // This ACK only confirms that Phone C received the request.
-  // Do NOT change Phone B's transaction status here.
+  if (ackKind != 'alternative_received' ||
+      status != 'alternative-received' ||
+      forwardingJobId.isEmpty ||
+      transactionId.isEmpty) {
+    debugPrint(
+      'PROCESS_ALT_REQUEST ACK ignored: missing durable alternative receipt',
+    );
+    return;
+  }
+
+  final updatedRows = await SQLiteService().updateStuff(
+    {
+      'status': TransactionStatuses.forwardedPending,
+      'alternativeDeliveryNextAttemptAt': null,
+      'ussdReply': 'Alternative request durably received by target. '
+          'Waiting for execution result.',
+    },
+    'forwardingJobId = ? AND id = ? AND status = ?',
+    [
+      forwardingJobId,
+      int.tryParse(transactionId) ?? -1,
+      TransactionStatuses.alternativeDeliveryPending,
+    ],
+    'transactions',
+  );
+  debugPrint(
+    'ALT DELIVERY RECEIVED: job=$forwardingJobId, '
+    'transaction=$transactionId, updatedRows=$updatedRows',
+  );
+
   await _persistAckState(
     message,
     ackScope: 'process_alt_request',
   );
+}
+
+Future<void> _handleForwardedAltResultAck(RemoteMessage message) async {
+  final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
+  final ackKind = message.data['ackKind']?.toString().toLowerCase() ?? '';
+  final status = message.data['status']?.toString().toLowerCase() ?? '';
+  if (forwardingJobId.isEmpty ||
+      ackKind != 'alternative_result_received' ||
+      status != 'alternative-result-received') {
+    debugPrint(
+      'ALT RESULT ACK ignored: missing application-level receipt fields',
+    );
+    return;
+  }
+
+  final updated = await SQLiteService().updateAlternativeJob(
+    forwardingJobId,
+    {
+      'resultDeliveryState': 'delivered',
+      'resultNextAttemptAt': 0,
+      'updatedAt': DateTime.now().millisecondsSinceEpoch,
+    },
+  );
+  debugPrint(
+    'ALT RESULT ACK: job=$forwardingJobId marked delivered; rows=$updated',
+  );
+  await _persistAckState(message, ackScope: 'forwarded_alt_result');
 }
 
 Future<void> _handleForwardedAltResult(RemoteMessage message) async {
@@ -768,6 +918,48 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
     return;
   }
 
+  if (status == TransactionStatuses.alternativeAmbiguous) {
+    final updatedRows = await SQLiteService().updateStuff(
+      {
+        'status': TransactionStatuses.alternativeAmbiguous,
+        'canRetry': 0,
+        'ussdReply': ussdReply,
+        'timeStamp': DateTime.now().millisecondsSinceEpoch,
+      },
+      'forwardingJobId = ? AND status != ?',
+      [forwardingJobId, TransactionStatuses.forwardedConfirmed],
+      'transactions',
+    );
+    final rows = await SQLiteService().queryCustom(
+      'transactions',
+      'forwardingJobId = ?',
+      [forwardingJobId],
+      columns: ['status'],
+    );
+    final durablyHandled = rows.any(
+      (row) =>
+          row['status'] == TransactionStatuses.alternativeAmbiguous ||
+          row['status'] == TransactionStatuses.forwardedConfirmed,
+    );
+    debugPrint(
+      'ALT RESULT AMBIGUOUS: job=$forwardingJobId, '
+      'updatedRows=$updatedRows, durablyHandled=$durablyHandled',
+    );
+    if (durablyHandled) {
+      await _sendImmediateAck(
+        message,
+        originalType: 'forwarded_alt_result',
+        ackKind: 'alternative_result_received',
+        status: 'alternative-result-received',
+      );
+      await _persistAckState(
+        message,
+        ackScope: 'forwarded_alt_result',
+      );
+    }
+    return;
+  }
+
   // Only a successful execution on Phone C confirms
   // Phone B's forwarded transaction.
   if (status != TransactionStatuses.doneConfirmed) {
@@ -776,11 +968,45 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
         'ALT RESULT: advancedUssd is intermediate for jobId=$forwardingJobId; '
         'leaving pending',
       );
+      return;
     }
     debugPrint(
-      'FORWARDED_ALT_RESULT: Phone C did not confirm success. '
-      'Keeping Phone B transaction pending.',
+      'FORWARDED_ALT_RESULT: storing non-success alternative result '
+      'for job=$forwardingJobId status=$status',
     );
+    await SQLiteService().updateStuff(
+      {
+        'status': TransactionStatuses.alternativeFailed,
+        'canRetry': 0,
+        'ussdReply': ussdReply,
+        'timeStamp': DateTime.now().millisecondsSinceEpoch,
+      },
+      'forwardingJobId = ? AND status != ?',
+      [forwardingJobId, TransactionStatuses.forwardedConfirmed],
+      'transactions',
+    );
+    final rows = await SQLiteService().queryCustom(
+      'transactions',
+      'forwardingJobId = ?',
+      [forwardingJobId],
+      columns: ['status'],
+    );
+    if (rows.any(
+      (row) =>
+          row['status'] == TransactionStatuses.alternativeFailed ||
+          row['status'] == TransactionStatuses.forwardedConfirmed,
+    )) {
+      await _sendImmediateAck(
+        message,
+        originalType: 'forwarded_alt_result',
+        ackKind: 'alternative_result_received',
+        status: 'alternative-result-received',
+      );
+      await _persistAckState(
+        message,
+        ackScope: 'forwarded_alt_result',
+      );
+    }
     return;
   }
 
@@ -807,35 +1033,6 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
     debugPrint(
       'ALT RESULT: updated local transaction by jobId=$forwardingJobId',
     );
-    final tx = await SQLiteService().queryCustom(
-      'transactions',
-      'forwardingJobId = ?',
-      [forwardingJobId],
-      limit: 1,
-    );
-
-    if (tx.isNotEmpty) {
-      final forwardingSenderDeviceName =
-          tx.first['forwardingSenderDeviceName']?.toString() ?? '';
-
-      if (forwardingSenderDeviceName.isNotEmpty) {
-        debugPrint(
-          'ALT RESULT: sending forwarding confirmation to original sender '
-          'for jobId=$forwardingJobId',
-        );
-        await TransactionController().sendForwardingConfirmation(
-          forwardingJobId: forwardingJobId,
-          recipientDeviceName: forwardingSenderDeviceName,
-          transactionId: tx.first['id']?.toString() ?? '',
-        );
-      } else {
-        debugPrint(
-          'FORWARDED_ALT_RESULT: '
-          'No forwardingSenderDeviceName found for job '
-          '$forwardingJobId',
-        );
-      }
-    }
   } else {
     final existingRows = await SQLiteService().queryCustom(
       'transactions',
@@ -855,10 +1052,68 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
     }
   }
 
-  await _persistAckState(
-    message,
-    ackScope: 'forwarded_alt_result',
+  final tx = await SQLiteService().queryCustom(
+    'transactions',
+    'forwardingJobId = ? AND status = ?',
+    [forwardingJobId, TransactionStatuses.forwardedConfirmed],
+    limit: 1,
   );
+  if (tx.isNotEmpty) {
+    final forwardingSenderDeviceName =
+        tx.first['forwardingSenderDeviceName']?.toString() ?? '';
+    final confirmationDelivered =
+        tx.first['alternativeConfirmationDelivered'] == 1;
+    var confirmationDurablyRecorded = confirmationDelivered;
+    if (!confirmationDelivered) {
+      final confirmation = await SQLiteService()
+          .getForwardingConfirmation(forwardingJobId);
+      confirmationDurablyRecorded = confirmation != null;
+      if (confirmation == null && forwardingSenderDeviceName.isNotEmpty) {
+        await TransactionController().ensureForwardingConfirmation(
+          forwardingJobId: forwardingJobId,
+          recipientDeviceName: forwardingSenderDeviceName,
+          transactionId: tx.first['id']?.toString() ?? '',
+        );
+        confirmationDurablyRecorded = await SQLiteService()
+                .getForwardingConfirmation(forwardingJobId) !=
+            null;
+      }
+    }
+    if (!confirmationDurablyRecorded) {
+      debugPrint(
+        'ALT RESULT: not acknowledging job=$forwardingJobId; '
+        'B-to-A confirmation is not durably recorded',
+      );
+      return;
+    }
+    if (forwardingSenderDeviceName.isNotEmpty && !confirmationDelivered) {
+      debugPrint(
+        'ALT RESULT: B-to-A confirmation outbox is durable '
+        'for jobId=$forwardingJobId',
+      );
+    }
+  }
+
+  final handledRows = await SQLiteService().queryCustom(
+    'transactions',
+    'forwardingJobId = ?',
+    [forwardingJobId],
+    columns: ['status'],
+  );
+  if (handledRows.any(
+    (row) => row['status'] == TransactionStatuses.forwardedConfirmed,
+  )) {
+    await _sendImmediateAck(
+      message,
+      originalType: 'forwarded_alt_result',
+      ackKind: 'alternative_result_received',
+      status: 'alternative-result-received',
+    );
+    await _persistAckState(
+      message,
+      ackScope: 'forwarded_alt_result',
+    );
+  }
 }
 
 Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
@@ -879,7 +1134,8 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
   // Remove Phone B's retry record only for this explicit receipt kind.
   if (ackKind == 'confirmation_received') {
     if (forwardingJobId.isNotEmpty) {
-      await SQLiteService().removeForwardingConfirmation(forwardingJobId);
+      await SQLiteService()
+          .acknowledgeForwardingConfirmation(forwardingJobId);
       await SQLiteService().updateStuff(
         {'awaitingTopUp': 0},
         'forwardingJobId = ?',
@@ -990,8 +1246,7 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
         : await controller.findConfiguredUnavailableTarget(amount);
     resolvedTargetOfferId = configuredTarget?.id ?? storedTargetOfferId;
     final resolvedTargetAmount = configuredTarget?.amount;
-    final requiredAmount =
-        calculateRequiredTopUp(amount, resolvedTargetAmount);
+    final requiredAmount = calculateRequiredTopUp(amount, resolvedTargetAmount);
     final hasReply = await controller.hasConfiguredReplyFor(
       TransactionStatuses.unavailableOffer,
       amount,

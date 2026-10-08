@@ -4,6 +4,7 @@ import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/dialogs/show_error_dialog.dart';
 import 'package:bsat/components/dialogs/success_dialog.dart';
+import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/screens/online_management/edit_forwarder.dart';
 import 'package:bsat/screens/online_management/pair_device_page.dart';
 import 'package:bsat/services/backend_service.dart';
@@ -86,6 +87,17 @@ class _PairedDevicesState extends State<PairedDevices> {
       [device['id']],
       'forwardingDevices',
     );
+
+    if (newStatus == 0) {
+      try {
+        await TransactionController().resumePausedForwardingTransactions(
+          device['device_name']?.toString() ?? '',
+        );
+      } catch (e) {
+        debugPrint('Error resuming paused forwarding transactions: $e');
+        rethrow;
+      }
+    }
 
     // Refresh data and show a snackbar with modern styling
     await getData();

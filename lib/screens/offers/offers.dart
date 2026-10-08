@@ -8,6 +8,7 @@ import 'package:bsat/screens/offers/edit_offer.dart';
 import 'package:bsat/screens/offers/download_offers_page.dart';
 import 'package:bsat/services/file_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
+import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:another_telephony/telephony.dart';
@@ -78,6 +79,16 @@ class _OffersPageState extends State<OffersPage> {
   // ---------------------------------------------------------------------------
 
   Future<void> enableOffer(bool isEnabled, int id) async {
+    final existingOffer = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'id = ?',
+      [id],
+      columns: ['enabled'],
+      limit: 1,
+    );
+    final wasPaused = existingOffer.isNotEmpty &&
+        int.tryParse(existingOffer.first['enabled']?.toString() ?? '') == 0;
+
     await _sqliteService.updateStuff(
       {
         'enabled': isEnabled ? 1 : 0,
@@ -87,9 +98,13 @@ class _OffersPageState extends State<OffersPage> {
       'ussdCodes',
     );
 
+    final resume = isEnabled && wasPaused
+        ? TransactionController().resumePausedTransactionsForOffer(id)
+        : Future<void>.value();
     if (mounted) {
       await refreshPage();
     }
+    await resume;
   }
 
   // ---------------------------------------------------------------------------

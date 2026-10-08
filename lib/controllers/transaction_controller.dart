@@ -29,6 +29,20 @@ import '../services/sms_sevice.dart';
 import '../services/phone_service.dart';
 import '../services/main_engine_ussd_bridge.dart';
 
+enum ForwardingAttemptState {
+  noConfiguration,
+  configuredButUnavailable,
+  configuredButPaused,
+  forwardedSuccessfully,
+}
+
+class ForwardingAttemptResult {
+  final ForwardingAttemptState state;
+  final int? transactionId;
+
+  const ForwardingAttemptResult(this.state, {this.transactionId});
+}
+
 /// Orchestrates the full M-PESA → offer → USSD → transaction lifecycle.
 /// Entry point is [makeTransaction], which parses inbound SMS, applies
 /// business rules (blacklist, forwarding, subscription/tokens, offer state),
@@ -37,6 +51,17 @@ import '../services/main_engine_ussd_bridge.dart';
 class TransactionController {
   static Timer? _forwardingConfirmationTimer;
   static final Set<String> _activeTopUpTransactionCodes = <String>{};
+  static final Set<int> _activePausedOfferResumes = <int>{};
+  static final Set<int> _activePausedForwardingResumes = <int>{};
+  static final Set<String> _activeForwardedSmsJobs = <String>{};
+  static const String _pausedOfferResumeClaimPrefix =
+      '__BSAT_PAUSED_OFFER_RESUME__:';
+  static const String _pausedOfferLocalExecutionClaim =
+      '__BSAT_PAUSED_OFFER_LOCAL_EXECUTION__';
+  static const String _pausedForwardingReply =
+      'Paired device forwarding is configured but currently on pause. '
+      'Will retry after initiation play';
+  static const Duration _pausedOfferResumeClaimLease = Duration(seconds: 60);
   final PhoneService _phoneService = PhoneService();
   final SQLiteService _sqliteService = SQLiteService();
   final _paymentOps = PaymentOps();
@@ -211,10 +236,31 @@ class TransactionController {
     );
   }
 
+  Future<void> ensureForwardingConfirmation({
+    required String forwardingJobId,
+    required String recipientDeviceName,
+    String? transactionId,
+  }) async {
+    final inserted = await _sqliteService.queueForwardingConfirmationIfAbsent(
+      forwardingJobId: forwardingJobId,
+      recipientDeviceName: recipientDeviceName,
+      transactionId: transactionId,
+    );
+    if (!inserted) return;
+    await _deliverForwardingConfirmation(
+      forwardingJobId: forwardingJobId,
+      recipientDeviceName: recipientDeviceName,
+      transactionId: transactionId,
+      attempt: 1,
+      resultStatus: TransactionStatuses.doneConfirmed,
+    );
+  }
+
   Future<void> _sendForwardedAlternativeResult({
     required String forwardingJobId,
     required String recipientDeviceName,
     required String transactionId,
+    required String status,
     required String ussdReply,
   }) async {
     final senderDeviceName =
@@ -228,7 +274,7 @@ class TransactionController {
     }
 
     debugPrint(
-      'ALT RESULT: sending doneConfirmed jobId=$forwardingJobId '
+      'ALT RESULT: sending status=$status jobId=$forwardingJobId '
       'transactionId=$transactionId to $recipientDeviceName',
     );
     try {
@@ -236,14 +282,14 @@ class TransactionController {
         '/api/fcm/send-secure',
         body: {
           'title': 'BSAT Online Forwarding',
-          'body': 'Alternative USSD execution confirmed',
+          'body': 'Alternative USSD result',
           'senderDeviceName': senderDeviceName,
           'recipientDeviceName': recipientDeviceName,
           'data': {
             'type': 'forwarded_alt_result',
             'transactionId': transactionId,
             'forwardingJobId': forwardingJobId,
-            'status': TransactionStatuses.doneConfirmed,
+            'status': status,
             'ussdReply': ussdReply,
             'senderDeviceName': senderDeviceName,
             'recipientDeviceName': recipientDeviceName,
@@ -259,8 +305,242 @@ class TransactionController {
     }
   }
 
+  Future<void> _queueForwardedAlternativeResult({
+    required String forwardingJobId,
+    required String state,
+    required String status,
+    required String transactionId,
+    required String ussdReply,
+    bool replaceDeliveredAmbiguous = false,
+  }) async {
+    final job = await _sqliteService.getAlternativeJob(forwardingJobId);
+    if (job == null) return;
+    if (job['resultDeliveryState'] == 'delivered' &&
+        !replaceDeliveredAmbiguous) {
+      return;
+    }
+
+    await _sqliteService.updateAlternativeJob(
+      forwardingJobId,
+      {
+        'state': state,
+        'localTransactionId': int.tryParse(transactionId),
+        'resultStatus': status,
+        'ussdReply': ussdReply,
+        'resultDeliveryState': 'pending',
+        'resultNextAttemptAt': 0,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+    );
+    await _retryPendingForwardedAlternativeResults(
+      forwardingJobId: forwardingJobId,
+    );
+  }
+
+  Future<void> _retryPendingForwardedAlternativeResults({
+    String? forwardingJobId,
+  }) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final rows = await _sqliteService.queryCustom(
+      'alternativeJobs',
+      '${forwardingJobId == null ? '' : 'forwardingJobId = ? AND '}'
+          'resultDeliveryState = ? AND resultNextAttemptAt <= ?',
+      [
+        if (forwardingJobId != null) forwardingJobId,
+        'pending',
+        now,
+      ],
+    );
+
+    for (final job in rows) {
+      final jobId = job['forwardingJobId']?.toString() ?? '';
+      if (jobId.isEmpty) continue;
+      final attempt =
+          (int.tryParse(job['resultAttempt']?.toString() ?? '') ?? 0) + 1;
+      final claimed = await _sqliteService.claimAlternativeResultDelivery(
+        forwardingJobId: jobId,
+        now: now,
+        nextAttemptAt: now + const Duration(seconds: 20).inMilliseconds,
+        attempt: attempt,
+      );
+      if (claimed != 1) continue;
+
+      await _sendForwardedAlternativeResult(
+        forwardingJobId: jobId,
+        recipientDeviceName: job['senderDeviceName']?.toString() ?? '',
+        transactionId: job['localTransactionId']?.toString() ??
+            job['transactionId']?.toString() ??
+            '',
+        status: job['resultStatus']?.toString() ?? '',
+        ussdReply: job['ussdReply']?.toString() ?? '',
+      );
+    }
+  }
+
+  Future<bool> _completeForwardedAlternativeJobFromConfirmation({
+    required String forwardingJobId,
+    required String transactionId,
+    required String ussdReply,
+  }) async {
+    final job = await _sqliteService.getAlternativeJob(forwardingJobId);
+    if (job == null) return false;
+
+    final resolvedAmbiguity = job['state'] == 'ambiguous' ||
+        job['resultStatus'] == TransactionStatuses.alternativeAmbiguous;
+    final updated = await _sqliteService.updateAlternativeJob(
+      forwardingJobId,
+      {
+        'state': 'completed',
+        'localTransactionId': int.tryParse(transactionId),
+        'resultStatus': TransactionStatuses.doneConfirmed,
+        'ussdReply': ussdReply,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      expectedState: resolvedAmbiguity ? 'ambiguous' : null,
+    );
+    if (updated != 1) return false;
+    await _queueForwardedAlternativeResult(
+      forwardingJobId: forwardingJobId,
+      state: 'completed',
+      status: TransactionStatuses.doneConfirmed,
+      transactionId: transactionId,
+      ussdReply: ussdReply,
+      replaceDeliveredAmbiguous: resolvedAmbiguity,
+    );
+    debugPrint(
+      'ALT DELIVERY RESULT: job=$forwardingJobId, transaction=$transactionId',
+    );
+    return true;
+  }
+
+  Future<bool> _completeAmbiguousAlternativeFromConfirmation({
+    required String recipientNumber,
+    required int? confirmationAmount,
+    required int smsTimestamp,
+    required String confirmationBody,
+  }) async {
+    if (!RegExp(r'^0\d{9}$').hasMatch(recipientNumber) ||
+        confirmationAmount == null) {
+      return false;
+    }
+
+    final jobs = await _sqliteService.getAlternativeJobsByState('ambiguous');
+    final candidates = <Map<String, dynamic>>[];
+    for (final job in jobs) {
+      if (job['resultStatus'] != TransactionStatuses.alternativeAmbiguous) {
+        continue;
+      }
+      final executionStartedAt =
+          int.tryParse(job['executionStartedAt']?.toString() ?? '');
+      if (executionStartedAt == null ||
+          (executionStartedAt - smsTimestamp).abs() > 20 * 60 * 1000) {
+        continue;
+      }
+      final expectedAmount = getAmount(job['smsMessage']?.toString() ?? '');
+      if (expectedAmount != confirmationAmount) continue;
+
+      final expectedNumber =
+          extract9DigitNumber(job['smsMessage']?.toString() ?? '');
+      if (expectedNumber <= 0) continue;
+      var normalizedExpected = normalizeIncomingCallNumber(
+        expectedNumber.toString().padLeft(9, '0'),
+      );
+      if (normalizedExpected.length == 9) {
+        normalizedExpected = '0$normalizedExpected';
+      }
+      if (normalizedExpected != recipientNumber) continue;
+      candidates.add(job);
+    }
+
+    if (candidates.length != 1) {
+      debugPrint(
+        'AMBIGUOUS ALT CONFIRMATION: exact recipient/amount/time match '
+        'count=${candidates.length}; leaving unresolved',
+      );
+      return false;
+    }
+
+    final job = candidates.single;
+    final forwardingJobId = job['forwardingJobId']?.toString() ?? '';
+    if (forwardingJobId.isEmpty) return false;
+    final completed = await _completeForwardedAlternativeJobFromConfirmation(
+      forwardingJobId: forwardingJobId,
+      transactionId: job['transactionId']?.toString() ?? '',
+      ussdReply: confirmationBody,
+    );
+    if (completed) {
+      debugPrint(
+        'AMBIGUOUS ALT CONFIRMATION matched safely: '
+        'job=$forwardingJobId, recipient=$recipientNumber, '
+        'amount=$confirmationAmount',
+      );
+    }
+    return completed;
+  }
+
 // YOUR EXISTING METHOD STAYS EXACTLY THE SAME
   Future<int?> makeTransactionGivenSmsBody(
+    String smsBody, {
+    String? address,
+    String? forwardingJobId,
+    String? forwardingSenderDeviceName,
+    int? parentTransactionId,
+  }) async {
+    final jobId = forwardingJobId?.trim() ?? '';
+    if (jobId.isNotEmpty) {
+      if (!_activeForwardedSmsJobs.add(jobId)) {
+        final existing = await _sqliteService.queryCustom(
+          'transactions',
+          'forwardingJobId = ?',
+          [jobId],
+          columns: ['id'],
+          limit: 1,
+        );
+        return int.tryParse(existing.firstOrNull?['id']?.toString() ?? '');
+      }
+      try {
+        final existing = await _sqliteService.queryCustom(
+          'transactions',
+          'forwardingJobId = ?',
+          [jobId],
+          limit: 1,
+        );
+        if (existing.isNotEmpty) {
+          final transaction = existing.first;
+          if (transaction['status'] == TransactionStatuses.doneConfirmed) {
+            final sender =
+                transaction['forwardingSenderDeviceName']?.toString() ?? '';
+            if (sender.isNotEmpty) {
+              await sendForwardingConfirmation(
+                forwardingJobId: jobId,
+                recipientDeviceName: sender,
+                transactionId: transaction['id']?.toString(),
+              );
+            }
+          }
+          return int.tryParse(transaction['id']?.toString() ?? '');
+        }
+        return await _makeTransactionFromSmsBody(
+          smsBody,
+          address: address,
+          forwardingJobId: forwardingJobId,
+          forwardingSenderDeviceName: forwardingSenderDeviceName,
+          parentTransactionId: parentTransactionId,
+        );
+      } finally {
+        _activeForwardedSmsJobs.remove(jobId);
+      }
+    }
+    return _makeTransactionFromSmsBody(
+      smsBody,
+      address: address,
+      forwardingJobId: forwardingJobId,
+      forwardingSenderDeviceName: forwardingSenderDeviceName,
+      parentTransactionId: parentTransactionId,
+    );
+  }
+
+  Future<int?> _makeTransactionFromSmsBody(
     String smsBody, {
     String? address,
     String? forwardingJobId,
@@ -340,7 +620,7 @@ class TransactionController {
         if ((await _sharedPreferencesService.getForwardMaskedMessages() ??
                 false) &&
             smsMessage.body != null) {
-          return await forwardIfNeeded(
+          final forwardingResult = await forwardIfNeeded(
             amount,
             trimmedBody,
             smsMessage.body ?? "",
@@ -350,6 +630,21 @@ class TransactionController {
             autoSaveContacts,
             status: TransactionStatuses.forwarded,
           );
+          if (forwardingResult.state ==
+                  ForwardingAttemptState.configuredButUnavailable ||
+              forwardingResult.state ==
+                  ForwardingAttemptState.configuredButPaused) {
+            return _persistUnavailableForwardingTransaction(
+              initialMessage: smsMessage.body ?? '',
+              transactionCode: mpesaCode,
+              number: number,
+              amount: amount,
+              source: name,
+              destinationPaused: forwardingResult.state ==
+                  ForwardingAttemptState.configuredButPaused,
+            );
+          }
+          return forwardingResult.transactionId;
         } else {
           if (smsMessage.address == "MPESA" &&
               smsMessage.body!.contains("***")) {
@@ -604,9 +899,51 @@ class TransactionController {
       }
     }
 
+    if (number >= 100000000 &&
+        !(smsMessage.body ?? '')
+            .contains(RegExp('airtel money', caseSensitive: false))) {
+      final matchingOffer = await _findMatchingUssdCode(
+        amount,
+        smsMessage.subscriptionId ?? 0,
+      );
+      final offerId = int.tryParse(matchingOffer?['id']?.toString() ?? '');
+      final offerEnabled = matchingOffer == null ||
+          matchingOffer['enabled'] == null ||
+          matchingOffer['enabled'] == 1;
+      if (offerId != null && !offerEnabled) {
+        processReply(
+          number,
+          TransactionStatuses.paused,
+          name.split(' ')[0],
+          name.trim().split(RegExp(r'\s+')).length > 1
+              ? name.trim().split(RegExp(r'\s+'))[1]
+              : '',
+          amount,
+        );
+
+        final pausedCode = await selectBongaUssdCode(offerId);
+        return await dontProcess(
+          smsMessage.body ?? '',
+          mpesaCode,
+          number,
+          pausedCode.replaceAll(RegExp(r'n'), '0$number'),
+          amount,
+          int.tryParse(matchingOffer['dialSim']?.toString() ?? '') ?? -1,
+          status: TransactionStatuses.paused,
+          reply: 'Offer paused. Please check/retry.',
+          canRetry: false,
+          source: name,
+          forwardingJobId: forwardingJobId,
+          forwardingSenderDeviceName: forwardingSenderDeviceName,
+          targetOfferId: offerId,
+          parentTransactionId: parentTransactionId,
+        );
+      }
+    }
+
     // if()
 
-    int? transactionID = (await forwardIfNeeded(
+    final forwardingResult = await forwardIfNeeded(
       amount,
       trimmedBody,
       smsMessage.body ?? "",
@@ -615,10 +952,25 @@ class TransactionController {
       name,
       autoSaveContacts,
       parentTransactionId: parentTransactionId,
-    ));
+    );
 
-    if (transactionID != null) {
-      return transactionID;
+    if (forwardingResult.state ==
+        ForwardingAttemptState.forwardedSuccessfully) {
+      return forwardingResult.transactionId;
+    }
+    if (forwardingResult.state ==
+            ForwardingAttemptState.configuredButUnavailable ||
+        forwardingResult.state == ForwardingAttemptState.configuredButPaused) {
+      return _persistUnavailableForwardingTransaction(
+        initialMessage: smsMessage.body ?? '',
+        transactionCode: mpesaCode,
+        number: number,
+        amount: amount,
+        source: name,
+        parentTransactionId: parentTransactionId,
+        destinationPaused: forwardingResult.state ==
+            ForwardingAttemptState.configuredButPaused,
+      );
     }
 
     bool offersMightHaveChanged =
@@ -703,7 +1055,7 @@ class TransactionController {
         .toString()
         .isEmpty) {
       if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive.length > 6) {
-        transactionID = await forwardIfNeeded(
+        final compoundedForwarding = await forwardIfNeeded(
           ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6],
           trimmedBody,
           alterMpesaMessage(smsMessage.body ?? "",
@@ -714,8 +1066,24 @@ class TransactionController {
           autoSaveContacts,
           parentTransactionId: parentTransactionId,
         );
-        if (transactionID != null) {
-          return transactionID;
+        if (compoundedForwarding.state ==
+            ForwardingAttemptState.forwardedSuccessfully) {
+          return compoundedForwarding.transactionId;
+        }
+        if (compoundedForwarding.state ==
+                ForwardingAttemptState.configuredButUnavailable ||
+            compoundedForwarding.state ==
+                ForwardingAttemptState.configuredButPaused) {
+          return _persistUnavailableForwardingTransaction(
+            initialMessage: smsMessage.body ?? '',
+            transactionCode: mpesaCode,
+            number: number,
+            amount: ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6],
+            source: name,
+            parentTransactionId: parentTransactionId,
+            destinationPaused: compoundedForwarding.state ==
+                ForwardingAttemptState.configuredButPaused,
+          );
         }
       }
 
@@ -826,6 +1194,14 @@ class TransactionController {
         canRetry: false,
         source: name,
         parentTransactionId: parentTransactionId,
+        targetOfferId: int.tryParse(
+          (await _findMatchingUssdCode(
+                amount,
+                smsMessage.subscriptionId ?? 0,
+              ))?['id']
+                  ?.toString() ??
+              '',
+        ),
       );
     }
 
@@ -951,7 +1327,11 @@ class TransactionController {
 
     await recordClientPurchase(number.toString(), name);
 
-    transactionID = await _sqliteService.insertStuff(
+    final firstFailedTimeStamp =
+        requestResponse[1] == TransactionStatuses.secondAttempt
+            ? DateTime.now().millisecondsSinceEpoch
+            : null;
+    final transactionID = await _sqliteService.insertStuff(
       {
         'initialMessage': smsMessage.body,
         'transactionId': mpesaCode,
@@ -971,6 +1351,8 @@ class TransactionController {
           DateTime.fromMillisecondsSinceEpoch(smsMessage.date ?? 0),
         ),
         'status': requestResponse[1] == "" ? "No reply" : requestResponse[1],
+        if (firstFailedTimeStamp != null)
+          'firstFailedTimeStamp': firstFailedTimeStamp,
         'simSubId': ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
         'source': name,
         'timeStamp': DateTime.now().millisecondsSinceEpoch,
@@ -984,6 +1366,13 @@ class TransactionController {
       'localTransactionId=$transactionID, '
       'forwardingJobId=${forwardingJobId ?? ''}',
     );
+    debugPrint('[ALT FIX] transaction=$transactionID');
+    debugPrint(
+      '[ALT FIX] status=${requestResponse[1] == "" ? "No reply" : requestResponse[1]}',
+    );
+    if (firstFailedTimeStamp != null) {
+      debugPrint('[ALT FIX] firstFailedTimeStamp=$firstFailedTimeStamp');
+    }
 
     if (autoSaveContacts) {
       await contactService.addNewContact(
@@ -1042,7 +1431,7 @@ class TransactionController {
     return transactionID;
   }
 
-  Future<int?> forwardIfNeeded(
+  Future<ForwardingAttemptResult> forwardIfNeeded(
     int amount,
     String trimmedBody,
     String smsMessageBody,
@@ -1054,7 +1443,9 @@ class TransactionController {
     int? txId,
     String? forwardingRecipientDeviceName,
     int? parentTransactionId,
+    bool pairedDeviceOnly = false,
   }) async {
+    var pairedConfigurationExists = false;
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
       "(amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)",
@@ -1073,7 +1464,7 @@ class TransactionController {
       (smsMessageBody).length > 160 ? 160 : (smsMessageBody).length,
     );
 
-    if (toForward.isNotEmpty) {
+    if (!pairedDeviceOnly && toForward.isNotEmpty) {
       if (toForward[0]["paused"] != 1) {
         // debugPrint(
         //     "Forwarding is paused for device ${toForward[0]["numberToReceive"]}. Skipping forwarding.");
@@ -1104,7 +1495,7 @@ class TransactionController {
           );
         }
 
-        return await dontProcess(
+        final transactionId = await dontProcess(
           smsMessageBody,
           mpesaCode,
           number,
@@ -1117,6 +1508,10 @@ class TransactionController {
           source: name,
           id: txId,
           parentTransactionId: parentTransactionId,
+        );
+        return ForwardingAttemptResult(
+          ForwardingAttemptState.forwardedSuccessfully,
+          transactionId: transactionId,
         );
       }
     }
@@ -1134,13 +1529,10 @@ class TransactionController {
           // STEP 1: Build the list of devices that are allowed to
           // forward this amount AND are currently online.
           // ------------------------------------------------------------
+          final List<Map<String, dynamic>> configuredDevices = [];
           final List<Map<String, dynamic>> eligibleDevices = [];
 
           for (final device in forwardingDevices) {
-            if ((device['paused'] ?? 0) == 1) {
-              continue;
-            }
-
             final recipientDeviceName = device['device_name']?.toString() ??
                 "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
 
@@ -1157,20 +1549,33 @@ class TransactionController {
               continue;
             }
 
-            // Use the existing connectivity check.
+            configuredDevices.add(device);
+            pairedConfigurationExists = true;
+            final isPaused = (device['paused'] ?? 0) == 1;
             final isOnline =
                 await AuthService().pingDevice(recipientDeviceName);
+            debugPrint(
+              'ONLINE FORWARDING ROUTE: amount=$amount '
+              'device=$recipientDeviceName paused=$isPaused online=$isOnline',
+            );
 
-            if (!isOnline) {
-              debugPrint(
-                'ONLINE FORWARDING: '
-                '$recipientDeviceName is offline for amount $amount',
-              );
+            if (isPaused || !isOnline) {
+              if (!isPaused) {
+                debugPrint(
+                  'ONLINE FORWARDING: '
+                  '$recipientDeviceName is offline for amount $amount',
+                );
+              }
               continue;
             }
 
             eligibleDevices.add(device);
           }
+          debugPrint(
+            'ONLINE FORWARDING ROUTES: amount=$amount '
+            'configured=${configuredDevices.isNotEmpty} '
+            'devices=${configuredDevices.map((device) => device['device_name']).join(',')}',
+          );
 
           // ------------------------------------------------------------
           // STEP 2: Load the existing transaction, if this is a retry.
@@ -1233,6 +1638,16 @@ class TransactionController {
               'for transactionId=$txId',
             );
 
+            if ((selectedDevice?['paused'] ?? 0) == 1) {
+              debugPrint(
+                'ONLINE FORWARDING FINAL: amount=$amount '
+                'state=configuredButPaused',
+              );
+              return const ForwardingAttemptResult(
+                ForwardingAttemptState.configuredButPaused,
+              );
+            }
+
             // Important:
             // If the original recipient is currently offline, do not
             // silently redirect this transaction to another phone.
@@ -1259,7 +1674,13 @@ class TransactionController {
                 );
               }
 
-              return txId;
+              debugPrint(
+                'ONLINE FORWARDING FINAL: amount=$amount '
+                'state=configuredButUnavailable',
+              );
+              return const ForwardingAttemptResult(
+                ForwardingAttemptState.configuredButUnavailable,
+              );
             }
           } else {
             // ----------------------------------------------------------
@@ -1272,8 +1693,18 @@ class TransactionController {
                 'ONLINE FORWARDING: '
                 'No online forwarding device available for amount $amount',
               );
-
-              return null;
+              final allConfiguredDevicesPaused = configuredDevices.isNotEmpty &&
+                  configuredDevices
+                      .every((device) => (device['paused'] ?? 0) == 1);
+              final state = configuredDevices.isEmpty
+                  ? ForwardingAttemptState.noConfiguration
+                  : allConfiguredDevicesPaused
+                      ? ForwardingAttemptState.configuredButPaused
+                      : ForwardingAttemptState.configuredButUnavailable;
+              debugPrint(
+                'ONLINE FORWARDING FINAL: amount=$amount state=$state',
+              );
+              return ForwardingAttemptResult(state);
             }
 
             final storedIndex = await SharedPreferencesService()
@@ -1453,7 +1884,9 @@ class TransactionController {
               'transactions',
             );
 
-            return transactionId;
+            return const ForwardingAttemptResult(
+              ForwardingAttemptState.configuredButUnavailable,
+            );
           }
 
           // ------------------------------------------------------------
@@ -1501,14 +1934,194 @@ class TransactionController {
             amount,
           );
 
-          return transactionId;
+          debugPrint(
+            'ONLINE FORWARDING FINAL: amount=$amount '
+            'state=forwardedSuccessfully',
+          );
+          return ForwardingAttemptResult(
+            ForwardingAttemptState.forwardedSuccessfully,
+            transactionId: transactionId,
+          );
         }
       }
     } catch (e) {
       debugPrint("Error checking forwarding devices: $e");
     }
 
-    return null;
+    final state = pairedConfigurationExists
+        ? ForwardingAttemptState.configuredButUnavailable
+        : ForwardingAttemptState.noConfiguration;
+    debugPrint(
+      'ONLINE FORWARDING FINAL: amount=$amount '
+      'configured=$pairedConfigurationExists state=$state',
+    );
+    return ForwardingAttemptResult(state);
+  }
+
+  Future<int?> _persistUnavailableForwardingTransaction({
+    int? transactionId,
+    required String initialMessage,
+    required String transactionCode,
+    required int number,
+    required int amount,
+    required String source,
+    int? parentTransactionId,
+    bool destinationPaused = false,
+  }) async {
+    final status = destinationPaused
+        ? TransactionStatuses.paused
+        : TransactionStatuses.error;
+    final reply = destinationPaused
+        ? _pausedForwardingReply
+        : 'Paired-device forwarding is configured but currently unavailable. '
+            'Will retry forwarding later.';
+    if (transactionId != null) {
+      await _sqliteService.updateStuff(
+        {
+          'status': status,
+          'canRetry': destinationPaused ? 0 : 1,
+          'ussdReply': reply,
+        },
+        'id = ? AND status NOT IN (?, ?)',
+        [
+          transactionId,
+          TransactionStatuses.forwardedPending,
+          TransactionStatuses.forwardedConfirmed,
+        ],
+        'transactions',
+      );
+      return transactionId;
+    }
+    return dontProcess(
+      initialMessage,
+      transactionCode,
+      number,
+      '',
+      amount,
+      -1,
+      status: status,
+      reply: reply,
+      canRetry: !destinationPaused,
+      source: source,
+      parentTransactionId: parentTransactionId,
+    );
+  }
+
+  Future<void> resumePausedForwardingTransactions(String deviceName) async {
+    final devices = await _sqliteService.queryCustom(
+      'forwardingDevices',
+      'device_name = ? AND paused = 0',
+      [deviceName],
+      limit: 1,
+    );
+    if (devices.isEmpty) return;
+
+    final amountList = (devices.first['amounts_to_forward']?.toString() ?? '')
+        .replaceAll(RegExp(r'[\[\]"]'), '')
+        .split(',')
+        .map((value) => int.tryParse(value.trim()))
+        .whereType<int>()
+        .toSet();
+    if (amountList.isEmpty) return;
+
+    final transactions = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ? AND (ussdReply = ? OR ussdReply LIKE ?)',
+      [
+        TransactionStatuses.paused,
+        _pausedForwardingReply,
+        '$_pausedOfferResumeClaimPrefix%',
+      ],
+      orderBy: 'timeStamp ASC',
+    );
+
+    for (final transaction in transactions) {
+      final amount = int.tryParse(transaction['amount']?.toString() ?? '');
+      final transactionId =
+          int.tryParse(transaction['id']?.toString() ?? '');
+      if (amount == null ||
+          transactionId == null ||
+          !amountList.contains(amount)) {
+        continue;
+      }
+      await _resumePausedForwardingTransaction(transactionId);
+    }
+  }
+
+  Future<void> _resumePausedForwardingTransaction(int transactionId) async {
+    if (!_activePausedForwardingResumes.add(transactionId)) return;
+    try {
+      await _resumeClaimedPausedForwardingTransaction(transactionId);
+    } finally {
+      _activePausedForwardingResumes.remove(transactionId);
+    }
+  }
+
+  Future<void> _resumeClaimedPausedForwardingTransaction(
+    int transactionId,
+  ) async {
+    final rows = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ? AND status = ?',
+      [transactionId, TransactionStatuses.paused],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+
+    final transaction = rows.first;
+    final currentReply = transaction['ussdReply']?.toString() ?? '';
+    if (currentReply != _pausedForwardingReply) {
+      if (!currentReply.startsWith(_pausedOfferResumeClaimPrefix)) return;
+      final claimedAt = int.tryParse(
+        currentReply.substring(_pausedOfferResumeClaimPrefix.length),
+      );
+      final claimAge =
+          DateTime.now().millisecondsSinceEpoch - (claimedAt ?? 0);
+      if (claimAge < _pausedOfferResumeClaimLease.inMilliseconds) return;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final claimReply = '$_pausedOfferResumeClaimPrefix$now';
+    final claimed = await _sqliteService.updateStuff(
+      {'ussdReply': claimReply},
+      'id = ? AND status = ? AND ussdReply = ?',
+      [transactionId, TransactionStatuses.paused, currentReply],
+      'transactions',
+    );
+    if (claimed != 1) return;
+
+    final initialMessage = transaction['initialMessage']?.toString() ?? '';
+    final amount = int.tryParse(transaction['amount']?.toString() ?? '') ?? 0;
+    final result = await forwardIfNeeded(
+      amount,
+      initialMessage.length > 160
+          ? initialMessage.substring(0, 160)
+          : initialMessage,
+      initialMessage,
+      transaction['transactionId']?.toString() ?? '',
+      int.tryParse(transaction['number']?.toString() ?? '') ?? 0,
+      transaction['source']?.toString() ?? '',
+      true,
+      txId: transactionId,
+      parentTransactionId:
+          int.tryParse(transaction['parentTransactionId']?.toString() ?? ''),
+      pairedDeviceOnly: true,
+    );
+
+    if (result.state == ForwardingAttemptState.forwardedSuccessfully) return;
+
+    await _persistUnavailableForwardingTransaction(
+      transactionId: transactionId,
+      initialMessage: initialMessage,
+      transactionCode: transaction['transactionId']?.toString() ?? '',
+      number: int.tryParse(transaction['number']?.toString() ?? '') ?? 0,
+      amount: amount,
+      source: transaction['source']?.toString() ?? '',
+      parentTransactionId:
+          int.tryParse(transaction['parentTransactionId']?.toString() ?? ''),
+      destinationPaused:
+          result.state == ForwardingAttemptState.configuredButPaused,
+    );
   }
 
   Future<bool> forwardToAllAvenues(
@@ -1987,7 +2600,10 @@ class TransactionController {
 
   Future<void> redoTransaction(
       int id, String ussdCode, int simSubId, int canRetry, String reply,
-      {String? mpesaMessage, CodeSignature? codeSignature}) async {
+      {String? mpesaMessage,
+      CodeSignature? codeSignature,
+      bool offerResumeClaimed = false,
+      bool skipForwardingCheck = false}) async {
     debugPrint(
         "Retrying transaction $id with code $ussdCode on sim $simSubId. Can retry: $canRetry. Previous reply: $reply");
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
@@ -2003,6 +2619,32 @@ class TransactionController {
       debugPrint("Transaction with id $id not found for retry.");
       return;
     }
+
+    final isPausedOfferTransaction =
+        tx.first['status'] == TransactionStatuses.paused &&
+            int.tryParse(tx.first['targetOfferId']?.toString() ?? '') != null;
+    if (isPausedOfferTransaction && !offerResumeClaimed) {
+      await _resumePausedOfferTransaction(id);
+      return;
+    }
+    if (isPausedOfferTransaction &&
+        (offerResumeClaimed
+            ? !(tx.first['ussdReply']
+                    ?.toString()
+                    .startsWith(_pausedOfferResumeClaimPrefix) ??
+                false)
+            : tx.first['ussdReply']?.toString() ==
+                _pausedOfferLocalExecutionClaim)) {
+      debugPrint(
+        'Skipping paused offer transaction $id; resume claim is not valid.',
+      );
+      return;
+    }
+    final pausedOfferResumeClaim =
+        offerResumeClaimed ? tx.first['ussdReply']?.toString() ?? '' : '';
+    final pausedOfferId = offerResumeClaimed
+        ? int.tryParse(tx.first['targetOfferId']?.toString() ?? '')
+        : null;
 
     int firstFailedTimeStamp = (tx.first['firstFailedTimeStamp'] as int?) ??
         DateTime.now().millisecondsSinceEpoch;
@@ -2061,20 +2703,40 @@ class TransactionController {
         ? transaction.initialMessage.substring(0, 160)
         : transaction.initialMessage;
 
-    int? newTransactionId = await forwardIfNeeded(
-      transaction.amount,
-      trimmedBody,
-      transaction.initialMessage,
-      transaction.transactionId,
-      transaction.number,
-      transaction.source,
-      true,
-      txId: id,
-      forwardingRecipientDeviceName: forwardingRecipientDeviceName,
-    );
+    ForwardingAttemptResult? forwardingResult;
+    if (!skipForwardingCheck) {
+      forwardingResult = await forwardIfNeeded(
+        transaction.amount,
+        trimmedBody,
+        transaction.initialMessage,
+        transaction.transactionId,
+        transaction.number,
+        transaction.source,
+        true,
+        txId: id,
+        forwardingRecipientDeviceName: forwardingRecipientDeviceName,
+      );
+    }
 
-    if (newTransactionId != null) {
-      await purgeAndMerge(newTransactionId, id);
+    if (forwardingResult?.state ==
+        ForwardingAttemptState.forwardedSuccessfully) {
+      await purgeAndMerge(forwardingResult!.transactionId!, id);
+      return;
+    }
+    if (forwardingResult?.state ==
+            ForwardingAttemptState.configuredButUnavailable ||
+        forwardingResult?.state == ForwardingAttemptState.configuredButPaused) {
+      await _persistUnavailableForwardingTransaction(
+        transactionId: id,
+        initialMessage: transaction.initialMessage,
+        transactionCode: transaction.transactionId,
+        number: transaction.number,
+        amount: transaction.amount,
+        source: transaction.source,
+        parentTransactionId: transaction.parentTransactionId,
+        destinationPaused: forwardingResult?.state ==
+            ForwardingAttemptState.configuredButPaused,
+      );
       return;
     }
 
@@ -2136,7 +2798,7 @@ class TransactionController {
     ));
 
     if (lecodes.isEmpty) {
-      int? transactionId = await forwardIfNeeded(
+      final forwardingResult = await forwardIfNeeded(
         amount,
         trimmedBody,
         transaction.initialMessage,
@@ -2148,10 +2810,30 @@ class TransactionController {
         txId: id,
       );
 
-      if (transactionId != null) {
-        await purgeAndMerge(transactionId, id);
+      if (forwardingResult.state ==
+          ForwardingAttemptState.forwardedSuccessfully) {
+        await purgeAndMerge(forwardingResult.transactionId!, id);
         return;
-      } else if (ussdCode.isNotEmpty && simSubId > -1) {
+      }
+      if (forwardingResult.state ==
+              ForwardingAttemptState.configuredButUnavailable ||
+          forwardingResult.state ==
+              ForwardingAttemptState.configuredButPaused) {
+        await _persistUnavailableForwardingTransaction(
+          transactionId: id,
+          initialMessage: transaction.initialMessage,
+          transactionCode: transaction.transactionId,
+          number: number,
+          amount: amount,
+          source: transaction.source,
+          parentTransactionId: transaction.parentTransactionId,
+          destinationPaused: forwardingResult.state ==
+              ForwardingAttemptState.configuredButPaused,
+        );
+        return;
+      }
+      if (ussdCode.isNotEmpty && simSubId > -1) {
+        int? transactionId;
         transactionId = await transactGivenUssdAndDialSim(
           ussdCode,
           simSubId,
@@ -2174,6 +2856,39 @@ class TransactionController {
       number,
       simSubId,
     );
+    if (offerResumeClaimed) {
+      final offerId = int.tryParse(tx.first['targetOfferId']?.toString() ?? '');
+      final exactOfferRows = offerId == null
+          ? <Map<String, dynamic>>[]
+          : await _sqliteService.queryCustom(
+              'ussdCodes',
+              'id = ? AND enabled = 1',
+              [offerId],
+              limit: 1,
+            );
+      if (exactOfferRows.isEmpty) {
+        await _sqliteService.updateStuff(
+          {
+            'status': TransactionStatuses.paused,
+            'ussdReply': 'Offer paused. Please check/retry.',
+          },
+          'id = ? AND status = ? AND ussdReply = ?',
+          [id, TransactionStatuses.paused, _pausedOfferLocalExecutionClaim],
+          'transactions',
+        );
+        return;
+      }
+      final exactOffer = exactOfferRows.first;
+      final exactCode = await selectBongaUssdCode(offerId!);
+      ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive = [
+        exactCode.replaceAll(RegExp(r'n'), '0$number'),
+        int.tryParse(exactOffer['dialSim']?.toString() ?? '') ?? -1,
+        exactOffer['canRetry'] == 1,
+        true,
+        exactOffer['isAdvanced'] == 1,
+        true,
+      ];
+    }
 
     if (kDebugMode) {
       debugPrint(
@@ -2223,6 +2938,15 @@ class TransactionController {
         debugPrint("so far so good");
       }
 
+      if (offerResumeClaimed &&
+          (pausedOfferId == null ||
+              !await _markPausedOfferLocalExecutionStarted(
+                id,
+                pausedOfferId,
+                pausedOfferResumeClaim,
+              ))) {
+        return;
+      }
       response = await PhoneService().makeAdvancedRequest(
         ussdCode,
         simSubId,
@@ -2248,6 +2972,15 @@ class TransactionController {
         }
       }
     } else {
+      if (offerResumeClaimed &&
+          (pausedOfferId == null ||
+              !await _markPausedOfferLocalExecutionStarted(
+                id,
+                pausedOfferId,
+                pausedOfferResumeClaim,
+              ))) {
+        return;
+      }
       response = await PhoneService().makeMyRequest(
         ussdCode,
         simSubId,
@@ -2320,8 +3053,10 @@ class TransactionController {
 
     //print("Response: $response, canRetry: $canRetry");
 
+    final updateFirstFailedTimeStamp =
+        response[1] == TransactionStatuses.secondAttempt;
     await _sqliteService.updateOnly(
-      "UPDATE transactions SET ussdDialed=?, date=?, time=?, ussdReply=?, status=?, timeStamp=?, canRetry=?, initialMessage=? WHERE id=?",
+      "UPDATE transactions SET ussdDialed=?, date=?, time=?, ussdReply=?, status=?, timeStamp=?, canRetry=?, initialMessage=?${updateFirstFailedTimeStamp ? ', firstFailedTimeStamp=COALESCE(firstFailedTimeStamp, ?)' : ''} WHERE id=?",
       [
         ussdCode,
         getNormalDate(DateTime.now()),
@@ -2331,9 +3066,15 @@ class TransactionController {
         DateTime.now().millisecondsSinceEpoch,
         canRetry,
         transaction.initialMessage,
+        if (updateFirstFailedTimeStamp) firstFailedTimeStamp,
         id,
       ],
     );
+    if (updateFirstFailedTimeStamp) {
+      debugPrint('[ALT FIX] transaction=$id');
+      debugPrint('[ALT FIX] status=${response[1]}');
+      debugPrint('[ALT FIX] firstFailedTimeStamp=$firstFailedTimeStamp');
+    }
     if (response[1] == TransactionStatuses.doneConfirmed &&
         forwardingJobId != null &&
         forwardingJobId.isNotEmpty &&
@@ -2401,11 +3142,9 @@ class TransactionController {
     bool isAdvanced = false;
     bool enabled = true;
 
-    List<Map<String, dynamic>> ussdCodes = await _sqliteService.queryCustom(
-      'ussdCodes',
-      'amount = ? AND (fromSim = ? OR fromSim < 0)',
-      [amount, fromId],
-    );
+    final matchingOffer = await _findMatchingUssdCode(amount, fromId);
+    final List<Map<String, dynamic>> ussdCodes =
+        matchingOffer == null ? [] : [matchingOffer];
 
     debugPrint(
       'USSD DEBUG: Looking for ussdCodes amount=$amount, fromId=$fromId',
@@ -2441,6 +3180,249 @@ class TransactionController {
       isAdvanced,
       enabled,
     ];
+  }
+
+  Future<Map<String, dynamic>?> _findMatchingUssdCode(
+    int amount,
+    int fromId,
+  ) async {
+    final ussdCodes = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'amount = ? AND (fromSim = ? OR fromSim < 0)',
+      [amount, fromId],
+      limit: 1,
+    );
+    return ussdCodes.firstOrNull;
+  }
+
+  Future<void> resumePausedTransactionsForOffer(int offerId) async {
+    final transactions = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ? AND targetOfferId = ?',
+      [TransactionStatuses.paused, offerId],
+      orderBy: 'timeStamp ASC',
+    );
+    for (final transaction in transactions) {
+      final id = int.tryParse(transaction['id']?.toString() ?? '');
+      if (id != null) await _resumePausedOfferTransaction(id);
+    }
+  }
+
+  Future<void> _resumeEligiblePausedOfferTransactions() async {
+    final transactions = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ? AND targetOfferId IS NOT NULL',
+      [TransactionStatuses.paused],
+      orderBy: 'timeStamp ASC',
+    );
+    for (final transaction in transactions) {
+      final id = int.tryParse(transaction['id']?.toString() ?? '');
+      final offerId =
+          int.tryParse(transaction['targetOfferId']?.toString() ?? '');
+      if (id == null || offerId == null) continue;
+      await _resumePausedOfferTransaction(id, expectedOfferId: offerId);
+    }
+  }
+
+  Future<void> _resumePausedOfferTransaction(
+    int transactionId, {
+    int? expectedOfferId,
+  }) async {
+    if (!_activePausedOfferResumes.add(transactionId)) return;
+    try {
+      await _resumeClaimedPausedOfferTransaction(
+        transactionId,
+        expectedOfferId: expectedOfferId,
+      );
+    } finally {
+      _activePausedOfferResumes.remove(transactionId);
+    }
+  }
+
+  Future<void> _resumeClaimedPausedOfferTransaction(
+    int transactionId, {
+    int? expectedOfferId,
+  }) async {
+    final rows = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ? AND status = ?',
+      [transactionId, TransactionStatuses.paused],
+      limit: 1,
+    );
+    if (rows.isEmpty) return;
+    final transaction = rows.first;
+    final offerId =
+        int.tryParse(transaction['targetOfferId']?.toString() ?? '');
+    if (offerId == null ||
+        (expectedOfferId != null && offerId != expectedOfferId)) {
+      return;
+    }
+
+    final offerRows = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'id = ? AND enabled = 1',
+      [offerId],
+      limit: 1,
+    );
+    if (offerRows.isEmpty) return;
+
+    final currentReply = transaction['ussdReply']?.toString() ?? '';
+    if (currentReply == _pausedForwardingReply) return;
+    if (currentReply == _pausedOfferLocalExecutionClaim) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (currentReply.startsWith(_pausedOfferResumeClaimPrefix)) {
+      final claimedAt = int.tryParse(
+        currentReply.substring(_pausedOfferResumeClaimPrefix.length),
+      );
+      if (claimedAt == null ||
+          now - claimedAt < _pausedOfferResumeClaimLease.inMilliseconds) {
+        return;
+      }
+    }
+    final claimReply = '$_pausedOfferResumeClaimPrefix$now';
+    final where = transaction['ussdReply'] == null
+        ? 'id = ? AND status = ? AND targetOfferId = ? AND ussdReply IS NULL'
+        : 'id = ? AND status = ? AND targetOfferId = ? AND ussdReply = ?';
+    final whereArgs = transaction['ussdReply'] == null
+        ? <Object?>[
+            transactionId,
+            TransactionStatuses.paused,
+            offerId,
+          ]
+        : <Object?>[
+            transactionId,
+            TransactionStatuses.paused,
+            offerId,
+            currentReply,
+          ];
+    final claimed = await _sqliteService.updateStuff(
+      {'ussdReply': claimReply},
+      where,
+      whereArgs,
+      'transactions',
+    );
+    if (claimed != 1) return;
+
+    final amount = int.tryParse(transaction['amount']?.toString() ?? '') ?? 0;
+    final forwardingJobId =
+        transaction['forwardingJobId']?.toString().trim() ?? '';
+    if (forwardingJobId.isEmpty &&
+        await _hasPairedDeviceRouteForAmount(amount)) {
+      final initialMessage = transaction['initialMessage']?.toString() ?? '';
+      final forwardingResult = await forwardIfNeeded(
+        amount,
+        initialMessage.length > 160
+            ? initialMessage.substring(0, 160)
+            : initialMessage,
+        initialMessage,
+        transaction['transactionId']?.toString() ?? '',
+        int.tryParse(transaction['number']?.toString() ?? '') ?? 0,
+        transaction['source']?.toString() ?? '',
+        true,
+        txId: transactionId,
+        forwardingRecipientDeviceName:
+            transaction['forwardingRecipientDeviceName']?.toString(),
+        parentTransactionId:
+            int.tryParse(transaction['parentTransactionId']?.toString() ?? ''),
+        pairedDeviceOnly: true,
+      );
+      if (forwardingResult.state ==
+          ForwardingAttemptState.forwardedSuccessfully) {
+        return;
+      }
+
+      if (forwardingResult.state ==
+              ForwardingAttemptState.configuredButUnavailable ||
+          forwardingResult.state ==
+              ForwardingAttemptState.configuredButPaused) {
+        await _persistUnavailableForwardingTransaction(
+          transactionId: transactionId,
+          initialMessage: transaction['initialMessage']?.toString() ?? '',
+          transactionCode: transaction['transactionId']?.toString() ?? '',
+          number: int.tryParse(transaction['number']?.toString() ?? '') ?? 0,
+          amount: amount,
+          source: transaction['source']?.toString() ?? '',
+          parentTransactionId: int.tryParse(
+              transaction['parentTransactionId']?.toString() ?? ''),
+          destinationPaused: forwardingResult.state ==
+              ForwardingAttemptState.configuredButPaused,
+        );
+        return;
+      }
+
+      await _sqliteService.updateStuff(
+        {'ussdReply': currentReply},
+        'id = ? AND status = ? AND ussdReply = ?',
+        [transactionId, TransactionStatuses.paused, claimReply],
+        'transactions',
+      );
+      return;
+    }
+
+    await redoTransaction(
+      transactionId,
+      transaction['ussdDialed']?.toString() ?? '',
+      int.tryParse(transaction['simSubId']?.toString() ?? '') ?? -1,
+      int.tryParse(transaction['canRetry']?.toString() ?? '') ?? 0,
+      claimReply,
+      offerResumeClaimed: true,
+      skipForwardingCheck: true,
+    );
+  }
+
+  Future<bool> _markPausedOfferLocalExecutionStarted(
+    int transactionId,
+    int offerId,
+    String claimReply,
+  ) async {
+    final offerRows = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'id = ? AND enabled = 1',
+      [offerId],
+      limit: 1,
+    );
+    if (offerRows.isEmpty) {
+      await _sqliteService.updateStuff(
+        {'ussdReply': 'Offer paused. Please check/retry.'},
+        'id = ? AND status = ? AND targetOfferId = ? AND ussdReply = ?',
+        [
+          transactionId,
+          TransactionStatuses.paused,
+          offerId,
+          claimReply,
+        ],
+        'transactions',
+      );
+      return false;
+    }
+    return await _sqliteService.updateStuff(
+          {'ussdReply': _pausedOfferLocalExecutionClaim},
+          'id = ? AND status = ? AND targetOfferId = ? AND ussdReply = ?',
+          [
+            transactionId,
+            TransactionStatuses.paused,
+            offerId,
+            claimReply,
+          ],
+          'transactions',
+        ) ==
+        1;
+  }
+
+  Future<bool> _hasPairedDeviceRouteForAmount(int amount) async {
+    final devices = await _sqliteService.queryAll('forwardingDevices');
+    for (final device in devices) {
+      final amounts =
+          (device['amounts_to_forward']?.toString() ?? '').replaceAll(
+        RegExp(r'[\[\]"]'),
+        '',
+      );
+      if (amounts.split(',').any((value) => value.trim() == '$amount')) {
+        return true;
+      }
+    }
+    return false;
   }
 
   int getNumberFromCode(String code) {
@@ -2591,10 +3573,14 @@ class TransactionController {
   }) async {
     final pending = await _sqliteService.queryCustom(
       'transactions',
-      'status = ?',
-      [TransactionStatuses.secondAttempt],
+      'status IN (?, ?)',
+      [
+        TransactionStatuses.secondAttempt,
+        TransactionStatuses.alternativeDeliveryPending,
+      ],
       columns: [
         'id',
+        'status',
         'amount',
         'number',
         'simSubId',
@@ -2602,13 +3588,26 @@ class TransactionController {
         'firstFailedTimeStamp',
         'forwardingJobId',
         'forwardingSenderDeviceName',
+        'forwardingRecipientDeviceName',
         'alternativeExecuteAt',
+        'alternativeRequestCode',
+        'alternativeRequestIsAdvanced',
+        'alternativeDeliveryNextAttemptAt',
       ],
     );
 
     for (final tx in pending) {
+      if (tx['status'] == TransactionStatuses.alternativeDeliveryPending) {
+        await _sendPendingAlternativeDelivery(tx);
+        continue;
+      }
+
+      debugPrint(
+        '[ALT DEBUG] found secondAttempt transaction=${tx['id']}',
+      );
       final failedAt =
           int.tryParse(tx['firstFailedTimeStamp']?.toString() ?? '');
+      debugPrint('[ALT DEBUG] failedAt=$failedAt');
       if (failedAt == null) continue;
 
       final codeRows = await _sqliteService.queryCustom(
@@ -2623,9 +3622,9 @@ class TransactionController {
       );
       final altCode = variant?['alternativeUssdCode']?.toString();
       final target = variant?['runAltOn']?.toString();
-      if (altCode == null || altCode.trim().isEmpty) continue;
       final delay =
           int.tryParse(variant?['altDelayMinutes']?.toString() ?? '') ?? 0;
+      if (altCode == null || altCode.trim().isEmpty) continue;
       final executeAt = int.tryParse(
             tx['alternativeExecuteAt']?.toString() ?? '',
           ) ??
@@ -2638,24 +3637,29 @@ class TransactionController {
           'transactions',
         );
       }
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final due = executeAt > 0 && now >= executeAt;
       debugPrint(
-        'ALTERNATIVE TIMER: '
-        'transactionId=${tx['id']}, '
-        'failedAt=$failedAt, '
-        'executeAt=$executeAt, '
-        'now=${DateTime.now().millisecondsSinceEpoch}, '
-        'delayMinutes=$delay, '
-        'target=${target ?? "THIS DEVICE"}',
+        '[ALT DEBUG] altDelayMinutes=$delay',
       );
+      debugPrint('[ALT DEBUG] executeAt=$executeAt');
+      debugPrint('[ALT DEBUG] now=$now');
+      debugPrint('[ALT DEBUG] due=$due');
 
-      if (executeAt <= 0) continue;
-      if (DateTime.now().millisecondsSinceEpoch < executeAt) continue;
+      if (!due) continue;
 
       final number = int.tryParse(tx['number']?.toString() ?? '') ?? 0;
       final transactionId = int.tryParse(tx['id'].toString());
       if (number <= 0 || transactionId == null) continue;
       final processedCode = replaceNWithNumber(altCode, number);
       final isAdvanced = (variant?['altIsAdvanced'] ?? 0) == 1;
+      debugPrint(
+        '[ALT DEBUG] executing alternative for transaction=$transactionId',
+      );
+      debugPrint('[ALT DEBUG] alternativeCode=$altCode');
+      debugPrint(
+        '[ALT DEBUG] altIsAdvanced=${variant?['altIsAdvanced'] ?? 0}',
+      );
 
       if (target == null || target.trim().isEmpty) {
         // Leave the retryable state before dialing to avoid duplicate runs.
@@ -2842,70 +3846,109 @@ class TransactionController {
         );
       }
 
-      // Claim the task before enqueueing it so a later retry tick cannot send
-      // the same alternative request twice.
-      await _sqliteService.updateOnly(
-        'UPDATE transactions SET status = ?, alternativeExecuteAt = -1 WHERE id = ? AND status = ?',
-        [
-          TransactionStatuses.alternativeExecuting,
-          transactionId,
-          TransactionStatuses.secondAttempt
-        ],
-      );
-      final sender =
-          await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
-      debugPrint(
-        'ALT FORWARD DISPATCH: '
-        'localTransactionId=$transactionId, '
-        'forwardingTransactionId=$transactionId, '
-        'forwardingJobId=$remoteForwardingJobId, '
-        'target=$target',
-      );
-      final res = await BackendService().post(
-        '/api/fcm/send-secure',
-        body: {
-          'title': 'BSAT Online Forwarding',
-          'body': 'Forwarded alternative USSD request',
-          'senderDeviceName': sender,
-          'recipientDeviceName': target,
-          'data': {
-            'type': 'process_alt_request',
-            'transactionId': tx['id'].toString(),
-            'forwardingJobId': remoteForwardingJobId,
-            'senderDeviceName': sender,
-            'recipientDeviceName': target,
-            'ussdCode': processedCode,
-            'isAdvanced': isAdvanced.toString(),
-            'smsMessage': tx['initialMessage']?.toString() ?? '',
-            'body': 'Forwarded alternative USSD request',
-            'title': 'Forwarded Code',
-          },
+      final persistedRows = await _sqliteService.updateStuff(
+        {
+          'status': TransactionStatuses.alternativeDeliveryPending,
+          'forwardingJobId': remoteForwardingJobId,
+          'forwardingRecipientDeviceName': target,
+          'alternativeRequestCode': processedCode,
+          'alternativeRequestIsAdvanced': isAdvanced ? 1 : 0,
+          'alternativeExecuteAt': -1,
+          'alternativeDeliveryNextAttemptAt': null,
+          'ussdReply': 'Alternative request queued for $target.',
         },
+        'id = ? AND status = ?',
+        [transactionId, TransactionStatuses.secondAttempt],
+        'transactions',
       );
-      if (res['success'] == true) {
-        await _sqliteService.updateStuff(
-          {
-            'status': TransactionStatuses.forwardedPending,
-            'ussdReply': 'Alternative USSD request sent to $target. '
-                'Waiting for execution confirmation.',
-          },
-          'id = ? AND status = ?',
-          [transactionId, TransactionStatuses.alternativeExecuting],
+      if (persistedRows == 1) {
+        final persisted = await _sqliteService.queryCustom(
           'transactions',
+          'id = ?',
+          [transactionId],
+          limit: 1,
         );
-      } else {
-        await _sqliteService.updateStuff(
-          {
-            'status': TransactionStatuses.secondAttempt,
-            'alternativeExecuteAt':
-                DateTime.now().millisecondsSinceEpoch + delay * 60000,
-          },
-          'id = ? AND status = ?',
-          [transactionId, TransactionStatuses.alternativeExecuting],
-          'transactions',
-        );
+        if (persisted.isNotEmpty) {
+          await _sendPendingAlternativeDelivery(persisted.first);
+        }
       }
     }
+  }
+
+  Future<void> _sendPendingAlternativeDelivery(
+    Map<String, dynamic> tx,
+  ) async {
+    final transactionId = int.tryParse(tx['id']?.toString() ?? '');
+    final jobId = tx['forwardingJobId']?.toString() ?? '';
+    final target = tx['forwardingRecipientDeviceName']?.toString() ?? '';
+    final code = tx['alternativeRequestCode']?.toString() ?? '';
+    if (transactionId == null ||
+        jobId.isEmpty ||
+        target.isEmpty ||
+        code.isEmpty) {
+      debugPrint(
+        'ALT DELIVERY PENDING: required persisted fields missing '
+        'transaction=${tx['id']}, job=$jobId, target=$target',
+      );
+      return;
+    }
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final scheduled = int.tryParse(
+      tx['alternativeDeliveryNextAttemptAt']?.toString() ?? '',
+    );
+    if (scheduled != null && scheduled > now) return;
+
+    final claimed = await _sqliteService.updateStuff(
+      {
+        'alternativeDeliveryNextAttemptAt':
+            now + const Duration(seconds: 20).inMilliseconds,
+      },
+      'id = ? AND status = ? AND '
+          '(alternativeDeliveryNextAttemptAt IS NULL OR '
+          'alternativeDeliveryNextAttemptAt <= ?)',
+      [
+        transactionId,
+        TransactionStatuses.alternativeDeliveryPending,
+        now,
+      ],
+      'transactions',
+    );
+    if (claimed != 1) return;
+
+    final sender =
+        await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
+    debugPrint(
+      'ALT DELIVERY SEND: job=$jobId, target=$target, '
+      'transaction=$transactionId',
+    );
+    final result = await BackendService().post(
+      '/api/fcm/send-secure',
+      body: {
+        'title': 'BSAT Online Forwarding',
+        'body': 'Forwarded alternative USSD request',
+        'senderDeviceName': sender,
+        'recipientDeviceName': target,
+        'data': {
+          'type': 'process_alt_request',
+          'transactionId': transactionId.toString(),
+          'forwardingJobId': jobId,
+          'senderDeviceName': sender,
+          'recipientDeviceName': target,
+          'ussdCode': code,
+          'isAdvanced':
+              tx['alternativeRequestIsAdvanced'] == 1 ? 'true' : 'false',
+          'smsMessage': tx['initialMessage']?.toString() ?? '',
+          'body': 'Forwarded alternative USSD request',
+          'title': 'Forwarded Code',
+        },
+      },
+    );
+    debugPrint(
+      'ALT DELIVERY ${result['success'] == true ? 'BACKEND ACCEPTED' : 'RETRY'}: '
+      'job=$jobId, target=$target, '
+      'awaiting C receipt; result=$result',
+    );
   }
 
   Future<void> retryAll(
@@ -2913,6 +3956,11 @@ class TransactionController {
     bool useMainEngineBridge = false,
     ServiceInstance? backgroundService,
   }) async {
+    await _recoverStaleAlternativeRequests();
+    await _resumeReservedAlternativeRequests();
+    await _retryPendingForwardedAlternativeResults();
+    await _resumeEligiblePausedOfferTransactions();
+
     // Alternative routing has its own delay and must not be blocked by normal
     // retry settings or the offer-change guard.
     await _checkDelayedAlternativeForwards(
@@ -3020,6 +4068,302 @@ class TransactionController {
     for (var stuff in rawStuff) {
       await redoTransaction(stuff['id'], stuff['ussdDialed'], stuff['simSubId'],
           stuff['canRetry'] ?? 0, stuff["ussdReply"]);
+    }
+  }
+
+  Future<bool> reserveAlternativeRequest({
+    required String forwardingJobId,
+    required String transactionId,
+    required String ussdCode,
+    required bool isAdvanced,
+    required String smsMessage,
+    required String senderDeviceName,
+    required String recipientDeviceName,
+  }) async {
+    if (forwardingJobId.isEmpty || transactionId.isEmpty || ussdCode.isEmpty) {
+      return false;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final inserted = await _sqliteService.reserveAlternativeJob({
+      'forwardingJobId': forwardingJobId,
+      'transactionId': transactionId,
+      'state': 'eligibility_pending',
+      'ussdCode': ussdCode,
+      'isAdvanced': isAdvanced ? 1 : 0,
+      'smsMessage': smsMessage,
+      'senderDeviceName': senderDeviceName,
+      'recipientDeviceName': recipientDeviceName,
+      'createdAt': now,
+      'updatedAt': now,
+    });
+    debugPrint(
+      'ALT DELIVERY ${inserted ? 'PERSIST' : 'DUPLICATE'}: '
+      'job=$forwardingJobId, target=$recipientDeviceName',
+    );
+    return inserted;
+  }
+
+  Future<Map<String, dynamic>?> getAlternativeRequest(
+    String forwardingJobId,
+  ) {
+    return _sqliteService.getAlternativeJob(forwardingJobId);
+  }
+
+  Future<bool> activateAlternativeRequest(String forwardingJobId) async {
+    return await _sqliteService.updateAlternativeJob(
+          forwardingJobId,
+          {
+            'state': 'reserved',
+            'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          },
+          expectedState: 'eligibility_pending',
+        ) ==
+        1;
+  }
+
+  Future<void> discardIneligibleAlternativeRequest(
+    String forwardingJobId,
+  ) async {
+    await _sqliteService.deleteAlternativeJob(
+      forwardingJobId,
+      expectedState: 'eligibility_pending',
+    );
+  }
+
+  Future<void> processReservedAlternativeRequest(
+    String forwardingJobId,
+  ) async {
+    final job = await _sqliteService.getAlternativeJob(forwardingJobId);
+    if (job == null) return;
+
+    final state = job['state']?.toString();
+    if (state == 'executing') {
+      await _reconcileExecutingAlternativeRequest(job);
+      return;
+    }
+    if (state == 'completed' || state == 'ambiguous') {
+      final resultStatus = job['resultStatus']?.toString() ?? '';
+      if (resultStatus.isNotEmpty &&
+          resultStatus != TransactionStatuses.successfulPending &&
+          resultStatus != TransactionStatuses.advancedUssd) {
+        await _queueForwardedAlternativeResult(
+          forwardingJobId: forwardingJobId,
+          state: state!,
+          status: resultStatus,
+          transactionId: job['localTransactionId']?.toString() ??
+              job['transactionId']?.toString() ??
+              '',
+          ussdReply: job['ussdReply']?.toString() ?? '',
+        );
+      }
+      return;
+    }
+    if (state != 'reserved') return;
+
+    final executionStartedAt = DateTime.now().millisecondsSinceEpoch;
+    final claimed = await _sqliteService.updateAlternativeJob(
+      forwardingJobId,
+      {
+        'state': 'executing',
+        'executionStartedAt': executionStartedAt,
+        'updatedAt': executionStartedAt,
+      },
+      expectedState: 'reserved',
+    );
+    if (claimed != 1) return;
+
+    // Keep the durable claim before dialing; a crash afterward leaves an
+    // ambiguous carrier outcome, so this job must not be executed again.
+    final ussdCode = job['ussdCode']?.toString() ?? '';
+    final smsMessage = job['smsMessage']?.toString() ?? '';
+    if (ussdCode.isEmpty) return;
+
+    final simSubId = await PhoneService().mostCommonDialSim();
+    final amount = getAmount(smsMessage);
+    final number = extract9DigitNumber(smsMessage);
+    final insertedId = await transactGivenUssdAndDialSim(
+      ussdCode,
+      simSubId,
+      amount,
+      job['isAdvanced'] == 1,
+      number,
+      message: smsMessage,
+      forwardingJobId: forwardingJobId,
+      forwardingTransactionId: getMpesaCode(smsMessage),
+      forwardingSenderDeviceName: job['senderDeviceName']?.toString(),
+      forwardingRecipientDeviceName: job['recipientDeviceName']?.toString(),
+    );
+
+    final transactionRows = insertedId == null
+        ? <Map<String, dynamic>>[]
+        : await _sqliteService.queryCustom(
+            'transactions',
+            'id = ?',
+            [insertedId],
+            columns: ['status', 'ussdReply'],
+            limit: 1,
+          );
+    final hasRecordedTransaction = transactionRows.isNotEmpty;
+    final resultStatus = hasRecordedTransaction
+        ? transactionRows.first['status']?.toString() ?? 'unknown'
+        : TransactionStatuses.alternativeAmbiguous;
+    final resultReply = hasRecordedTransaction
+        ? transactionRows.first['ussdReply']?.toString() ?? ''
+        : 'Alternative execution returned without a durable transaction '
+            'outcome; it was not automatically dialed again.';
+    final resultState = resultStatus == TransactionStatuses.alternativeAmbiguous
+        ? 'ambiguous'
+        : resultStatus == TransactionStatuses.successfulPending ||
+                resultStatus == TransactionStatuses.advancedUssd
+            ? 'awaiting_confirmation'
+            : 'completed';
+    await _sqliteService.updateAlternativeJob(
+      forwardingJobId,
+      {
+        'localTransactionId': insertedId,
+        'state': resultState,
+        'resultStatus': resultStatus,
+        'ussdReply': resultReply,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      expectedState: 'executing',
+    );
+    if (resultStatus.isNotEmpty &&
+        resultStatus != TransactionStatuses.successfulPending &&
+        resultStatus != TransactionStatuses.advancedUssd) {
+      await _queueForwardedAlternativeResult(
+        forwardingJobId: forwardingJobId,
+        state: 'completed',
+        status: resultStatus,
+        transactionId:
+            insertedId?.toString() ?? job['transactionId']?.toString() ?? '',
+        ussdReply: resultReply,
+      );
+    }
+  }
+
+  Future<void> _reconcileExecutingAlternativeRequest(
+    Map<String, dynamic> job,
+  ) async {
+    final forwardingJobId = job['forwardingJobId']?.toString() ?? '';
+    if (forwardingJobId.isEmpty) return;
+    final existingTransactions = await _sqliteService.queryCustom(
+      'transactions',
+      'forwardingJobId = ?',
+      [forwardingJobId],
+      orderBy: 'timeStamp DESC',
+      limit: 1,
+    );
+    if (existingTransactions.isNotEmpty) {
+      final transaction = existingTransactions.first;
+      final status = transaction['status']?.toString() ?? '';
+      final awaitingConfirmation =
+          status == TransactionStatuses.successfulPending ||
+              status == TransactionStatuses.advancedUssd;
+      final nextState =
+          awaitingConfirmation ? 'awaiting_confirmation' : 'completed';
+      await _sqliteService.updateAlternativeJob(
+        forwardingJobId,
+        {
+          'localTransactionId': transaction['id'],
+          'state': nextState,
+          'resultStatus': status,
+          'ussdReply': transaction['ussdReply']?.toString() ?? '',
+          'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        },
+        expectedState: 'executing',
+      );
+      if (status.isNotEmpty && !awaitingConfirmation && status != 'unknown') {
+        await _queueForwardedAlternativeResult(
+          forwardingJobId: forwardingJobId,
+          state: 'completed',
+          status: status,
+          transactionId: transaction['id'].toString(),
+          ussdReply: transaction['ussdReply']?.toString() ?? '',
+        );
+      }
+      return;
+    }
+
+    final updatedAt = int.tryParse(job['updatedAt']?.toString() ?? '') ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (updatedAt == 0 ||
+        now - updatedAt < const Duration(minutes: 5).inMilliseconds) {
+      return;
+    }
+
+    const ambiguousReply =
+        'Alternative USSD outcome is unknown after interruption. '
+        'It was not automatically dialed again.';
+    final updated = await _sqliteService.updateAlternativeJob(
+      forwardingJobId,
+      {
+        'state': 'ambiguous',
+        'resultStatus': TransactionStatuses.alternativeAmbiguous,
+        'ussdReply': ambiguousReply,
+        'updatedAt': now,
+      },
+      expectedState: 'executing',
+    );
+    if (updated == 1) {
+      await _queueForwardedAlternativeResult(
+        forwardingJobId: forwardingJobId,
+        state: 'ambiguous',
+        status: TransactionStatuses.alternativeAmbiguous,
+        transactionId: job['transactionId']?.toString() ?? '',
+        ussdReply: ambiguousReply,
+      );
+    }
+  }
+
+  Future<void> _resumeReservedAlternativeRequests() async {
+    final reserved = await _sqliteService.getAlternativeJobsByState('reserved');
+    for (final job in reserved) {
+      await processReservedAlternativeRequest(
+        job['forwardingJobId']?.toString() ?? '',
+      );
+    }
+  }
+
+  Future<void> _recoverStaleAlternativeRequests() async {
+    final eligibilityPending =
+        await _sqliteService.getAlternativeJobsByState('eligibility_pending');
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final job in eligibilityPending) {
+      final updatedAt = int.tryParse(job['updatedAt']?.toString() ?? '') ?? 0;
+      if (updatedAt == 0 ||
+          now - updatedAt < const Duration(minutes: 5).inMilliseconds) {
+        continue;
+      }
+      final forwardingJobId = job['forwardingJobId']?.toString() ?? '';
+      if (forwardingJobId.isEmpty) continue;
+      const reply = 'Alternative eligibility processing was interrupted '
+          'before USSD execution; it was not automatically dialed.';
+      final updated = await _sqliteService.updateAlternativeJob(
+        forwardingJobId,
+        {
+          'state': 'completed',
+          'resultStatus': TransactionStatuses.alternativeFailed,
+          'ussdReply': reply,
+          'updatedAt': now,
+        },
+        expectedState: 'eligibility_pending',
+      );
+      if (updated == 1) {
+        await _queueForwardedAlternativeResult(
+          forwardingJobId: forwardingJobId,
+          state: 'completed',
+          status: TransactionStatuses.alternativeFailed,
+          transactionId: job['transactionId']?.toString() ?? '',
+          ussdReply: reply,
+        );
+      }
+    }
+
+    final executing =
+        await _sqliteService.getAlternativeJobsByState('executing');
+    for (final job in executing) {
+      await _reconcileExecutingAlternativeRequest(job);
     }
   }
 
@@ -3421,31 +4765,35 @@ class TransactionController {
         'senderDevice=$forwardingSenderDeviceName',
       );
 
-      final senderDeviceName =
-          (await _sharedPreferencesService.getDeviceName()) ?? '';
+      final durableAlternative =
+          await _sqliteService.getAlternativeJob(forwardingJobId);
+      if (durableAlternative == null) {
+        final senderDeviceName =
+            (await _sharedPreferencesService.getDeviceName()) ?? '';
 
-      final result = await BackendService().post(
-        '/api/fcm/send-secure',
-        body: {
-          'title': 'BSAT Online Forwarding',
-          'body': 'Alternative USSD execution result',
-          'senderDeviceName': senderDeviceName,
-          'recipientDeviceName': forwardingSenderDeviceName,
-          'data': {
-            'type': 'forwarded_alt_result',
-            'transactionId': insertedId.toString(),
-            'forwardingJobId': forwardingJobId,
-            'status': response[1],
-            'ussdReply': response[0]?.toString() ?? '',
+        final result = await BackendService().post(
+          '/api/fcm/send-secure',
+          body: {
+            'title': 'BSAT Online Forwarding',
+            'body': 'Alternative USSD execution result',
             'senderDeviceName': senderDeviceName,
             'recipientDeviceName': forwardingSenderDeviceName,
+            'data': {
+              'type': 'forwarded_alt_result',
+              'transactionId': insertedId.toString(),
+              'forwardingJobId': forwardingJobId,
+              'status': response[1],
+              'ussdReply': response[0]?.toString() ?? '',
+              'senderDeviceName': senderDeviceName,
+              'recipientDeviceName': forwardingSenderDeviceName,
+            },
           },
-        },
-      );
-      debugPrint(
-        'ALT RESULT: sent immediate non-advanced result '
-        'jobId=$forwardingJobId, status=${response[1]}, result=$result',
-      );
+        );
+        debugPrint(
+          'ALT RESULT: legacy direct result sent '
+          'jobId=$forwardingJobId, status=${response[1]}, result=$result',
+        );
+      }
     }
 
     return insertedId;
@@ -3670,6 +5018,12 @@ class TransactionController {
       );
 
       if (candidates.length != 1) {
+        if (candidates.isEmpty) {
+          debugPrint(
+            'SAFARICOM CONFIRMATION: ambiguous alternative jobs cannot be '
+            'safely matched from a masked recipient; leaving unresolved',
+          );
+        }
         debugPrint(
           candidates.isEmpty
               ? 'SAFARICOM CONFIRMATION: zero candidates; leaving unresolved'
@@ -3725,18 +5079,19 @@ class TransactionController {
         final forwardingSender =
             candidate['forwardingSenderDeviceName']?.toString() ?? '';
         if (forwardingJobId.isNotEmpty && forwardingSender.isNotEmpty) {
-          if (candidate['source']?.toString() == 'manual') {
-            final finalReply = updated.firstOrNull?['ussdReply']?.toString() ??
-                confirmationBody.trim();
+          final finalReply = updated.firstOrNull?['ussdReply']?.toString() ??
+              confirmationBody.trim();
+          final isAlternativeResult =
+              candidate['source']?.toString() == 'manual' &&
+                  await _completeForwardedAlternativeJobFromConfirmation(
+                    forwardingJobId: forwardingJobId,
+                    transactionId: transactionId.toString(),
+                    ussdReply: finalReply,
+                  );
+          if (isAlternativeResult) {
             debugPrint(
               'ALT CONFIRMED: Safaricom confirmation matched '
               'jobId=$forwardingJobId, localTransactionId=$transactionId',
-            );
-            await _sendForwardedAlternativeResult(
-              forwardingJobId: forwardingJobId,
-              recipientDeviceName: forwardingSender,
-              transactionId: transactionId.toString(),
-              ussdReply: finalReply,
             );
           } else {
             debugPrint(
@@ -3811,10 +5166,13 @@ class TransactionController {
     ).firstMatch(body);
     final recipientDigits =
         recipientMatch?.group(1)?.replaceAll(RegExp(r'\D'), '') ?? '';
-    final recipientNumber =
+    final normalizedRecipientNumber =
         recipientDigits.length >= 9 && recipientDigits.length <= 12
             ? normalizeIncomingCallNumber(recipientDigits)
             : '';
+    final recipientNumber = normalizedRecipientNumber.length == 9
+        ? '0$normalizedRecipientNumber'
+        : normalizedRecipientNumber;
     final amountMatch = RegExp(
       r'(?:offer|bundle|purchase|purchased)[^\n]{0,35}?(?:kshs?|kes)\s*([\d,]+)'
       r'|(?:kshs?|kes)\s*([\d,]+)[^\n]{0,25}?(?:offer|bundle|purchase)',
@@ -3895,6 +5253,17 @@ class TransactionController {
     }
 
     if (candidates.length != 1) {
+      if (candidates.isEmpty &&
+          targetStatus == TransactionStatuses.doneConfirmed) {
+        final resolvedAmbiguous =
+            await _completeAmbiguousAlternativeFromConfirmation(
+          recipientNumber: recipientNumber,
+          confirmationAmount: confirmationAmount,
+          smsTimestamp: smsTimestamp,
+          confirmationBody: body,
+        );
+        if (resolvedAmbiguous) return;
+      }
       debugPrint(
         'SAFARICOM CONFIRMATION: ${candidates.isEmpty ? 'no' : 'ambiguous'} '
         'eligible match; candidates=${candidates.length}, code=$code, '
@@ -3950,11 +5319,20 @@ class TransactionController {
       final forwardingSender =
           candidate['forwardingSenderDeviceName']?.toString() ?? '';
       if (forwardingJobId.isNotEmpty && forwardingSender.isNotEmpty) {
-        await _sendForwardingConfirmation(
-          forwardingJobId: forwardingJobId,
-          recipientDeviceName: forwardingSender,
-          transactionId: transactionId.toString(),
-        );
+        final isAlternativeResult =
+            candidate['source']?.toString() == 'manual' &&
+                await _completeForwardedAlternativeJobFromConfirmation(
+                  forwardingJobId: forwardingJobId,
+                  transactionId: transactionId.toString(),
+                  ussdReply: body,
+                );
+        if (!isAlternativeResult) {
+          await _sendForwardingConfirmation(
+            forwardingJobId: forwardingJobId,
+            recipientDeviceName: forwardingSender,
+            transactionId: transactionId.toString(),
+          );
+        }
       }
     }
 

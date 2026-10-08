@@ -899,9 +899,85 @@ class TransactionController {
       }
     }
 
+    List<dynamic>? historicalCompound;
     if (number >= 100000000 &&
         !(smsMessage.body ?? '')
             .contains(RegExp('airtel money', caseSensitive: false))) {
+      historicalCompound = await unavailableAmountCanCompound(amount, number);
+      if (historicalCompound[3] &&
+          historicalCompound.length > 7 &&
+          historicalCompound[7] == true) {
+        final finalAmount = int.tryParse(historicalCompound[6].toString());
+        if (finalAmount != null) {
+          final previousAmount = finalAmount - amount;
+          debugPrint(
+            'COMPOUND FORWARDING: currentAmount=$amount '
+            'previousAmount=$previousAmount finalAmount=$finalAmount',
+          );
+
+          final compoundMessage = alterMpesaMessage(
+            smsMessage.body ?? '',
+            finalAmount,
+          );
+          final configuredDevices =
+              (await _sqliteService.queryAll('forwardingDevices')).where(
+            (device) {
+              final amounts = (device['amounts_to_forward']?.toString() ?? '')
+                  .replaceAll(RegExp(r'[\[\]"]'), '')
+                  .split(',')
+                  .map((value) => value.trim());
+              return amounts.contains('$finalAmount');
+            },
+          );
+          final deviceNames = configuredDevices
+              .map((device) => device['device_name']?.toString() ?? '')
+              .where((deviceName) => deviceName.isNotEmpty)
+              .join(',');
+
+          final compoundForwardingResult = await forwardIfNeeded(
+            finalAmount,
+            compoundMessage.length > 160
+                ? compoundMessage.substring(0, 160)
+                : compoundMessage,
+            compoundMessage,
+            mpesaCode,
+            number,
+            name,
+            autoSaveContacts,
+            parentTransactionId: parentTransactionId,
+          );
+          debugPrint(
+            'COMPOUND FORWARDING ROUTE: amount=$finalAmount '
+            'configured=${compoundForwardingResult.state != ForwardingAttemptState.noConfiguration} '
+            'device=${deviceNames.isEmpty ? 'none' : deviceNames}',
+          );
+
+          if (compoundForwardingResult.state ==
+              ForwardingAttemptState.forwardedSuccessfully) {
+            debugPrint(
+              'COMPOUND FORWARDING: second SMS edited from $amount to '
+              '$finalAmount and forwarded directly',
+            );
+            return compoundForwardingResult.transactionId;
+          }
+          if (compoundForwardingResult.state ==
+                  ForwardingAttemptState.configuredButUnavailable ||
+              compoundForwardingResult.state ==
+                  ForwardingAttemptState.configuredButPaused) {
+            return _persistUnavailableForwardingTransaction(
+              initialMessage: compoundMessage,
+              transactionCode: mpesaCode,
+              number: number,
+              amount: finalAmount,
+              source: name,
+              parentTransactionId: parentTransactionId,
+              destinationPaused: compoundForwardingResult.state ==
+                  ForwardingAttemptState.configuredButPaused,
+            );
+          }
+        }
+      }
+
       final matchingOffer = await _findMatchingUssdCode(
         amount,
         smsMessage.subscriptionId ?? 0,
@@ -1041,10 +1117,11 @@ class TransactionController {
       smsMessage.subscriptionId ?? 0,
     );
 
-    List canCompound = await unavailableAmountCanCompound(
-      amount,
-      number,
-    );
+    final canCompound = historicalCompound ??
+        await unavailableAmountCanCompound(
+          amount,
+          number,
+        );
 
     if (canCompound[3]) {
       ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive = canCompound;
@@ -1055,11 +1132,14 @@ class TransactionController {
         .toString()
         .isEmpty) {
       if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive.length > 6) {
+        final compoundedSmsBody = alterMpesaMessage(
+          smsMessage.body ?? "",
+          ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6],
+        );
         final compoundedForwarding = await forwardIfNeeded(
           ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6],
           trimmedBody,
-          alterMpesaMessage(smsMessage.body ?? "",
-              ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6]),
+          compoundedSmsBody,
           mpesaCode,
           number,
           name,
@@ -1075,7 +1155,7 @@ class TransactionController {
             compoundedForwarding.state ==
                 ForwardingAttemptState.configuredButPaused) {
           return _persistUnavailableForwardingTransaction(
-            initialMessage: smsMessage.body ?? '',
+            initialMessage: compoundedSmsBody,
             transactionCode: mpesaCode,
             number: number,
             amount: ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[6],
@@ -2037,8 +2117,7 @@ class TransactionController {
 
     for (final transaction in transactions) {
       final amount = int.tryParse(transaction['amount']?.toString() ?? '');
-      final transactionId =
-          int.tryParse(transaction['id']?.toString() ?? '');
+      final transactionId = int.tryParse(transaction['id']?.toString() ?? '');
       if (amount == null ||
           transactionId == null ||
           !amountList.contains(amount)) {
@@ -2075,8 +2154,7 @@ class TransactionController {
       final claimedAt = int.tryParse(
         currentReply.substring(_pausedOfferResumeClaimPrefix.length),
       );
-      final claimAge =
-          DateTime.now().millisecondsSinceEpoch - (claimedAt ?? 0);
+      final claimAge = DateTime.now().millisecondsSinceEpoch - (claimedAt ?? 0);
       if (claimAge < _pausedOfferResumeClaimLease.inMilliseconds) return;
     }
 
@@ -2312,6 +2390,7 @@ class TransactionController {
     return [
       ...reply,
       amount,
+      rawStuff.isNotEmpty,
     ];
   }
 
@@ -5353,7 +5432,7 @@ class TransactionController {
         r'(?:(((K?)sh(s?)[\s:]?)|kes[\s:]?)(\d{1,6}(?:,\d{3})*(?:\.\d+)?))|(\d{1,6}(?:,\d{3})*(?:\.\d+)?)[\s:]?((K?)sh(s?)|kes)',
         caseSensitive: false,
       ),
-      'Ksh$amount',
+      'Ksh$amount.00',
     );
   }
 

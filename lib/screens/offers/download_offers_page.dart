@@ -46,17 +46,16 @@ class _DownloadOffersPageState extends State<DownloadOffersPage> {
 
       if (response['success'] == true) {
         final data = response['data'];
-        final devices = data?['devices'] ?? [];
-        final list = List<Map<String, dynamic>>.from(devices);
 
-        await SQLiteService().clearTable('whitelistedDevices');
-        for (final device in list) {
-          await SQLiteService().insertStuff(device, 'whitelistedDevices');
+        final refreshed =
+            await SQLiteService().refreshWhitelistedDevices(data);
+        if (refreshed == null) {
+          throw StateError('Whitelisted device cache refresh was rejected');
         }
 
         if (!mounted) return;
         setState(() {
-          _pairedDevices = list;
+          _pairedDevices = refreshed;
           if (_selectedDeviceName != null &&
               !_pairedDevices.any(
                 (d) => d['device_name']?.toString() == _selectedDeviceName,

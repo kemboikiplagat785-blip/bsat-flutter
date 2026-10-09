@@ -1,9 +1,11 @@
 import 'package:bsat/models/transaction.dart';
+import 'package:bsat/utils/logger.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 class SQLiteService {
   static Database? _database;
+  static final BsatLogger _logger = BsatLogger(tag: 'SQLiteService');
 
   Future<Database> get database async {
     if (_database != null && _database!.isOpen) {
@@ -604,6 +606,29 @@ class SQLiteService {
       return;
     }
 
+    // sqflite wraps onUpgrade in a version-change transaction; rethrowing
+    // below rolls back this rebuild and the database-version update.
+    if (oldVersion < 9) {
+      try {
+        await _rebuildWhitelistedDevices(db);
+      } catch (error, stackTrace) {
+        // Report which device_name values collide before sqflite rolls the
+        // transaction back, so an operator can fix the records at the source.
+        // Read-only and best-effort: it must never replace the original error.
+        final duplicateDeviceNames = await _safeDuplicateDeviceNames(db);
+        _logger.error(
+          'Failed to rebuild whitelistedDevices during database upgrade',
+          {
+            'error': error,
+            'stackTrace': stackTrace,
+            if (duplicateDeviceNames.isNotEmpty)
+              'duplicateDeviceNames': duplicateDeviceNames,
+          },
+        );
+        rethrow;
+      }
+    }
+
     // Every statement below is individually try/catch-wrapped: some devices'
     // schema history predates these tables/columns in ways this linear
     // version-gated migration doesn't fully anticipate, and one unexpected
@@ -804,40 +829,6 @@ class SQLiteService {
     // superset of what used to run here (idempotent, not tied to whether
     // onUpgrade fires at all), so it's not duplicated in this callback.
 
-    if (oldVersion < 4) {
-      try {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS whitelistedDevices_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device_name TEXT NOT NULL,
-            device_id TEXT NOT NULL,
-            owner_email TEXT NOT NULL,
-            user_id INTEGER
-          )
-        ''');
-
-        await db.execute('''
-          INSERT INTO whitelistedDevices_new (id, device_name, device_id, owner_email, user_id)
-          SELECT id, device_name, device_id, owner_email, user_id FROM whitelistedDevices
-        ''');
-
-        await db.execute('DROP TABLE IF EXISTS whitelistedDevices');
-        await db.execute(
-          'ALTER TABLE whitelistedDevices_new RENAME TO whitelistedDevices',
-        );
-
-        await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)',
-        );
-        await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)',
-        );
-        await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)',
-        );
-      } catch (_) {}
-    }
-
     if (oldVersion < 9) {
       try {
         await db.execute(
@@ -931,38 +922,6 @@ class SQLiteService {
           'CREATE UNIQUE INDEX idx_forwarding_devices_name ON forwardingDevices(device_name)',
         );
       } catch (_) {}
-
-      try {
-        await db.execute('''
-          CREATE TABLE IF NOT EXISTS whitelistedDevices_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            device_name TEXT NOT NULL UNIQUE,
-            device_id TEXT NOT NULL,
-            owner_email TEXT NOT NULL,
-            user_id INTEGER
-          )
-        ''');
-
-        await db.execute('''
-          INSERT INTO whitelistedDevices_new (id, device_name, device_id, owner_email, user_id)
-          SELECT id, device_name, device_id, owner_email, user_id FROM whitelistedDevices
-        ''');
-
-        await db.execute('DROP TABLE IF EXISTS whitelistedDevices');
-        await db.execute(
-          'ALTER TABLE whitelistedDevices_new RENAME TO whitelistedDevices',
-        );
-
-        await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_email ON whitelistedDevices(owner_email)',
-        );
-        await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_device_id ON whitelistedDevices(device_id)',
-        );
-        await db.execute(
-          'CREATE INDEX IF NOT EXISTS idx_whitelisted_devices_user_id ON whitelistedDevices(user_id)',
-        );
-      } catch (_) {}
     }
 
     if (oldVersion < 10) {
@@ -974,9 +933,234 @@ class SQLiteService {
     }
   }
 
+  Future<void> _rebuildWhitelistedDevices(Database db) async {
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table' "
+      "AND name IN ('whitelistedDevices', 'whitelistedDevices_new')",
+    );
+    final tableNames =
+        tables.map((row) => row['name']).whereType<String>().toSet();
+    var hasOriginalTable = tableNames.contains('whitelistedDevices');
+    final hasTemporaryTable = tableNames.contains('whitelistedDevices_new');
+
+    if (hasTemporaryTable) {
+      final rowCounts = await db.rawQuery(
+        'SELECT COUNT(*) AS rowCount FROM whitelistedDevices_new',
+      );
+      final temporaryRowCount = rowCounts.single['rowCount'] as int;
+
+      if (!hasOriginalTable) {
+        await db.execute(
+          'ALTER TABLE whitelistedDevices_new RENAME TO whitelistedDevices',
+        );
+        hasOriginalTable = true;
+      } else if (temporaryRowCount == 0) {
+        await db.execute('DROP TABLE whitelistedDevices_new');
+      } else {
+        throw StateError(
+          'Cannot safely recover non-empty whitelistedDevices_new while '
+          'whitelistedDevices also exists; both tables were preserved.',
+        );
+      }
+    }
+
+    if (!hasOriginalTable) {
+      await db.execute('''
+        CREATE TABLE whitelistedDevices (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_name TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          owner_email TEXT NOT NULL,
+          user_id INTEGER
+        )
+      ''');
+    }
+
+    await db.execute('''
+      CREATE TABLE whitelistedDevices_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_name TEXT NOT NULL UNIQUE,
+        device_id TEXT NOT NULL,
+        owner_email TEXT NOT NULL,
+        user_id INTEGER
+      )
+    ''');
+    await db.execute('''
+      INSERT INTO whitelistedDevices_new
+        (id, device_name, device_id, owner_email, user_id)
+      SELECT id, device_name, device_id, owner_email, user_id
+      FROM whitelistedDevices
+    ''');
+    await db.execute('DROP TABLE whitelistedDevices');
+    await db.execute(
+      'ALTER TABLE whitelistedDevices_new RENAME TO whitelistedDevices',
+    );
+    await db.execute(
+      'CREATE INDEX idx_whitelisted_devices_email '
+      'ON whitelistedDevices(owner_email)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_whitelisted_devices_device_id '
+      'ON whitelistedDevices(device_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_whitelisted_devices_user_id '
+      'ON whitelistedDevices(user_id)',
+    );
+  }
+
+  /// Returns the `whitelistedDevices.device_name` values that occur more than
+  /// once, formatted as `<name> (x<count>)`, ordered by name.
+  ///
+  /// Read-only: rows are never deleted, merged, or rewritten here. The rebuild
+  /// still fails through the normal UNIQUE constraint error so sqflite rolls
+  /// the whole upgrade back; this only reports the conflicting values so the
+  /// failure is actionable instead of a bare `UNIQUE constraint failed` string.
+  Future<List<String>> findDuplicateDeviceNames(
+    DatabaseExecutor db,
+  ) async {
+    final rows = await db.rawQuery(
+      "SELECT device_name, COUNT(*) AS occurrences "
+      'FROM whitelistedDevices '
+      'GROUP BY device_name '
+      'HAVING COUNT(*) > 1 '
+      'ORDER BY device_name',
+    );
+    return rows.map((row) {
+      final deviceName = row['device_name']?.toString() ?? '<null>';
+      final occurrences = row['occurrences'];
+      return '$deviceName (x$occurrences)';
+    }).toList();
+  }
+
+  /// Best-effort wrapper for [findDuplicateDeviceNames] used from the migration
+  /// failure path: the transaction may already have dropped the table, and a
+  /// diagnostic failure must never mask the original migration error.
+  Future<List<String>> _safeDuplicateDeviceNames(
+    DatabaseExecutor db,
+  ) async {
+    try {
+      return await findDuplicateDeviceNames(db);
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
   Future<int> insertStuff(Map<String, dynamic> row, String table) async {
     final db = await database;
     return db.insert(table, row);
+  }
+
+  /// Validates and atomically replaces the local whitelist cache.
+  ///
+  /// The backend response contract is only known to require the fields that
+  /// are non-null in the current SQLite schema. Backend-only fields, including
+  /// a possible `id`, are intentionally not copied into the local row.
+  Future<List<Map<String, dynamic>>?> refreshWhitelistedDevices(
+    dynamic responseData, {
+    Database? databaseOverride,
+  }) async {
+    final devices = _validateWhitelistedDevicesResponse(responseData);
+    if (devices == null) return null;
+
+    final db = databaseOverride ?? await database;
+    try {
+      await db.transaction((txn) async {
+        await replaceWhitelistedDevicesInTransaction(txn, devices);
+      });
+      _logger.info('Whitelisted device cache refreshed', {
+        'deviceCount': devices.length,
+      });
+      return devices;
+    } catch (error, stackTrace) {
+      _logger.error('Whitelisted device cache replacement failed', {
+        'deviceCount': devices.length,
+        'error': error,
+        'stackTrace': stackTrace,
+      });
+      return null;
+    }
+  }
+
+  /// Replaces the whitelist rows using the caller's transaction.
+  ///
+  /// This method deliberately does not catch database errors. The enclosing
+  /// transaction must see the error so that deletion and prior inserts roll
+  /// back together.
+  Future<void> replaceWhitelistedDevicesInTransaction(
+    DatabaseExecutor txn,
+    List<Map<String, dynamic>> devices,
+  ) async {
+    await txn.delete('whitelistedDevices');
+    for (final device in devices) {
+      await txn.insert('whitelistedDevices', device);
+    }
+  }
+
+  List<Map<String, dynamic>>? _validateWhitelistedDevicesResponse(
+    dynamic responseData,
+  ) {
+    if (responseData is! Map) {
+      _logger.warn('Malformed whitelisted device response', {
+        'reason': 'response data is not an object',
+      });
+      return null;
+    }
+
+    final rawDevices = responseData['devices'];
+    if (rawDevices is! List) {
+      _logger.warn('Malformed whitelisted device response', {
+        'reason': 'devices is not a collection',
+      });
+      return null;
+    }
+
+    final devices = <Map<String, dynamic>>[];
+    final names = <String>{};
+    for (var index = 0; index < rawDevices.length; index++) {
+      final rawDevice = rawDevices[index];
+      if (rawDevice is! Map) {
+        _logger.warn('Malformed whitelisted device response', {
+          'reason': 'collection item is not an object',
+          'index': index,
+        });
+        return null;
+      }
+
+      final deviceName = rawDevice['device_name'];
+      final deviceId = rawDevice['device_id'];
+      final ownerEmail = rawDevice['owner_email'];
+      final userId = rawDevice['user_id'];
+      if (deviceName is! String ||
+          deviceName.isEmpty ||
+          deviceId is! String ||
+          deviceId.isEmpty ||
+          ownerEmail is! String ||
+          ownerEmail.isEmpty ||
+          (userId != null && userId is! int)) {
+        _logger.warn('Malformed whitelisted device response', {
+          'reason': 'required field has an invalid value',
+          'index': index,
+        });
+        return null;
+      }
+
+      if (!names.add(deviceName)) {
+        _logger.warn('Duplicate whitelisted device name detected', {
+          'duplicateCount': 1,
+        });
+        return null;
+      }
+
+      devices.add({
+        'device_name': deviceName,
+        'device_id': deviceId,
+        'owner_email': ownerEmail,
+        'user_id': userId,
+      });
+    }
+
+    return devices;
   }
 
   Future<bool> reserveAlternativeJob(Map<String, dynamic> row) async {

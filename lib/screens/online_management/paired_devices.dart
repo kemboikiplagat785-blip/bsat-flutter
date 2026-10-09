@@ -156,21 +156,13 @@ class _PairedDevicesState extends State<PairedDevices> {
         .get('/api/device/whitelisted')
         .then((response) async {
       if (response['success']) {
-        await SQLiteService().deleteWhere('whitelistedDevices', '1=1', []);
         final data = response['data'];
-        if (data != null && data['devices'] != null) {
-          List<Map<String, dynamic>> devices =
-              List<Map<String, dynamic>>.from(data['devices']);
-          await SQLiteService().clearTable('whitelistedDevices');
-          for (var device in devices) {
-            await SQLiteService().insertStuff(device, 'whitelistedDevices');
-          }
-          return devices;
-        }
-        return <Map<String, dynamic>>[];
+        final refreshed =
+            await SQLiteService().refreshWhitelistedDevices(data);
+        return refreshed ??
+            await SQLiteService().queryAll('whitelistedDevices');
       } else {
-        pairedDevices = await SQLiteService().queryAll('whitelistedDevices');
-        return <Map<String, dynamic>>[];
+        return await SQLiteService().queryAll('whitelistedDevices');
       }
     });
 

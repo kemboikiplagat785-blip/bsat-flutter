@@ -311,12 +311,12 @@ class TransactionController {
     required String status,
     required String transactionId,
     required String ussdReply,
-    bool replaceDeliveredAmbiguous = false,
+    bool replaceDeliveredResult = false,
   }) async {
     final job = await _sqliteService.getAlternativeJob(forwardingJobId);
     if (job == null) return;
     if (job['resultDeliveryState'] == 'delivered' &&
-        !replaceDeliveredAmbiguous) {
+        !replaceDeliveredResult) {
       return;
     }
 
@@ -368,9 +368,7 @@ class TransactionController {
       await _sendForwardedAlternativeResult(
         forwardingJobId: jobId,
         recipientDeviceName: job['senderDeviceName']?.toString() ?? '',
-        transactionId: job['localTransactionId']?.toString() ??
-            job['transactionId']?.toString() ??
-            '',
+        transactionId: job['transactionId']?.toString() ?? '',
         status: job['resultStatus']?.toString() ?? '',
         ussdReply: job['ussdReply']?.toString() ?? '',
       );
@@ -387,30 +385,136 @@ class TransactionController {
 
     final resolvedAmbiguity = job['state'] == 'ambiguous' ||
         job['resultStatus'] == TransactionStatuses.alternativeAmbiguous;
+    final replacesPendingResult =
+        job['resultStatus'] == TransactionStatuses.successfulPending;
+    final firstResultAwaitingAck =
+        replacesPendingResult && job['resultDeliveryState'] != 'delivered';
     final updated = await _sqliteService.updateAlternativeJob(
       forwardingJobId,
       {
         'state': 'completed',
         'localTransactionId': int.tryParse(transactionId),
-        'resultStatus': TransactionStatuses.doneConfirmed,
-        'ussdReply': ussdReply,
+        if (!firstResultAwaitingAck)
+          'resultStatus': TransactionStatuses.doneConfirmed,
+        if (!firstResultAwaitingAck) 'ussdReply': ussdReply,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       },
       expectedState: resolvedAmbiguity ? 'ambiguous' : null,
     );
     if (updated != 1) return false;
+    if (firstResultAwaitingAck) {
+      debugPrint(
+        'ALT_QUEUE: final confirmation recorded for $forwardingJobId; '
+        'waiting for first-success result receipt before sending final result',
+      );
+      return true;
+    }
     await _queueForwardedAlternativeResult(
       forwardingJobId: forwardingJobId,
       state: 'completed',
       status: TransactionStatuses.doneConfirmed,
       transactionId: transactionId,
       ussdReply: ussdReply,
-      replaceDeliveredAmbiguous: resolvedAmbiguity,
+      replaceDeliveredResult: resolvedAmbiguity || replacesPendingResult,
     );
     debugPrint(
       'ALT DELIVERY RESULT: job=$forwardingJobId, transaction=$transactionId',
     );
     return true;
+  }
+
+  Future<void> completeForwardedAlternativeResultAcknowledgement(
+    String forwardingJobId,
+  ) async {
+    final job = await _sqliteService.getAlternativeJob(forwardingJobId);
+    if (job == null ||
+        job['state'] != 'completed' ||
+        job['resultStatus'] != TransactionStatuses.successfulPending) {
+      return;
+    }
+    final localTransactionId =
+        int.tryParse(job['localTransactionId']?.toString() ?? '');
+    if (localTransactionId == null) return;
+    final transactionRows = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ? AND forwardingJobId = ? AND status = ?',
+      [
+        localTransactionId,
+        forwardingJobId,
+        TransactionStatuses.doneConfirmed,
+      ],
+      columns: ['ussdReply'],
+      limit: 1,
+    );
+    if (transactionRows.isEmpty) return;
+    await _queueForwardedAlternativeResult(
+      forwardingJobId: forwardingJobId,
+      state: 'completed',
+      status: TransactionStatuses.doneConfirmed,
+      transactionId: localTransactionId.toString(),
+      ussdReply: transactionRows.first['ussdReply']?.toString() ?? '',
+      replaceDeliveredResult: true,
+    );
+  }
+
+  Future<void> _reportForwardedAlternativeFirstSuccess({
+    required String forwardingJobId,
+    required String transactionId,
+    required String ussdReply,
+  }) async {
+    final job = await _sqliteService.getAlternativeJob(forwardingJobId);
+    if (job == null) {
+      return;
+    }
+    if (job['state'] == 'completed') {
+      if (job['resultStatus'] == TransactionStatuses.successfulPending) {
+        await _retryPendingForwardedAlternativeResults(
+          forwardingJobId: forwardingJobId,
+        );
+      }
+      return;
+    }
+    if (job['resultStatus'] == TransactionStatuses.doneConfirmed) return;
+    debugPrint(
+      'ALT_QUEUE: $forwardingJobId first-success detected; '
+      'transaction=$transactionId',
+    );
+    await _queueForwardedAlternativeResult(
+      forwardingJobId: forwardingJobId,
+      state: 'awaiting_confirmation',
+      status: TransactionStatuses.successfulPending,
+      transactionId: transactionId,
+      ussdReply: ussdReply,
+    );
+  }
+
+  Future<void> _recoverSuccessfulPendingAlternativeResults() async {
+    final rows = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ? AND source = ? AND forwardingJobId IS NOT NULL '
+          'AND forwardingJobId != ?',
+      [
+        TransactionStatuses.successfulPending,
+        'manual',
+        '',
+      ],
+      columns: ['id', 'forwardingJobId', 'ussdReply'],
+    );
+    for (final row in rows) {
+      final forwardingJobId = row['forwardingJobId']?.toString() ?? '';
+      final job = await _sqliteService.getAlternativeJob(forwardingJobId);
+      if (job == null ||
+          job['resultStatus'] == TransactionStatuses.doneConfirmed) {
+        continue;
+      }
+      if (job['resultStatus'] != TransactionStatuses.successfulPending) {
+        await _reportForwardedAlternativeFirstSuccess(
+          forwardingJobId: forwardingJobId,
+          transactionId: row['id']?.toString() ?? '',
+          ussdReply: row['ussdReply']?.toString() ?? '',
+        );
+      }
+    }
   }
 
   Future<bool> _completeAmbiguousAlternativeFromConfirmation({
@@ -3668,16 +3772,22 @@ class TransactionController {
         'forwardingJobId',
         'forwardingSenderDeviceName',
         'forwardingRecipientDeviceName',
+        'alternativeRequestSenderDeviceName',
         'alternativeExecuteAt',
         'alternativeRequestCode',
         'alternativeRequestIsAdvanced',
         'alternativeDeliveryNextAttemptAt',
       ],
+      orderBy: 'COALESCE(firstFailedTimeStamp, timeStamp) ASC, id ASC',
     );
 
     for (final tx in pending) {
       if (tx['status'] == TransactionStatuses.alternativeDeliveryPending) {
-        await _sendPendingAlternativeDelivery(tx);
+        final target =
+            tx['forwardingRecipientDeviceName']?.toString() ?? '';
+        if (target.isNotEmpty) {
+          await dispatchNextAlternativeDelivery(target);
+        }
         continue;
       }
 
@@ -3877,6 +3987,8 @@ class TransactionController {
       if (devices.isEmpty) continue;
 
       var remoteForwardingJobId = tx['forwardingJobId']?.toString() ?? '';
+      final alternativeRequestSenderDeviceName =
+          await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
       final previousSenderDeviceName =
           tx['forwardingSenderDeviceName']?.toString() ?? '';
 
@@ -3930,6 +4042,9 @@ class TransactionController {
           'status': TransactionStatuses.alternativeDeliveryPending,
           'forwardingJobId': remoteForwardingJobId,
           'forwardingRecipientDeviceName': target,
+          'alternativeRequestSenderDeviceName':
+              alternativeRequestSenderDeviceName,
+          'alternativeQueueState': 'waiting',
           'alternativeRequestCode': processedCode,
           'alternativeRequestIsAdvanced': isAdvanced ? 1 : 0,
           'alternativeExecuteAt': -1,
@@ -3941,17 +4056,58 @@ class TransactionController {
         'transactions',
       );
       if (persistedRows == 1) {
-        final persisted = await _sqliteService.queryCustom(
-          'transactions',
-          'id = ?',
-          [transactionId],
-          limit: 1,
+        debugPrint(
+          'ALT_QUEUE: recipient=$target waiting=T$transactionId',
         );
-        if (persisted.isNotEmpty) {
-          await _sendPendingAlternativeDelivery(persisted.first);
-        }
+        await dispatchNextAlternativeDelivery(target);
       }
     }
+  }
+
+  Future<void> dispatchNextAlternativeDelivery(
+    String recipientDeviceName,
+  ) async {
+    if (recipientDeviceName.isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final active = await _sqliteService.claimNextAlternativeDelivery(
+      recipientDeviceName: recipientDeviceName,
+      now: now,
+      nextAttemptAt: now + const Duration(seconds: 20).inMilliseconds,
+    );
+    if (active == null) {
+      final activeRows = await _sqliteService.queryCustom(
+        'transactions',
+        'forwardingRecipientDeviceName = ? AND '
+            'alternativeRequestCode IS NOT NULL AND '
+            'alternativeQueueState = ? AND status IN (?, ?, ?)',
+        [
+          recipientDeviceName,
+          'active',
+          TransactionStatuses.alternativeDeliveryPending,
+          TransactionStatuses.forwardedPending,
+          TransactionStatuses.alternativeAmbiguous,
+        ],
+        columns: ['id'],
+        orderBy: 'COALESCE(firstFailedTimeStamp, timeStamp) ASC, id ASC',
+        limit: 1,
+      );
+      if (activeRows.isNotEmpty) {
+        debugPrint(
+          'ALT_QUEUE: recipient=$recipientDeviceName '
+          'blocked by active=T${activeRows.first['id']}',
+        );
+      }
+      return;
+    }
+
+    debugPrint(
+      'ALT_QUEUE: recipient=$recipientDeviceName active=T${active['id']}',
+    );
+    debugPrint(
+      'ALT_QUEUE: recipient=$recipientDeviceName '
+      'dispatching T${active['id']}',
+    );
+    await _sendPendingAlternativeDelivery(active);
   }
 
   Future<void> _sendPendingAlternativeDelivery(
@@ -3972,31 +4128,9 @@ class TransactionController {
       return;
     }
 
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final scheduled = int.tryParse(
-      tx['alternativeDeliveryNextAttemptAt']?.toString() ?? '',
-    );
-    if (scheduled != null && scheduled > now) return;
-
-    final claimed = await _sqliteService.updateStuff(
-      {
-        'alternativeDeliveryNextAttemptAt':
-            now + const Duration(seconds: 20).inMilliseconds,
-      },
-      'id = ? AND status = ? AND '
-          '(alternativeDeliveryNextAttemptAt IS NULL OR '
-          'alternativeDeliveryNextAttemptAt <= ?)',
-      [
-        transactionId,
-        TransactionStatuses.alternativeDeliveryPending,
-        now,
-      ],
-      'transactions',
-    );
-    if (claimed != 1) return;
-
-    final sender =
-        await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
+    final sender = tx['alternativeRequestSenderDeviceName']?.toString() ??
+        await SharedPreferencesService().getDeviceName() ??
+        'Unknown Device';
     debugPrint(
       'ALT DELIVERY SEND: job=$jobId, target=$target, '
       'transaction=$transactionId',
@@ -4037,6 +4171,7 @@ class TransactionController {
   }) async {
     await _recoverStaleAlternativeRequests();
     await _resumeReservedAlternativeRequests();
+    await _recoverSuccessfulPendingAlternativeResults();
     await _retryPendingForwardedAlternativeResults();
     await _resumeEligiblePausedOfferTransactions();
 
@@ -4302,12 +4437,21 @@ class TransactionController {
         'localTransactionId': insertedId,
         'state': resultState,
         'resultStatus': resultStatus,
+        if (resultStatus == TransactionStatuses.successfulPending)
+          'resultDeliveryState': 'pending',
         'ussdReply': resultReply,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       },
       expectedState: 'executing',
     );
-    if (resultStatus.isNotEmpty &&
+    if (resultStatus == TransactionStatuses.successfulPending) {
+      await _reportForwardedAlternativeFirstSuccess(
+        forwardingJobId: forwardingJobId,
+        transactionId:
+            insertedId?.toString() ?? job['transactionId']?.toString() ?? '',
+        ussdReply: resultReply,
+      );
+    } else if (resultStatus.isNotEmpty &&
         resultStatus != TransactionStatuses.successfulPending &&
         resultStatus != TransactionStatuses.advancedUssd) {
       await _queueForwardedAlternativeResult(
@@ -4339,6 +4483,7 @@ class TransactionController {
       final awaitingConfirmation =
           status == TransactionStatuses.successfulPending ||
               status == TransactionStatuses.advancedUssd;
+      final firstSuccess = status == TransactionStatuses.successfulPending;
       final nextState =
           awaitingConfirmation ? 'awaiting_confirmation' : 'completed';
       await _sqliteService.updateAlternativeJob(
@@ -4352,6 +4497,14 @@ class TransactionController {
         },
         expectedState: 'executing',
       );
+      if (firstSuccess) {
+        await _reportForwardedAlternativeFirstSuccess(
+          forwardingJobId: forwardingJobId,
+          transactionId: transaction['id']?.toString() ?? '',
+          ussdReply: transaction['ussdReply']?.toString() ?? '',
+        );
+        return;
+      }
       if (status.isNotEmpty && !awaitingConfirmation && status != 'unknown') {
         await _queueForwardedAlternativeResult(
           forwardingJobId: forwardingJobId,
@@ -5392,6 +5545,21 @@ class TransactionController {
       'SAFARICOM CONFIRMATION: updated transaction=$transactionId '
       'from=$currentStatus to=$status',
     );
+
+    if (status == TransactionStatuses.successfulPending &&
+        candidate['source']?.toString() == 'manual') {
+      final forwardingJobId = candidate['forwardingJobId']?.toString() ?? '';
+      if (forwardingJobId.isNotEmpty) {
+        debugPrint(
+          'ALT_QUEUE: T$transactionId Successful(Pending)',
+        );
+        await _reportForwardedAlternativeFirstSuccess(
+          forwardingJobId: forwardingJobId,
+          transactionId: transactionId.toString(),
+          ussdReply: body,
+        );
+      }
+    }
 
     if (status == TransactionStatuses.doneConfirmed) {
       final forwardingJobId = candidate['forwardingJobId']?.toString() ?? '';

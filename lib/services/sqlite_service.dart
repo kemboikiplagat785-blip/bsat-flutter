@@ -101,6 +101,38 @@ class SQLiteService {
         'alternativeConfirmationDelivered INTEGER NOT NULL DEFAULT 0',
       );
     }
+    if (!existingTransactionColumns.contains('alternativeQueueState')) {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN alternativeQueueState TEXT',
+      );
+    }
+    if (!existingTransactionColumns
+        .contains('alternativeRequestSenderDeviceName')) {
+      await db.execute(
+        'ALTER TABLE transactions ADD COLUMN '
+        'alternativeRequestSenderDeviceName TEXT',
+      );
+    }
+    await db.update(
+      'transactions',
+      {'alternativeQueueState': 'waiting'},
+      where: 'alternativeQueueState IS NULL AND status = ? '
+          'AND forwardingRecipientDeviceName IS NOT NULL '
+          'AND alternativeRequestCode IS NOT NULL',
+      whereArgs: ['transaction-alternative-delivery-pending'],
+    );
+    await db.update(
+      'transactions',
+      {'alternativeQueueState': 'active'},
+      where: 'alternativeQueueState IS NULL AND status = ? '
+          'AND forwardingRecipientDeviceName IS NOT NULL '
+          'AND alternativeRequestCode IS NOT NULL',
+      whereArgs: ['transaction-forwarded-pending'],
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_alternative_queue_recipient '
+      'ON transactions(forwardingRecipientDeviceName, alternativeQueueState, status)',
+    );
     await db.update(
       'alternativeJobs',
       {
@@ -986,6 +1018,92 @@ class SQLiteService {
           'AND resultNextAttemptAt <= ?',
       whereArgs: [forwardingJobId, 'pending', now],
     );
+  }
+
+  Future<Map<String, dynamic>?> claimNextAlternativeDelivery({
+    required String recipientDeviceName,
+    required int now,
+    required int nextAttemptAt,
+  }) async {
+    final db = await database;
+    return db.transaction<Map<String, dynamic>?>((txn) async {
+      final activeRows = await txn.query(
+        'transactions',
+        where: 'forwardingRecipientDeviceName = ? AND '
+            'alternativeRequestCode IS NOT NULL AND '
+            'alternativeQueueState = ? AND status IN (?, ?, ?)',
+        whereArgs: [
+          recipientDeviceName,
+          'active',
+          'transaction-alternative-delivery-pending',
+          'transaction-forwarded-pending',
+          'transaction-alternative-ambiguous',
+        ],
+        orderBy: 'COALESCE(firstFailedTimeStamp, timeStamp) ASC, id ASC',
+        limit: 1,
+      );
+
+      if (activeRows.isNotEmpty) {
+        final active = Map<String, dynamic>.from(activeRows.first);
+        if (active['status'] != 'transaction-alternative-delivery-pending') {
+          return null;
+        }
+
+        final scheduledAt = int.tryParse(
+            active['alternativeDeliveryNextAttemptAt']?.toString() ?? '');
+        if (scheduledAt != null && scheduledAt > now) return null;
+
+        final claimed = await txn.update(
+          'transactions',
+          {'alternativeDeliveryNextAttemptAt': nextAttemptAt},
+          where: 'id = ? AND status = ? AND alternativeQueueState = ? AND '
+              '(alternativeDeliveryNextAttemptAt IS NULL OR '
+              'alternativeDeliveryNextAttemptAt <= ?)',
+          whereArgs: [
+            active['id'],
+            'transaction-alternative-delivery-pending',
+            'active',
+            now,
+          ],
+        );
+        if (claimed != 1) return null;
+        active['alternativeDeliveryNextAttemptAt'] = nextAttemptAt;
+        return active;
+      }
+
+      final waitingRows = await txn.query(
+        'transactions',
+        where: 'forwardingRecipientDeviceName = ? AND '
+            'alternativeQueueState = ? AND status = ?',
+        whereArgs: [
+          recipientDeviceName,
+          'waiting',
+          'transaction-alternative-delivery-pending',
+        ],
+        orderBy: 'COALESCE(firstFailedTimeStamp, timeStamp) ASC, id ASC',
+        limit: 1,
+      );
+      if (waitingRows.isEmpty) return null;
+
+      final waiting = Map<String, dynamic>.from(waitingRows.first);
+      final claimed = await txn.update(
+        'transactions',
+        {
+          'alternativeQueueState': 'active',
+          'alternativeDeliveryNextAttemptAt': nextAttemptAt,
+        },
+        where: 'id = ? AND status = ? AND alternativeQueueState = ?',
+        whereArgs: [
+          waiting['id'],
+          'transaction-alternative-delivery-pending',
+          'waiting',
+        ],
+      );
+      if (claimed != 1) return null;
+      waiting['alternativeQueueState'] = 'active';
+      waiting['alternativeDeliveryNextAttemptAt'] = nextAttemptAt;
+      return waiting;
+    });
   }
 
   Future<Map<String, dynamic>?> getAlternativeJob(

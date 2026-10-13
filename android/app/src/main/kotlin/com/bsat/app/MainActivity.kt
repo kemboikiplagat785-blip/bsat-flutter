@@ -11,6 +11,7 @@ import androidx.core.app.ActivityCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.MethodCall
 
 import io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingBackgroundService;
 
@@ -28,6 +29,7 @@ import android.util.Log
 import android.os.PowerManager
 import android.app.KeyguardManager
 import android.view.WindowManager
+import java.util.ArrayDeque
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.bsat.app"
@@ -37,6 +39,7 @@ class MainActivity : FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingUssdCode: String? = null
     private var pendingSubscriptionId: Int? = null
+    private val pendingUssdRequests = ArrayDeque<() -> Unit>()
 
     // Wakelock to keep screen on
     private var wakeLock: PowerManager.WakeLock? = null
@@ -68,19 +71,21 @@ class MainActivity : FlutterActivity() {
             ///
 
             if (call.method == "runUssdSequence") {
-
-                 Log.d("BSAT_USSD", "runUssdSequence RECEIVED from Flutter")
-
-                 if (UssdSession.ussdSteps.isNotEmpty() || UssdSession.isRunning || UssdSession.currentStepIndex > 0) {
-                    // If there is an ongoing USSD session, return an error
-                    sendNativeLog(
-                        "debug",
-                        "UssdSession",
-                        "USSD session already in progress. Current steps: ${UssdSession.ussdSteps}, Current index: ${UssdSession.currentStepIndex}"
-                    )
-                    result.success("USSD session already in progress. Please wait for it to finish.")
-                    return@setMethodCallHandler
+                val request = { startUssdSequence(call, result) }
+                if (UssdSession.ussdSteps.isNotEmpty() || UssdSession.isRunning || UssdSession.currentStepIndex > 0) {
+                    sendNativeLog("debug", "UssdSession", "USSD session active; queued request (${pendingUssdRequests.size + 1} waiting)")
+                    pendingUssdRequests.addLast(request)
+                } else {
+                    request()
                 }
+            } else {
+                result.notImplemented()
+            }
+        }
+    }
+
+    private fun startUssdSequence(call: MethodCall, result: MethodChannel.Result) {
+                Log.d("BSAT_USSD", "runUssdSequence RECEIVED from Flutter")
 
                 sendNativeLog("debug", "UssdSession", "Starting new USSD session")
 
@@ -126,7 +131,8 @@ class MainActivity : FlutterActivity() {
                  "USSD sequence is empty. No USSD code was provided.",
                   null
     )
-    return@setMethodCallHandler
+             startNextQueuedUssd()
+    return
 }
 
              val firstCode = "*${UssdSession.ussdSteps[0]}#"
@@ -136,11 +142,16 @@ class MainActivity : FlutterActivity() {
 
                 if (dialUssd(firstCode, subscriptionId, result)) {
                     waitForUssdResponse(result)
+                } else if (pendingResult !== result) {
+                    resetUssdSession()
+                    startNextQueuedUssd()
                 }
-            } else {
-                result.notImplemented()
-            }
-        }
+    }
+
+    private fun startNextQueuedUssd() {
+        if (pendingUssdRequests.isEmpty()) return
+        val next = pendingUssdRequests.removeFirst()
+        next()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -154,10 +165,14 @@ class MainActivity : FlutterActivity() {
                 val subId = pendingSubscriptionId ?: 0
                 if (dialUssd(code, subId, result)) {
                     waitForUssdResponse(result)
+                } else {
+                    resetUssdSession()
+                    startNextQueuedUssd()
                 }
             } else {
                 result.error("PERMISSION_DENIED", "Phone call and state permissions are required for USSD.", null)
-                UssdSession.isRunning = false
+                resetUssdSession()
+                startNextQueuedUssd()
             }
         }
     }
@@ -251,8 +266,13 @@ class MainActivity : FlutterActivity() {
             return false
         }
 
-        startActivity(intent)
-        return true
+        return try {
+            startActivity(intent)
+            true
+        } catch (error: Exception) {
+            result.error("USSD_START_FAILED", error.message, null)
+            false
+        }
     }
 
     fun sendNativeLog(level: String, tag: String, message: String) {
@@ -290,6 +310,7 @@ class MainActivity : FlutterActivity() {
             UssdSession.currentStepIndex = 0 // Reset step index
             UssdSession.isRunning = false // Reset running state
             UssdSession.wholeConversation.clear()
+            startNextQueuedUssd()
 
             // create  "lastresponse": UssdSession.finalResponse, "conversation": resList
 
@@ -301,6 +322,7 @@ class MainActivity : FlutterActivity() {
             val resList = buildResponseList()
             result.success(mapOf("lastresponse" to UssdSession.finalResponse, "conversation" to resList, "timeout" to true))
             resetUssdSession()
+            startNextQueuedUssd()
             return
         }
 

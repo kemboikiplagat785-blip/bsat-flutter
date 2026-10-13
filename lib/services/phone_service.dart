@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
@@ -11,6 +13,7 @@ import '../models/code_signature.dart';
 class PhoneService {
   static const platform = MethodChannel('com.bsat.app');
   static bool isRunning = false;
+  static final UssdExecutionQueue _executionQueue = UssdExecutionQueue();
 
   SharedPreferencesService sharedPreferencesService =
       SharedPreferencesService();
@@ -21,6 +24,12 @@ class PhoneService {
   ///
   /// or [errorMessage, TransactionStatuses.error];
   Future<List> makeMyRequest(String code, int subscriptionId,
+      {int? triesParam = 0}) async {
+    return _executionQueue.run(() => _makeMyRequest(code, subscriptionId,
+        triesParam: triesParam));
+  }
+
+  Future<List> _makeMyRequest(String code, int subscriptionId,
       {int? triesParam = 0}) async {
     String message = "";
     List sims = await getAllSimSubids();
@@ -66,6 +75,20 @@ class PhoneService {
     CodeSignature? codeSignature,
     bool isGettingSignature = false,
   }) async {
+    return _executionQueue.run(() => _makeAdvancedRequest(
+          code,
+          subscriptionId,
+          codeSignature: codeSignature,
+          isGettingSignature: isGettingSignature,
+        ));
+  }
+
+  Future<List> _makeAdvancedRequest(
+    String code,
+    int subscriptionId, {
+    CodeSignature? codeSignature,
+    bool isGettingSignature = false,
+  }) async {
     debugPrint(
         "USSD DEBUG: makeAdvancedRequest received code=[$code], subscriptionId=$subscriptionId");
     debugPrint("USSD DEBUG: makeAdvancedRequest caller stack:");
@@ -101,7 +124,10 @@ class PhoneService {
         if (res.contains(RegExp(
             r'USSD session already in progress|duplicate sessions. rejecting new one',
             caseSensitive: false))) {
-          return [res, TransactionStatuses.error];
+          // The serialized executor should make this exceptional. Keep the
+          // response distinguishable so callers never treat it as a carrier
+          // failure or successful transaction.
+          return [res, TransactionStatuses.advancedQueue];
         }
 
         if (res.contains(RegExp(
@@ -276,5 +302,33 @@ class PhoneService {
     } finally {
       isRunning = false;
     }
+  }
+}
+
+/// Serializes all app initiated USSD calls through one executor. The task
+/// remains active until the platform call completes (including timeout/error),
+/// then the next queued task is started automatically.
+class UssdExecutionQueue {
+  Future<void> _tail = Future<void>.value();
+  int _pending = 0;
+
+  int get pendingCount => _pending;
+
+  Future<T> run<T>(Future<T> Function() task) {
+    _pending++;
+    final result = Completer<T>();
+    final scheduled = _tail.then((_) async {
+      PhoneService.isRunning = true;
+      try {
+        result.complete(await task());
+      } catch (error, stackTrace) {
+        result.completeError(error, stackTrace);
+      } finally {
+        _pending--;
+        PhoneService.isRunning = _pending > 0;
+      }
+    });
+    _tail = scheduled.catchError((Object _) {});
+    return result.future;
   }
 }

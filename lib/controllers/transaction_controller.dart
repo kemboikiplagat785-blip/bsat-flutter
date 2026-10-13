@@ -4804,7 +4804,7 @@ class TransactionController {
       r'USSD session already in progress',
       caseSensitive: false,
     ).hasMatch(responseText)) {
-      return TransactionStatuses.error;
+      return TransactionStatuses.advancedQueue;
     }
 
     if (RegExp(r'max number of menu|error from application23',
@@ -4903,28 +4903,6 @@ class TransactionController {
           'ALT USSD: advanced request started jobId=$forwardingJobId',
         );
       }
-      String transStatus = TransactionStatuses.advancedUssd;
-      String msg = 'Advanced. Added to queue.';
-
-      bool anotherRunning = PhoneService.isRunning;
-
-      if (anotherRunning) {
-        transStatus = TransactionStatuses.error;
-        msg = "Waiting for turn ...";
-        return await dontProcess(
-          message ?? "",
-          "00",
-          number,
-          ussdCode,
-          amount,
-          simSubId,
-          status: transStatus,
-          reply: msg,
-          canRetry: true,
-          source: "manual",
-        );
-      }
-
       response = await _phoneService.makeAdvancedRequest(
         ussdCode,
         simSubId,

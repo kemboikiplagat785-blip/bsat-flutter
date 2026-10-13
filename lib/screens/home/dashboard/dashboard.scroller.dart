@@ -563,6 +563,18 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           'accentColor': kDarkerGreen,
                                         },
                                         {
+                                          'count': vm.forwardedCount,
+                                          'icon': const Icon(
+                                            CupertinoIcons.paperplane_fill,
+                                            color: kPrimaryColor,
+                                            size: 14,
+                                          ),
+                                          'query':
+                                              TransactionStatuses.forwarded,
+                                          'label': 'Forwarded',
+                                          'accentColor': kPrimaryColor,
+                                        },
+                                        {
                                           'count': vm.forwardedPendingCount,
                                           'icon': const Icon(
                                             CupertinoIcons.clock,

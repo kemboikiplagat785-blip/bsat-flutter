@@ -19,6 +19,7 @@ import '../../components/tool_button.dart';
 import '../../components/dialogs/till_done_dialogue.dart';
 import '../../utils/constants.dart';
 import '../../utils/forwarding_job_id.dart';
+import '../../utils/forwarding_mode.dart';
 
 enum _SelectionMenuAction {
   retry,
@@ -72,6 +73,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
   var selectedDate = DateTime.now();
   String query = "";
+  String? _statusFilter;
   Timer? _debounce; // Performance Fix: For search
   var databaseHelper = SQLiteService();
   final bool _isScrollingDown = false;
@@ -80,6 +82,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   void initState() {
     super.initState();
     query = widget.query ?? "";
+    if (TransactionStatuses.statuses.values.contains(query)) {
+      _statusFilter = query;
+    }
     _searchBarController.text = query;
     _pagingController.addPageRequestListener((pageKey) => _fetchPage(pageKey));
   }
@@ -115,7 +120,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               "WHERE date = '$dateStr' AND ussdReply LIKE '%blacklisted%'"),
       databaseHelper.getCount('transactions',
           appendQuery:
-              "WHERE status = '${TransactionStatuses.forwarded}' AND date = '$dateStr'"),
+              "WHERE status = '${TransactionStatuses.forwarded}' "
+              "AND forwardingJobId IS NULL "
+              "AND COALESCE(forwardingRecipientDeviceName, '') = '' "
+              "AND date = '$dateStr'"),
       databaseHelper.getCount('transactions',
           appendQuery:
               "WHERE status = '${TransactionStatuses.forwardedPending}' AND date = '$dateStr'"),
@@ -160,7 +168,20 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   Future<void> _fetchPage(int pageKey) async {
     try {
       List<dynamic> newItems;
-      if (query.isNotEmpty) {
+      if (_statusFilter != null) {
+        final where = _statusFilter == TransactionStatuses.forwarded
+            ? "status = ? AND forwardingJobId IS NULL AND "
+                "COALESCE(forwardingRecipientDeviceName, '') = ''"
+            : 'status = ?';
+        newItems = await databaseHelper.queryCustom(
+          'transactions',
+          where,
+          [_statusFilter!],
+          limit: _pageSize,
+          offset: pageKey,
+          orderBy: 'timeStamp DESC',
+        );
+      } else if (query.isNotEmpty) {
         newItems = await databaseHelper.querySearch('transactions', query,
             limit: _pageSize, offset: pageKey, orderBy: 'timeStamp DESC');
       } else {
@@ -343,14 +364,20 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                       icon: const Icon(CupertinoIcons.xmark_square_fill),
                       onPressed: () {
                         _searchBarController.clear();
-                        setState(() => query = "");
+                        setState(() {
+                          query = "";
+                          _statusFilter = null;
+                        });
                         reloadForNewDate();
                       }),
                 ),
                 onChanged: (value) {
                   if (_debounce?.isActive ?? false) _debounce!.cancel();
                   _debounce = Timer(const Duration(milliseconds: 500), () {
-                    setState(() => query = value);
+                    setState(() {
+                      query = value;
+                      _statusFilter = null;
+                    });
                     reloadForNewDate();
                   });
                 },
@@ -597,6 +624,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
     int forwarded = 0;
     int skipped = 0;
+    int failed = 0;
 
     String? number = await showForwardTextDialog(context, 0);
 
@@ -622,7 +650,15 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           message.length > 160 ? 160 : message.length,
         );
 
-        await sendEvenInBackground('254$recipientNumber', trimmedMessage);
+        final handoffResult = await sendEvenInBackground(
+          '254$recipientNumber',
+          trimmedMessage,
+        );
+        final status = offlineForwardingStatusForHandoff(handoffResult);
+        if (status == null) {
+          failed++;
+          continue;
+        }
 
         await TransactionController().dontProcess(
           message,
@@ -631,7 +667,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           (transaction['ussdDialed'] ?? '').toString(),
           amount,
           _toInt(transaction['simSubId']) ?? 0,
-          status: TransactionStatuses.forwarded,
+          status: status,
           source: (transaction['source'] ?? 'bingwa').toString(),
           canRetry: (transaction['canRetry'] ?? 0) == 1,
           id: _toInt(transaction['id']),
@@ -652,7 +688,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
           content:
-              Text('Forwarded $forwarded transaction(s). Skipped $skipped.')),
+              Text('Forwarded $forwarded transaction(s). '
+                  'Failed $failed. Skipped $skipped.')),
     );
   }
 
@@ -915,7 +952,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   Widget _tool(String q, Icon icon, int count, Color accent, String label,
       {Color? bColor}) {
     return toolButton(() {
-      setState(() => query = q);
+      setState(() {
+        query = q;
+        _statusFilter = q;
+      });
       reloadForNewDate();
     }, icon, count.toString(), context,
         withBorder: true,

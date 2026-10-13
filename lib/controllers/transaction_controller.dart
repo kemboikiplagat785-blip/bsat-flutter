@@ -1706,6 +1706,29 @@ class TransactionController {
           checkIfSimilar: false,
         );
 
+        final offlineStatus = offlineForwardingStatusForHandoff(reply);
+        if (offlineStatus == null) {
+          final transactionId = await dontProcess(
+            smsMessageBody,
+            mpesaCode,
+            number,
+            '',
+            amount,
+            -1,
+            status: TransactionStatuses.error,
+            reply: 'Offline forwarding failed to hand off SMS to '
+                '${toForward[0]["numberToReceive"]}: $reply',
+            canRetry: true,
+            source: name,
+            id: txId,
+            parentTransactionId: parentTransactionId,
+          );
+          return ForwardingAttemptResult(
+            ForwardingAttemptState.configuredButUnavailable,
+            transactionId: transactionId,
+          );
+        }
+
         processReply(
           number,
           TransactionStatuses.forwarded,
@@ -1733,7 +1756,7 @@ class TransactionController {
           '',
           amount,
           -1,
-          status: status ?? TransactionStatuses.forwarded,
+          status: offlineStatus,
           reply: 'Forwarding to ${toForward[0]["numberToReceive"]}: $reply',
           canRetry: false,
           source: name,
@@ -2401,7 +2424,7 @@ class TransactionController {
           '',
           amount,
           -1,
-          status: TransactionStatuses.forwarded,
+          status: TransactionStatuses.forwardedPending,
           reply:
               'Forwarded unavailable amount(Ksh $amount) to all paired devices',
           canRetry: false,
@@ -2458,6 +2481,19 @@ class TransactionController {
           'forwardingJobId=$forwardingJobId, '
           'success=${result['success']}',
         );
+        if (result['success'] != true && transactionId != null) {
+          await _sqliteService.updateStuff(
+            {
+              'status': TransactionStatuses.error,
+              'canRetry': 1,
+              'ussdReply':
+                  'Online forwarding request failed. Will retry later.',
+            },
+            'id = ?',
+            [transactionId],
+            'transactions',
+          );
+        }
       }
     }
 

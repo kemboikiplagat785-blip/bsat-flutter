@@ -21,6 +21,7 @@ import '../../services/contacts_service.dart';
 import '../../services/shared_preferences_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/forwarding_job_id.dart';
+import '../../utils/forwarding_mode.dart';
 import '../clients/single_client.dart';
 import '../tasks/edit_task.dart';
 
@@ -801,6 +802,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                             children: [
                               toolButton(
                                 () async {
+                                  String? forwardedStatus;
                                   int numb = toForward.isNotEmpty
                                       ? toForward[0]['numberToReceive']
                                       : 0;
@@ -819,15 +821,35 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                           number.substring(2, number.length);
                                     }
 
-                                    sendEvenInBackground(
+                                    final handoffResult =
+                                        await sendEvenInBackground(
                                       '254${int.parse(number)}',
                                       _details['initialMessage'],
+                                    );
+                                    forwardedStatus =
+                                        offlineForwardingStatusForHandoff(
+                                      handoffResult,
                                     );
                                     if (!mounted || !currentContext.mounted) {
                                       return;
                                     }
                                     navigator.pop(number);
+                                    if (forwardedStatus == null) {
+                                      await _sqliteService.updateStuff(
+                                        {
+                                          'status': TransactionStatuses.error,
+                                          'ussdReply':
+                                              'Offline forwarding SMS failed.',
+                                        },
+                                        'id = ?',
+                                        [_details['id']],
+                                        'transactions',
+                                      );
+                                      return;
+                                    }
                                   }
+
+                                  if (forwardedStatus == null) return;
 
                                   await TransactionController().dontProcess(
                                       _details['initialMessage'],
@@ -836,7 +858,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       _details['ussdDialed'],
                                       _details['amount'],
                                       _details['simSubId'],
-                                      status: TransactionStatuses.forwarded,
+                                      status: forwardedStatus,
                                       source: _details['source'],
                                       canRetry: _details['canRetry'] == 1,
                                       reply: 'Forwarded to $numb');

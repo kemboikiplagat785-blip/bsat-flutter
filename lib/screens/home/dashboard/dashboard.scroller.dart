@@ -583,7 +583,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           ),
                                           'query': TransactionStatuses
                                               .forwardedPending,
-                                          'label': 'Forwarded (pending)',
+                                          'label': 'Forwarded (Pending)',
                                           'accentColor': Color(0xFFFFA500),
                                         },
                                         {
@@ -596,7 +596,7 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           ),
                                           'query': TransactionStatuses
                                               .forwardedConfirmed,
-                                          'label': 'Forwarded (confirmed)',
+                                          'label': 'Forwarded (Successful)',
                                           'accentColor': Color(0xFF00FF88),
                                         },
                                         {

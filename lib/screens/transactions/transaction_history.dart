@@ -889,7 +889,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               const Icon(Icons.fork_right, color: kPrimaryColor, size: 14),
               _forwardedConfirmedCount,
               kPrimaryColor,
-              'Forwarded (Confirmed)'),
+              'Forwarded (Successful)'),
           const SizedBox(width: 8),
           _tool(
               TransactionStatuses.hasOkoa,

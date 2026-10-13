@@ -11,6 +11,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:another_telephony/telephony.dart';
 
 import '../../utils/date_ops.dart';
+import '../../utils/offer_time_window.dart';
 
 class EditTaskPage extends StatefulWidget {
   final int taskId;
@@ -50,6 +51,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
   List myOffers = [];
 
   String? _selectedItem;
+  int? _selectedOfferId;
+  int? _selectedVariantId;
 
   String _selectedOffer = "";
   int _selectedAmount = 0;
@@ -102,12 +105,56 @@ class _EditTaskPageState extends State<EditTaskPage> {
     });
   }
 
-  void _getMyOffers() async {
-    await _sqliteService.queryAll('ussdCodes').then((value) {
-      setState(() {
-        myOffers = value;
-      });
+  Future<void> _getMyOffers() async {
+    final rows = await _sqliteService.rawQueryInput('''
+      SELECT u.id AS offerId, v.id AS variantId, u.amount, v.code,
+        v.startTime, v.endTime, u.dialSim
+      FROM ussdCodes u
+      JOIN ussdCodeVariants v ON u.id = v.ussdCodeId
+      WHERE u.amount IS NOT NULL
+        AND v.code IS NOT NULL AND TRIM(v.code) != ''
+      ORDER BY u.amount, v.startTime, v.code
+    ''', []);
+    if (!mounted) return;
+    setState(() {
+      myOffers = rows;
+      _matchSelectedOffer();
     });
+  }
+
+  void _matchSelectedOffer() {
+    if (myOffers.isEmpty) return;
+    if (_selectedVariantId != null) {
+      final selectedVariant = myOffers
+          .cast<Map<String, dynamic>>()
+          .where((offer) =>
+              int.tryParse(offer['variantId']?.toString() ?? '') ==
+              _selectedVariantId)
+          .firstOrNull;
+      if (selectedVariant != null) {
+        _selectedOfferId = int.tryParse(selectedVariant['offerId'].toString());
+        _selectedItem = _selectedVariantId.toString();
+        return;
+      }
+      _selectedVariantId = null;
+      _selectedOfferId = null;
+      _selectedItem = null;
+    }
+    final normalizedCode =
+        TransactionController().getCodeFromUssd(_selectedOffer);
+    final match = myOffers.cast<Map<String, dynamic>>().where((offer) {
+      final amount = int.tryParse(offer['amount']?.toString() ?? '');
+      return amount == _selectedAmount &&
+          TransactionController().getCodeFromUssd(
+                offer['code']?.toString() ?? '',
+              ) ==
+              normalizedCode;
+    }).firstOrNull;
+    if (match != null) {
+      _selectedOfferId = int.tryParse(match['offerId'].toString());
+      _selectedVariantId = int.tryParse(match['variantId'].toString());
+      _selectedItem = _selectedVariantId.toString();
+    }
   }
 
   Future<bool> _checkAndSave() async {
@@ -118,6 +165,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
         'tasks', 'deleteAfterRunning', 'INTEGER');
 
     if (_dialSim < 0 ||
+        _selectedOfferId == null ||
+        _selectedVariantId == null ||
         _numberTextController.text.isEmpty ||
         _durationTextController.text.isEmpty) {
       return false;
@@ -135,6 +184,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
           'timeOfDay': getNormalTime(_selectedDate),
           'nextTaskDate': _selectedDate.millisecondsSinceEpoch,
           'offer': _selectedOffer,
+          'offerId': _selectedOfferId,
+          'offerVariantId': _selectedVariantId,
           'amount': _selectedAmount,
           'number': int.parse(_numberTextController.text),
           'deleteAfterRunning': _deleteAfterRunning ? 1 : 0,
@@ -155,6 +206,8 @@ class _EditTaskPageState extends State<EditTaskPage> {
           'timeOfDay': getNormalTime(_selectedDate),
           'nextTaskDate': _selectedDate.millisecondsSinceEpoch,
           'offer': _selectedOffer,
+          'offerId': _selectedOfferId,
+          'offerVariantId': _selectedVariantId,
           'amount': _selectedAmount,
           'number': int.parse(_numberTextController.text),
           'deleteAfterRunning': _deleteAfterRunning ? 1 : 0,
@@ -187,7 +240,11 @@ class _EditTaskPageState extends State<EditTaskPage> {
         date = getNormalDate(_selectedDate);
         _selectedOffer = value[0]['offer'] ?? "";
         _selectedAmount = value[0]['amount'] ?? 0;
-        _selectedItem = "$_selectedAmount - $_selectedOffer";
+        _selectedOfferId = int.tryParse(value[0]['offerId']?.toString() ?? '');
+        _selectedVariantId =
+            int.tryParse(value[0]['offerVariantId']?.toString() ?? '');
+        _selectedItem = _selectedVariantId?.toString();
+        _matchSelectedOffer();
         _deleteAfterRunning = value[0]['deleteAfterRunning'] == 1;
         setState(() {});
       });
@@ -199,10 +256,10 @@ class _EditTaskPageState extends State<EditTaskPage> {
           DateTime.fromMillisecondsSinceEpoch(getTodayMidnightMillis()).add(
         const Duration(days: 1),
       );
-      _selectedOffer =
-          TransactionController().getCodeFromUssd(widget.offer ?? "");
-      _selectedItem = "${widget.amount} - $_selectedOffer";
+      _selectedOffer = widget.offer ?? '';
+      _selectedItem = null;
       _selectedAmount = widget.amount ?? 0;
+      _matchSelectedOffer();
       _deleteAfterRunning = true;
 
       setState(() {});
@@ -249,32 +306,45 @@ class _EditTaskPageState extends State<EditTaskPage> {
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: kPagePadding / 2),
-                      DropdownButtonFormField(
+                      DropdownButtonFormField<String>(
                         initialValue: _selectedItem,
-                        items: myOffers.map((offer) {
-                          return DropdownMenuItem(
-                            value: "${offer['amount']} - ${offer['code']}",
-                            child:
-                                Text('${offer['amount']} (${offer['code']})'),
+                        items:
+                            myOffers.cast<Map<String, dynamic>>().map((offer) {
+                          return DropdownMenuItem<String>(
+                            value: offer['variantId'].toString(),
+                            child: Text(
+                              formatTaskOfferLabel(
+                                amount: offer['amount'],
+                                code: offer['code'],
+                                startTime: offer['startTime'],
+                                endTime: offer['endTime'],
+                              ),
+                            ),
                           );
                         }).toList(),
                         onChanged: (value) {
+                          final selected = myOffers
+                              .cast<Map<String, dynamic>>()
+                              .where((offer) =>
+                                  offer['variantId'].toString() == value)
+                              .firstOrNull;
+                          if (selected == null) return;
                           setState(() {
                             _selectedItem = value;
-                            _selectedAmount = int.parse(
-                              value!
-                                  .split(' - ')[0]
-                                  .replaceAll(RegExp(r'\D'), ''),
-                            );
-                            _selectedOffer = value.split(' - ')[1];
+                            _selectedOfferId =
+                                int.tryParse(selected['offerId'].toString());
+                            _selectedVariantId =
+                                int.tryParse(selected['variantId'].toString());
+                            _selectedAmount = int.tryParse(
+                                  selected['amount']?.toString() ?? '',
+                                ) ??
+                                0;
+                            _selectedOffer = selected['code'].toString();
 
                             if (_dialSim < 0) {
-                              _dialSim = myOffers.firstWhere(
-                                    (offer) =>
-                                        "${offer['amount']} - ${offer['code']}" ==
-                                        _selectedItem,
-                                    orElse: () => {'dialSim': -1},
-                                  )['dialSim'] ??
+                              _dialSim = int.tryParse(
+                                    selected['dialSim']?.toString() ?? '',
+                                  ) ??
                                   -1;
 
                               debugPrint("Dial SIM set to $_dialSim");

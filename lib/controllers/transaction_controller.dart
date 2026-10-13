@@ -11,6 +11,8 @@ import 'package:bsat/services/payments.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
+import 'package:bsat/utils/forwarding_mode.dart';
+import 'package:bsat/utils/offer_time_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 
@@ -315,8 +317,7 @@ class TransactionController {
   }) async {
     final job = await _sqliteService.getAlternativeJob(forwardingJobId);
     if (job == null) return;
-    if (job['resultDeliveryState'] == 'delivered' &&
-        !replaceDeliveredResult) {
+    if (job['resultDeliveryState'] == 'delivered' && !replaceDeliveredResult) {
       return;
     }
 
@@ -1389,6 +1390,31 @@ class TransactionController {
       );
     }
 
+    final matchedOffer = await _findMatchingUssdCode(
+      amount,
+      smsMessage.subscriptionId ?? 0,
+    );
+    final matchedOfferId = int.tryParse(matchedOffer?['id']?.toString() ?? '');
+    if (matchedOfferId != null &&
+        !await _isOfferWindowOpen(offerId: matchedOfferId)) {
+      return dontProcess(
+        smsMessage.body ?? '',
+        mpesaCode,
+        number,
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
+        amount,
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
+        status: TransactionStatuses.paused,
+        reply: 'Offer is outside its configured execution time.',
+        canRetry: false,
+        source: name,
+        forwardingJobId: forwardingJobId,
+        forwardingSenderDeviceName: forwardingSenderDeviceName,
+        targetOfferId: matchedOfferId,
+        parentTransactionId: parentTransactionId,
+      );
+    }
+
     bool hasPaid = await _paymentOps.hasActiveSubscription();
 
     if (!hasPaid) {
@@ -1437,6 +1463,26 @@ class TransactionController {
           parentTransactionId: parentTransactionId,
         );
       }
+    }
+
+    if (matchedOfferId != null &&
+        !await _isOfferWindowOpen(offerId: matchedOfferId)) {
+      return dontProcess(
+        smsMessage.body ?? '',
+        mpesaCode,
+        number,
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
+        amount,
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
+        status: TransactionStatuses.paused,
+        reply: 'Offer is outside its configured execution time.',
+        canRetry: false,
+        source: name,
+        forwardingJobId: forwardingJobId,
+        forwardingSenderDeviceName: forwardingSenderDeviceName,
+        targetOfferId: matchedOfferId,
+        parentTransactionId: parentTransactionId,
+      );
     }
 
     List requestResponse = [];
@@ -1522,6 +1568,7 @@ class TransactionController {
         'forwardingJobId': forwardingJobId,
         'forwardingSenderDeviceName': forwardingSenderDeviceName,
         'parentTransactionId': parentTransactionId,
+        'targetOfferId': matchedOfferId,
         'number': number,
         'date': getNormalDate(DateTime.now()),
         'time': getNormalTime(DateTime.now()),
@@ -2644,7 +2691,45 @@ class TransactionController {
     );
 
     for (var task in tasks) {
+      var taskOfferId = int.tryParse(task['offerId']?.toString() ?? '');
+      final taskVariantId =
+          int.tryParse(task['offerVariantId']?.toString() ?? '');
+      if (taskOfferId == null && task['amount'] != null) {
+        taskOfferId = await _resolveOfferIdByCode(
+          int.tryParse(task['amount'].toString()) ?? 0,
+          task['offer']?.toString() ?? task['code']?.toString() ?? '',
+        );
+      }
+      if (!await _isOfferWindowOpen(
+        offerId: taskOfferId,
+        variantId: int.tryParse(task['offerVariantId']?.toString() ?? ''),
+        amount: int.tryParse(task['amount']?.toString() ?? ''),
+      )) {
+        // Keep nextTaskDate due. The normal background tick will reconsider
+        // this task when the saved offer window opens.
+        continue;
+      }
+
       int number = getNumberFromCode(task['code']);
+      var scheduledCode = task['code']?.toString() ?? '';
+      if (taskVariantId != null) {
+        final variants = await _sqliteService.queryCustom(
+          'ussdCodeVariants',
+          'id = ?',
+          [taskVariantId],
+          limit: 1,
+        );
+        if (variants.isEmpty) continue;
+        scheduledCode = replaceNWithNumber(
+          variants.first['code']?.toString() ?? '',
+          number,
+        );
+      } else if (taskOfferId != null) {
+        final activeVariant = await _getActiveVariantRow(taskOfferId);
+        final activeCode = activeVariant?['code']?.toString() ?? '';
+        if (activeCode.isEmpty) continue;
+        scheduledCode = replaceNWithNumber(activeCode, number);
+      }
 
       bool hasPaid = await _paymentOps.hasActiveSubscription();
 
@@ -2667,7 +2752,7 @@ class TransactionController {
             'Scheduled',
             '',
             number,
-            task['code'],
+            scheduledCode,
             0,
             task['dialSim'],
           );
@@ -2676,8 +2761,15 @@ class TransactionController {
         }
       }
 
+      if (!await _isOfferWindowOpen(
+        offerId: taskOfferId,
+        variantId: taskVariantId,
+      )) {
+        continue;
+      }
+
       List value = await _phoneService.makeMyRequest(
-        task['code'],
+        scheduledCode,
         task['dialSim'],
       );
 
@@ -2703,7 +2795,7 @@ class TransactionController {
           'number': number,
           'date': getNormalDate(DateTime.now()),
           'time': getNormalTime(DateTime.now()),
-          'ussdDialed': task['code'],
+          'ussdDialed': scheduledCode,
           'ussdReply': value[0],
           'amount': task['amount'],
           'smsDate': getNormalDate(DateTime.now()),
@@ -2714,6 +2806,7 @@ class TransactionController {
           'timeStamp': DateTime.now().millisecondsSinceEpoch,
           'canRetry': 1,
           'source': 'scheduled',
+          'targetOfferId': taskOfferId,
         },
         "transactions",
       );
@@ -2828,6 +2921,36 @@ class TransactionController {
     final pausedOfferId = offerResumeClaimed
         ? int.tryParse(tx.first['targetOfferId']?.toString() ?? '')
         : null;
+
+    var currentOfferId =
+        int.tryParse(tx.first['targetOfferId']?.toString() ?? '');
+    if (currentOfferId == null) {
+      currentOfferId = await _resolveOfferIdByCode(
+        int.tryParse(tx.first['amount']?.toString() ?? '') ?? 0,
+        tx.first['ussdDialed']?.toString() ?? ussdCode,
+      );
+      if (currentOfferId == null) {
+        final offer = await _findMatchingUssdCode(
+          int.tryParse(tx.first['amount']?.toString() ?? '') ?? 0,
+          int.tryParse(tx.first['simSubId']?.toString() ?? '') ?? simSubId,
+        );
+        currentOfferId = int.tryParse(offer?['id']?.toString() ?? '');
+      }
+    }
+    if (currentOfferId != null &&
+        !await _isOfferWindowOpen(offerId: currentOfferId)) {
+      await _sqliteService.updateStuff(
+        {
+          'status': TransactionStatuses.paused,
+          'targetOfferId': currentOfferId,
+          'ussdReply': 'Offer is outside its configured execution time.',
+        },
+        'id = ?',
+        [id],
+        'transactions',
+      );
+      return;
+    }
 
     int firstFailedTimeStamp = (tx.first['firstFailedTimeStamp'] as int?) ??
         DateTime.now().millisecondsSinceEpoch;
@@ -3080,6 +3203,21 @@ class TransactionController {
 
     ussdCode = ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0];
     simSubId = ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1];
+
+    if (currentOfferId != null &&
+        !await _isOfferWindowOpen(offerId: currentOfferId)) {
+      await _sqliteService.updateStuff(
+        {
+          'status': TransactionStatuses.paused,
+          'targetOfferId': currentOfferId,
+          'ussdReply': 'Offer is outside its configured execution time.',
+        },
+        'id = ?',
+        [id],
+        'transactions',
+      );
+      return;
+    }
 
     List<dynamic> response = [];
 
@@ -3378,6 +3516,94 @@ class TransactionController {
     return ussdCodes.firstOrNull;
   }
 
+  Future<int?> _resolveOfferIdByCode(int amount, String code) async {
+    final rawCode = getCodeFromUssd(code);
+    if (rawCode.isEmpty) return null;
+    final rows = await _sqliteService.rawQueryInput(
+      '''
+      SELECT u.id AS id
+      FROM ussdCodes u
+      JOIN ussdCodeVariants v ON v.ussdCodeId = u.id
+      WHERE u.amount = ? AND v.code = ?
+      ORDER BY u.id
+      LIMIT 1
+      ''',
+      [amount, rawCode],
+    );
+    return int.tryParse(rows.firstOrNull?['id']?.toString() ?? '');
+  }
+
+  Future<bool> _isOfferWindowOpen({
+    int? offerId,
+    int? variantId,
+    int? amount,
+    int? fromSim,
+    DateTime? now,
+  }) async {
+    if (offerId == null && variantId != null) {
+      final variantRows = await _sqliteService.queryCustom(
+        'ussdCodeVariants',
+        'id = ?',
+        [variantId],
+        columns: ['ussdCodeId'],
+        limit: 1,
+      );
+      offerId = int.tryParse(
+          variantRows.firstOrNull?['ussdCodeId']?.toString() ?? '');
+    }
+    Map<String, dynamic>? offer;
+    if (offerId != null) {
+      final rows = await _sqliteService.queryCustom(
+        'ussdCodes',
+        'id = ?',
+        [offerId],
+        limit: 1,
+      );
+      offer = rows.firstOrNull;
+    } else if (amount != null) {
+      if (fromSim == null || fromSim < 0) {
+        final rows = await _sqliteService.queryCustom(
+          'ussdCodes',
+          'amount = ?',
+          [amount],
+          limit: 1,
+        );
+        offer = rows.firstOrNull;
+      } else {
+        offer = await _findMatchingUssdCode(amount, fromSim);
+      }
+    }
+    if (offer == null) return true; // Preserve legacy transactions.
+    final id = int.tryParse(offer['id']?.toString() ?? '');
+    if (id == null) return true;
+
+    if (variantId != null) {
+      final rows = await _sqliteService.queryCustom(
+        'ussdCodeVariants',
+        'id = ? AND ussdCodeId = ?',
+        [variantId, id],
+        limit: 1,
+      );
+      if (rows.isEmpty) return false;
+      return isOfferWindowOpen(rows, now: now);
+    }
+
+    final variants = await _sqliteService.queryCustom(
+      'ussdCodeVariants',
+      'ussdCodeId = ?',
+      [id],
+    );
+    if (variants.isNotEmpty) return isOfferWindowOpen(variants, now: now);
+
+    // Some pre-variant databases kept a single window on the offer row.
+    return isOfferWindowOpen([
+      {
+        'startTime': offer['startTime'],
+        'endTime': offer['endTime'],
+      },
+    ], now: now);
+  }
+
   Future<void> resumePausedTransactionsForOffer(int offerId) async {
     final transactions = await _sqliteService.queryCustom(
       'transactions',
@@ -3448,6 +3674,8 @@ class TransactionController {
       limit: 1,
     );
     if (offerRows.isEmpty) return;
+
+    if (!await _isOfferWindowOpen(offerId: offerId)) return;
 
     final currentReply = transaction['ussdReply']?.toString() ?? '';
     if (currentReply == _pausedForwardingReply) return;
@@ -3783,8 +4011,7 @@ class TransactionController {
 
     for (final tx in pending) {
       if (tx['status'] == TransactionStatuses.alternativeDeliveryPending) {
-        final target =
-            tx['forwardingRecipientDeviceName']?.toString() ?? '';
+        final target = tx['forwardingRecipientDeviceName']?.toString() ?? '';
         if (target.isNotEmpty) {
           await dispatchNextAlternativeDelivery(target);
         }
@@ -3809,15 +4036,22 @@ class TransactionController {
       final variant = await _getActiveVariantWithLegacyFallback(
         codeRows.first['id'] ?? -1,
       );
+      if (!await _isOfferWindowOpen(
+        offerId: int.tryParse(codeRows.first['id']?.toString() ?? ''),
+      )) {
+        continue;
+      }
       final altCode = variant?['alternativeUssdCode']?.toString();
       final target = variant?['runAltOn']?.toString();
-      final delay =
-          int.tryParse(variant?['altDelayMinutes']?.toString() ?? '') ?? 0;
+      final delaySeconds = readAlternativeDelaySeconds(
+        variant?['altDelaySeconds'],
+        variant?['altDelayMinutes'],
+      );
       if (altCode == null || altCode.trim().isEmpty) continue;
       final executeAt = int.tryParse(
             tx['alternativeExecuteAt']?.toString() ?? '',
           ) ??
-          (failedAt + delay * 60000);
+          alternativeDelayDeadlineMs(failedAt, delaySeconds);
       if (tx['alternativeExecuteAt'] == null) {
         await _sqliteService.updateStuff(
           {'alternativeExecuteAt': executeAt},
@@ -3827,9 +4061,9 @@ class TransactionController {
         );
       }
       final now = DateTime.now().millisecondsSinceEpoch;
-      final due = executeAt > 0 && now >= executeAt;
+      final due = now >= executeAt;
       debugPrint(
-        '[ALT DEBUG] altDelayMinutes=$delay',
+        '[ALT DEBUG] altDelaySeconds=$delaySeconds',
       );
       debugPrint('[ALT DEBUG] executeAt=$executeAt');
       debugPrint('[ALT DEBUG] now=$now');
@@ -4373,6 +4607,49 @@ class TransactionController {
       return;
     }
     if (state != 'reserved') return;
+
+    final jobMessage = job['smsMessage']?.toString() ?? '';
+    final jobAmount = getAmount(jobMessage);
+    final alternativeCode = job['ussdCode']?.toString() ?? '';
+    final normalizedAlternativeCode = getCodeFromUssd(alternativeCode);
+    final matchingAlternativeRows = jobAmount > 0
+        ? await _sqliteService.rawQueryInput(
+            '''
+            SELECT u.id AS offerId, v.id AS variantId
+            FROM ussdCodes u
+            JOIN ussdCodeVariants v ON v.ussdCodeId = u.id
+            WHERE u.amount = ? AND
+              (v.alternativeUssdCode = ? OR v.alternativeUssdCode = ?)
+            ORDER BY u.id, v.id
+            LIMIT 1
+            ''',
+            [jobAmount, alternativeCode, normalizedAlternativeCode],
+          )
+        : <Map<String, dynamic>>[];
+    var matchedOfferId = int.tryParse(
+      matchingAlternativeRows.firstOrNull?['offerId']?.toString() ?? '',
+    );
+    final variantId = int.tryParse(
+      matchingAlternativeRows.firstOrNull?['variantId']?.toString() ?? '',
+    );
+    if (matchedOfferId == null && jobAmount > 0) {
+      final matchedOfferRows = await _sqliteService.queryCustom(
+        'ussdCodes',
+        'amount = ?',
+        [jobAmount],
+        limit: 1,
+      );
+      matchedOfferId =
+          int.tryParse(matchedOfferRows.firstOrNull?['id']?.toString() ?? '');
+    }
+    if (matchedOfferId != null) {
+      if (!await _isOfferWindowOpen(
+        offerId: matchedOfferId,
+        variantId: variantId,
+      )) {
+        return;
+      }
+    }
 
     final executionStartedAt = DateTime.now().millisecondsSinceEpoch;
     final claimed = await _sqliteService.updateAlternativeJob(

@@ -462,7 +462,8 @@ class FileService {
         'alternativeUssdCode': variant['alternativeUssdCode'],
         'runAltOn': variant['runAltOn'],
         'altIsAdvanced': variant['altIsAdvanced'],
-        'altDelayMinutes': variant['altDelayMinutes'],
+        'altDelaySeconds': variant['altDelaySeconds'] ??
+            ((int.tryParse(variant['altDelayMinutes']?.toString() ?? '') ?? 0) * 60),
       });
     }
 

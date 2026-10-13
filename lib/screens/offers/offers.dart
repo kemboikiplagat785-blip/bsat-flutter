@@ -192,7 +192,7 @@ class _OffersPageState extends State<OffersPage> {
           v.alternativeUssdCode as alternativeUssdCode,
           v.runAltOn as runAltOn,
           v.altIsAdvanced as altIsAdvanced,
-          v.altDelayMinutes as altDelayMinutes,
+          v.altDelaySeconds as altDelaySeconds,
           u.amount as amount,
           u.fromSim as fromSim,
           u.dialSim as dialSim,

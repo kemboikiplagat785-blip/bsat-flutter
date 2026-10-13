@@ -32,6 +32,7 @@ class OffersTransferService {
     'runAltOn',
     'altIsAdvanced',
     'altDelayMinutes',
+    'altDelaySeconds',
   ];
 
   Future<Map<String, dynamic>> requestOffersFromDevice(
@@ -271,8 +272,18 @@ class OffersTransferService {
         continue;
       }
 
-      if (key == 'altIsAdvanced' || key == 'altDelayMinutes') {
-        value = int.tryParse(value.toString()) ?? 0;
+      if (key == 'altIsAdvanced' ||
+          key == 'altDelayMinutes' ||
+          key == 'altDelaySeconds') {
+        final parsedValue = int.tryParse(value.toString());
+        if (parsedValue == null) {
+          return {};
+        }
+        value = parsedValue;
+        if ((key == 'altDelayMinutes' || key == 'altDelaySeconds') &&
+            (value as int) < 0) {
+          return {};
+        }
       }
 
       cleaned[key] = value;
@@ -283,6 +294,9 @@ class OffersTransferService {
     }
 
     cleaned['altIsAdvanced'] ??= 0;
+    cleaned['altDelaySeconds'] ??=
+        (cleaned['altDelayMinutes'] as int? ?? 0) * 60;
+    cleaned.remove('altDelayMinutes');
     return cleaned;
   }
 
@@ -338,7 +352,7 @@ class OffersTransferService {
     );
     await _sqliteService.addColumnIfNotExists(
       'ussdCodeVariants',
-      'altDelayMinutes',
+      'altDelaySeconds',
       'INTEGER',
       defaultValue: 0,
     );

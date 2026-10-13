@@ -20,7 +20,7 @@ class SQLiteService {
     final path = join(databasesPath, 'bsat_app.db');
     final db = await openDatabase(
       path,
-      version: 18,
+      version: 20,
       onCreate: onCreate,
       onUpgrade: onUpgrade,
       singleInstance: true,
@@ -36,6 +36,72 @@ class SQLiteService {
   }
 
   Future<void> _ensureCriticalSchema(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT,
+        taskName TEXT,
+        taskAmount INTEGER,
+        dialSim INTEGER,
+        duration INTEGER,
+        startDate INTEGER,
+        timeOfDay TEXT,
+        nextTaskDate INTEGER,
+        offer TEXT,
+        offerId INTEGER,
+        offerVariantId INTEGER,
+        amount INTEGER,
+        number INTEGER,
+        deleteAfterRunning INTEGER
+      )
+    ''');
+    final taskColumns = await db.rawQuery('PRAGMA table_info(tasks)');
+    final taskColumnNames = taskColumns
+        .map((column) => column['name']?.toString())
+        .whereType<String>()
+        .toSet();
+    for (final column in const ['offerId', 'offerVariantId']) {
+      if (!taskColumnNames.contains(column)) {
+        await db.execute('ALTER TABLE tasks ADD COLUMN $column INTEGER');
+      }
+    }
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS ussdCodeVariants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ussdCodeId INTEGER,
+        code TEXT,
+        startTime TEXT,
+        endTime TEXT,
+        alternativeUssdCode TEXT,
+        runAltOn TEXT,
+        altIsAdvanced INTEGER DEFAULT 0,
+        altDelayMinutes INTEGER DEFAULT 0,
+        altDelaySeconds INTEGER
+      )
+    ''');
+    final variantColumns = await db.rawQuery(
+      'PRAGMA table_info(ussdCodeVariants)',
+    );
+    final variantColumnNames = variantColumns
+        .map((column) => column['name']?.toString())
+        .whereType<String>()
+        .toSet();
+    if (!variantColumnNames.contains('altDelayMinutes')) {
+      await db.execute(
+        'ALTER TABLE ussdCodeVariants ADD COLUMN altDelayMinutes INTEGER DEFAULT 0',
+      );
+    }
+    if (!variantColumnNames.contains('altDelaySeconds')) {
+      await db.execute(
+        'ALTER TABLE ussdCodeVariants ADD COLUMN altDelaySeconds INTEGER',
+      );
+    }
+    // NULL marks a legacy row. Once populated, it is never converted again.
+    await db.execute('''
+      UPDATE ussdCodeVariants
+      SET altDelaySeconds = COALESCE(altDelayMinutes, 0) * 60
+      WHERE altDelaySeconds IS NULL
+    ''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS forwardingConfirmations (
         forwardingJobId TEXT PRIMARY KEY,
@@ -180,7 +246,8 @@ class SQLiteService {
           alternativeUssdCode TEXT,
           runAltOn TEXT,
           altIsAdvanced INTEGER DEFAULT 0,
-          altDelayMinutes INTEGER DEFAULT 0
+          altDelayMinutes INTEGER DEFAULT 0,
+          altDelaySeconds INTEGER
         )
       ''');
     } catch (_) {}
@@ -435,7 +502,8 @@ class SQLiteService {
         alternativeUssdCode TEXT,
         runAltOn TEXT,
         altIsAdvanced INTEGER DEFAULT 0,
-        altDelayMinutes INTEGER DEFAULT 0
+        altDelayMinutes INTEGER DEFAULT 0,
+        altDelaySeconds INTEGER
       )
     ''');
 
@@ -451,6 +519,8 @@ class SQLiteService {
         timeOfDay TEXT,
         nextTaskDate INTEGER,
         offer TEXT,
+        offerId INTEGER,
+        offerVariantId INTEGER,
         amount INTEGER,
         number INTEGER,
         deleteAfterRunning INTEGER
@@ -793,6 +863,12 @@ class SQLiteService {
     try {
       await db.execute(
         'ALTER TABLE ussdCodeVariants ADD COLUMN altDelayMinutes INTEGER DEFAULT 0',
+      );
+    } catch (_) {}
+
+    try {
+      await db.execute(
+        'ALTER TABLE ussdCodeVariants ADD COLUMN altDelaySeconds INTEGER',
       );
     } catch (_) {}
 

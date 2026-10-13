@@ -14,6 +14,7 @@ import '../../models/code_signature.dart';
 import '../../services/phone_service.dart';
 import '../../services/sqlite_service.dart';
 import '../../utils/constants.dart';
+import '../../utils/forwarding_mode.dart';
 
 class EditOfferPage extends StatefulWidget {
   final int ruleId;
@@ -181,7 +182,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     String runAltOn = '',
     bool hasAlternativeCode = false,
     bool altIsAdvanced = false,
-    String altDelayMinutes = '0',
+    String altDelaySeconds = '0',
   }) {
     final entry = <String, dynamic>{
       'code': TextEditingController(text: code),
@@ -189,7 +190,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
       'end': TextEditingController(text: end),
       'alternativeUssdCode': TextEditingController(text: alternativeUssdCode),
       'runAltOn': TextEditingController(text: runAltOn),
-      'altDelayMinutes': TextEditingController(text: altDelayMinutes),
+      'altDelaySeconds': TextEditingController(text: altDelaySeconds),
       'hasAlternativeCode': hasAlternativeCode,
       'altIsAdvanced': altIsAdvanced,
     };
@@ -200,7 +201,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
       'end',
       'alternativeUssdCode',
       'runAltOn',
-      'altDelayMinutes',
+      'altDelaySeconds',
     ]) {
       (entry[key] as TextEditingController).addListener(() {
         if (mounted) {
@@ -245,7 +246,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     _entryController(entry, 'end').dispose();
     _entryController(entry, 'alternativeUssdCode').dispose();
     _entryController(entry, 'runAltOn').dispose();
-    _entryController(entry, 'altDelayMinutes').dispose();
+    _entryController(entry, 'altDelaySeconds').dispose();
     setState(() {
       _codeEntries.removeAt(index);
       _hasChanges = true;
@@ -259,7 +260,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
       _entryController(entry, 'end').dispose();
       _entryController(entry, 'alternativeUssdCode').dispose();
       _entryController(entry, 'runAltOn').dispose();
-      _entryController(entry, 'altDelayMinutes').dispose();
+      _entryController(entry, 'altDelaySeconds').dispose();
     }
     _codeEntries.clear();
   }
@@ -341,13 +342,14 @@ class _EditOfferPageState extends State<EditOfferPage> {
           return false;
         }
 
-        final delayText = _entryController(entry, 'altDelayMinutes').text;
-        final delayValue = int.tryParse(delayText);
-        if (delayText.isNotEmpty && (delayValue == null || delayValue < 0)) {
+        final delayText = _entryController(entry, 'altDelaySeconds').text;
+        try {
+          parseAlternativeDelaySeconds(delayText);
+        } on FormatException {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
-                'Alternative delay must be a whole number of minutes (0 or more).',
+                'Alternative delay must be a whole number of seconds (0 or more).',
               ),
             ),
           );
@@ -579,8 +581,10 @@ class _EditOfferPageState extends State<EditOfferPage> {
             _entryController(entry, 'alternativeUssdCode').text,
         'runAltOn': _entryController(entry, 'runAltOn').text,
         'altIsAdvanced': entry['altIsAdvanced'] == true,
-        'altDelayMinutes':
-            int.tryParse(_entryController(entry, 'altDelayMinutes').text) ?? 0,
+        'altDelaySeconds':
+            parseAlternativeDelaySeconds(
+              _entryController(entry, 'altDelaySeconds').text,
+            ),
       });
     }
 
@@ -605,8 +609,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
                     nv['altIsAdvanced'] == true)
                 ? 1
                 : 0,
-            'altDelayMinutes':
-                nv['hasAlternativeCode'] == true ? nv['altDelayMinutes'] : 0,
+            'altDelaySeconds':
+                nv['hasAlternativeCode'] == true ? nv['altDelaySeconds'] : 0,
           },
           'ussdCodeVariants',
         );
@@ -685,8 +689,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
                         nv['altIsAdvanced'] == true)
                     ? 1
                     : 0,
-                'altDelayMinutes': nv['hasAlternativeCode'] == true
-                    ? nv['altDelayMinutes']
+                'altDelaySeconds': nv['hasAlternativeCode'] == true
+                    ? nv['altDelaySeconds']
                     : 0,
               },
               'ussdCodeVariants',
@@ -738,7 +742,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
               : false,
           hasAlternativeCode:
               (thisData['alternativeUssdCode'] ?? '').toString().isNotEmpty,
-          altDelayMinutes: (thisData['altDelayMinutes'] ?? 0).toString(),
+          altDelaySeconds: (thisData['altDelaySeconds'] ??
+                  legacyAlternativeDelayMinutesToSeconds(
+                    thisData['altDelayMinutes'],
+                  ))
+              .toString(),
         ),
       );
     } else {
@@ -754,7 +762,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 (v['alternativeUssdCode'] ?? '').toString().isNotEmpty,
             altIsAdvanced:
                 (v['altIsAdvanced'] != null) ? v['altIsAdvanced'] == 1 : false,
-            altDelayMinutes: (v['altDelayMinutes'] ?? 0).toString(),
+            altDelaySeconds: (v['altDelaySeconds'] ??
+                    legacyAlternativeDelayMinutesToSeconds(
+                      v['altDelayMinutes'],
+                    ))
+                .toString(),
           ),
         );
         if ((v['code'] ?? '').toString().isNotEmpty) {
@@ -1053,9 +1065,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                       _setEntryAltAdvanced(entry, val),
                                 ),
                                 _buildInputTile(
-                                  label: 'Run Alternative After (minutes)',
+                                  label: 'Alternative USSD Delay (seconds)',
                                   controller: _entryController(
-                                      entry, 'altDelayMinutes'),
+                                      entry, 'altDelaySeconds'),
                                   hint: '0 = run immediately on failure',
                                   keyboardType: TextInputType.number,
                                   icon: CupertinoIcons.timer,

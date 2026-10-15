@@ -115,6 +115,34 @@ class SQLiteService {
       )
     ''');
     await db.execute('''
+      CREATE TABLE IF NOT EXISTS incomingReceiptClaims (
+        receiptCode TEXT PRIMARY KEY,
+        localTransactionId INTEGER,
+        state TEXT NOT NULL,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS forwardedSmsJobs (
+        forwardingJobId TEXT PRIMARY KEY,
+        sourceTransactionId TEXT,
+        localTransactionId INTEGER,
+        state TEXT NOT NULL,
+        createdAt INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS forwardingSubmissionClaims (
+        forwardingJobId TEXT PRIMARY KEY,
+        leaseExpiresAt INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_transactions_transaction_id '
+      'ON transactions(transactionId)',
+    );
+    await db.execute('''
       CREATE TABLE IF NOT EXISTS alternativeJobs (
         forwardingJobId TEXT PRIMARY KEY,
         transactionId TEXT NOT NULL,
@@ -1247,6 +1275,295 @@ class SQLiteService {
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
     return insertedId != -1;
+  }
+
+  Future<Map<String, dynamic>> claimIncomingMpesaReceipt(
+    String receiptCode,
+  ) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return db.transaction((txn) async {
+      final transactions = await txn.query(
+        'transactions',
+        columns: ['id'],
+        where: 'transactionId = ?',
+        whereArgs: [receiptCode],
+        orderBy: 'id ASC',
+        limit: 1,
+      );
+      if (transactions.isNotEmpty) {
+        final transactionId =
+            int.tryParse(transactions.first['id']?.toString() ?? '');
+        await txn.insert(
+          'incomingReceiptClaims',
+          {
+            'receiptCode': receiptCode,
+            'localTransactionId': transactionId,
+            'state': 'completed',
+            'updatedAt': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        return {
+          'claimed': false,
+          'localTransactionId': transactionId,
+          'state': 'completed',
+        };
+      }
+
+      final claims = await txn.query(
+        'incomingReceiptClaims',
+        where: 'receiptCode = ?',
+        whereArgs: [receiptCode],
+        limit: 1,
+      );
+      if (claims.isNotEmpty) {
+        return {
+          'claimed': false,
+          'localTransactionId': int.tryParse(
+            claims.first['localTransactionId']?.toString() ?? '',
+          ),
+          'state': claims.first['state'],
+        };
+      }
+
+      final insertedId = await txn.insert(
+        'incomingReceiptClaims',
+        {
+          'receiptCode': receiptCode,
+          'state': 'processing',
+          'updatedAt': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      return {
+        'claimed': insertedId != -1,
+        'localTransactionId': null,
+        'state': 'processing',
+      };
+    });
+  }
+
+  Future<void> completeIncomingMpesaReceipt(
+    String receiptCode, {
+    int? localTransactionId,
+  }) async {
+    final db = await database;
+    final updated = await db.update(
+      'incomingReceiptClaims',
+      {
+        'localTransactionId': localTransactionId,
+        'state': 'completed',
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'receiptCode = ?',
+      whereArgs: [receiptCode],
+    );
+    if (updated != 1) {
+      throw StateError('No receipt claim exists for $receiptCode');
+    }
+  }
+
+  Future<Map<String, dynamic>> ensureForwardingIdentity({
+    required int transactionId,
+    required String candidateForwardingJobId,
+    required String candidateRecipientDeviceName,
+    required String candidateSenderDeviceName,
+  }) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        columns: [
+          'id',
+          'forwardingJobId',
+          'forwardingRecipientDeviceName',
+          'forwardingSenderDeviceName',
+        ],
+        where: 'id = ?',
+        whereArgs: [transactionId],
+        limit: 1,
+      );
+      if (rows.isEmpty) {
+        throw StateError('Transaction $transactionId does not exist');
+      }
+      final current = rows.first;
+      final existingJobId = current['forwardingJobId']?.toString() ?? '';
+      final existingRecipient =
+          current['forwardingRecipientDeviceName']?.toString() ?? '';
+      final existingSender =
+          current['forwardingSenderDeviceName']?.toString() ?? '';
+      final values = <String, dynamic>{
+        if (existingJobId.isEmpty) 'forwardingJobId': candidateForwardingJobId,
+        if (existingRecipient.isEmpty)
+          'forwardingRecipientDeviceName': candidateRecipientDeviceName,
+        if (existingSender.isEmpty)
+          'forwardingSenderDeviceName': candidateSenderDeviceName,
+      };
+      if (values.isNotEmpty) {
+        await txn.update(
+          'transactions',
+          values,
+          where: 'id = ?',
+          whereArgs: [transactionId],
+        );
+      }
+      final updatedRows = await txn.query(
+        'transactions',
+        columns: [
+          'forwardingJobId',
+          'forwardingRecipientDeviceName',
+          'forwardingSenderDeviceName',
+        ],
+        where: 'id = ?',
+        whereArgs: [transactionId],
+        limit: 1,
+      );
+      return updatedRows.single;
+    });
+  }
+
+  Future<Map<String, dynamic>> claimForwardedSmsJob({
+    required String forwardingJobId,
+    String? sourceTransactionId,
+  }) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return db.transaction((txn) async {
+      final existingTransactions = await txn.query(
+        'transactions',
+        columns: ['id'],
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+        orderBy: 'id ASC',
+        limit: 1,
+      );
+      final existingTransactionId = existingTransactions.isEmpty
+          ? null
+          : int.tryParse(existingTransactions.first['id']?.toString() ?? '');
+      if (existingTransactionId != null) {
+        await txn.insert(
+          'forwardedSmsJobs',
+          {
+            'forwardingJobId': forwardingJobId,
+            'sourceTransactionId': sourceTransactionId,
+            'localTransactionId': existingTransactionId,
+            'state': 'completed',
+            'createdAt': now,
+            'updatedAt': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        return {
+          'claimed': false,
+          'localTransactionId': existingTransactionId,
+          'state': 'completed',
+        };
+      }
+
+      final existingClaims = await txn.query(
+        'forwardedSmsJobs',
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+        limit: 1,
+      );
+      if (existingClaims.isNotEmpty) {
+        return {
+          'claimed': false,
+          'localTransactionId': int.tryParse(
+            existingClaims.first['localTransactionId']?.toString() ?? '',
+          ),
+          'state': existingClaims.first['state'],
+        };
+      }
+
+      final insertedId = await txn.insert(
+        'forwardedSmsJobs',
+        {
+          'forwardingJobId': forwardingJobId,
+          'sourceTransactionId': sourceTransactionId,
+          'state': 'executing',
+          'createdAt': now,
+          'updatedAt': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      return {
+        'claimed': insertedId != -1,
+        'localTransactionId': null,
+        'state': 'executing',
+      };
+    });
+  }
+
+  Future<void> completeForwardedSmsJob(
+    String forwardingJobId, {
+    int? localTransactionId,
+  }) async {
+    final db = await database;
+    final updated = await db.update(
+      'forwardedSmsJobs',
+      {
+        'localTransactionId': localTransactionId,
+        'state': 'completed',
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'forwardingJobId = ?',
+      whereArgs: [forwardingJobId],
+    );
+    if (updated != 1) {
+      throw StateError('No forwarding job claim exists for $forwardingJobId');
+    }
+  }
+
+  Future<bool> claimForwardingSubmission(
+    String forwardingJobId, {
+    required int now,
+    required int leaseExpiresAt,
+  }) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final existing = await txn.query(
+        'forwardingSubmissionClaims',
+        columns: ['leaseExpiresAt'],
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+        limit: 1,
+      );
+      if (existing.isNotEmpty) {
+        final expiresAt = int.tryParse(
+              existing.first['leaseExpiresAt']?.toString() ?? '',
+            ) ??
+            0;
+        if (expiresAt > now) return false;
+        return await txn.update(
+              'forwardingSubmissionClaims',
+              {'leaseExpiresAt': leaseExpiresAt},
+              where: 'forwardingJobId = ? AND leaseExpiresAt <= ?',
+              whereArgs: [forwardingJobId, now],
+            ) ==
+            1;
+      }
+
+      final insertedId = await txn.insert(
+        'forwardingSubmissionClaims',
+        {
+          'forwardingJobId': forwardingJobId,
+          'leaseExpiresAt': leaseExpiresAt,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      return insertedId != -1;
+    });
+  }
+
+  Future<void> releaseForwardingSubmission(String forwardingJobId) async {
+    final db = await database;
+    await db.delete(
+      'forwardingSubmissionClaims',
+      where: 'forwardingJobId = ?',
+      whereArgs: [forwardingJobId],
+    );
   }
 
   Future<int> deleteAlternativeJob(

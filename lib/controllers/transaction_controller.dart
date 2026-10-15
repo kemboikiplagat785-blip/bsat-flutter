@@ -55,7 +55,6 @@ class TransactionController {
   static final Set<String> _activeTopUpTransactionCodes = <String>{};
   static final Set<int> _activePausedOfferResumes = <int>{};
   static final Set<int> _activePausedForwardingResumes = <int>{};
-  static final Set<String> _activeForwardedSmsJobs = <String>{};
   static const String _pausedOfferResumeClaimPrefix =
       '__BSAT_PAUSED_OFFER_RESUME__:';
   static const String _pausedOfferLocalExecutionClaim =
@@ -64,6 +63,8 @@ class TransactionController {
       'Paired device forwarding is configured but currently on pause. '
       'Will retry after initiation play';
   static const Duration _pausedOfferResumeClaimLease = Duration(seconds: 60);
+  static const Duration _forwardingSubmissionClaimLease =
+      Duration(minutes: 2);
   final PhoneService _phoneService = PhoneService();
   final SQLiteService _sqliteService = SQLiteService();
   final _paymentOps = PaymentOps();
@@ -590,51 +591,37 @@ class TransactionController {
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
     int? parentTransactionId,
+    String? forwardingSourceTransactionId,
+    bool forwardingJobClaimed = false,
   }) async {
     final jobId = forwardingJobId?.trim() ?? '';
     if (jobId.isNotEmpty) {
-      if (!_activeForwardedSmsJobs.add(jobId)) {
-        final existing = await _sqliteService.queryCustom(
-          'transactions',
-          'forwardingJobId = ?',
-          [jobId],
-          columns: ['id'],
-          limit: 1,
+      Map<String, dynamic>? claim;
+      if (!forwardingJobClaimed) {
+        claim = await _sqliteService.claimForwardedSmsJob(
+          forwardingJobId: jobId,
+          sourceTransactionId: forwardingSourceTransactionId,
         );
-        return int.tryParse(existing.firstOrNull?['id']?.toString() ?? '');
-      }
-      try {
-        final existing = await _sqliteService.queryCustom(
-          'transactions',
-          'forwardingJobId = ?',
-          [jobId],
-          limit: 1,
-        );
-        if (existing.isNotEmpty) {
-          final transaction = existing.first;
-          if (transaction['status'] == TransactionStatuses.doneConfirmed) {
-            final sender =
-                transaction['forwardingSenderDeviceName']?.toString() ?? '';
-            if (sender.isNotEmpty) {
-              await sendForwardingConfirmation(
-                forwardingJobId: jobId,
-                recipientDeviceName: sender,
-                transactionId: transaction['id']?.toString(),
-              );
-            }
-          }
-          return int.tryParse(transaction['id']?.toString() ?? '');
+        if (claim['claimed'] != true) {
+          return _handleDuplicateForwardedSmsJob(
+            jobId,
+            int.tryParse(claim['localTransactionId']?.toString() ?? ''),
+          );
         }
-        return await _makeTransactionFromSmsBody(
-          smsBody,
-          address: address,
-          forwardingJobId: forwardingJobId,
-          forwardingSenderDeviceName: forwardingSenderDeviceName,
-          parentTransactionId: parentTransactionId,
-        );
-      } finally {
-        _activeForwardedSmsJobs.remove(jobId);
       }
+
+      final localTransactionId = await _makeTransactionFromSmsBody(
+        smsBody,
+        address: address,
+        forwardingJobId: forwardingJobId,
+        forwardingSenderDeviceName: forwardingSenderDeviceName,
+        parentTransactionId: parentTransactionId,
+      );
+      await _sqliteService.completeForwardedSmsJob(
+        jobId,
+        localTransactionId: localTransactionId,
+      );
+      return localTransactionId;
     }
     return _makeTransactionFromSmsBody(
       smsBody,
@@ -643,6 +630,61 @@ class TransactionController {
       forwardingSenderDeviceName: forwardingSenderDeviceName,
       parentTransactionId: parentTransactionId,
     );
+  }
+
+  Future<Map<String, dynamic>> claimForwardedSmsJob({
+    required String forwardingJobId,
+    String? sourceTransactionId,
+  }) {
+    return _sqliteService.claimForwardedSmsJob(
+      forwardingJobId: forwardingJobId,
+      sourceTransactionId: sourceTransactionId,
+    );
+  }
+
+  Future<int?> acknowledgeDuplicateForwardedSmsJob(
+    String forwardingJobId, {
+    int? localTransactionId,
+  }) {
+    return _handleDuplicateForwardedSmsJob(
+      forwardingJobId,
+      localTransactionId,
+    );
+  }
+
+  Future<int?> _handleDuplicateForwardedSmsJob(
+    String forwardingJobId,
+    int? localTransactionId,
+  ) async {
+    var existing = await _sqliteService.queryCustom(
+      'transactions',
+      'forwardingJobId = ?',
+      [forwardingJobId],
+      limit: 1,
+    );
+    if (existing.isEmpty && localTransactionId != null) {
+      existing = await _sqliteService.queryCustom(
+        'transactions',
+        'id = ?',
+        [localTransactionId],
+        limit: 1,
+      );
+    }
+    if (existing.isEmpty) return localTransactionId;
+
+    final transaction = existing.first;
+    if (transaction['status'] == TransactionStatuses.doneConfirmed) {
+      final sender =
+          transaction['forwardingSenderDeviceName']?.toString() ?? '';
+      if (sender.isNotEmpty) {
+        await sendForwardingConfirmation(
+          forwardingJobId: forwardingJobId,
+          recipientDeviceName: sender,
+          transactionId: transaction['id']?.toString(),
+        );
+      }
+    }
+    return int.tryParse(transaction['id']?.toString() ?? '');
   }
 
   Future<int?> _makeTransactionFromSmsBody(
@@ -667,6 +709,46 @@ class TransactionController {
   }
 
   Future<int?> makeTransaction(
+    TransactionMessage smsMessage, {
+    String? forwardingJobId,
+    String? forwardingSenderDeviceName,
+    int? parentTransactionId,
+  }) async {
+    final receiptCode =
+        getMpesaCode(smsMessage.body ?? '').trim().toUpperCase();
+    final isIncomingMpesaReceipt = forwardingJobId == null &&
+        parentTransactionId == null &&
+        (smsMessage.address?.trim().toUpperCase() == 'MPESA') &&
+        receiptCode.isNotEmpty;
+
+    if (!isIncomingMpesaReceipt) {
+      return _makeTransaction(
+        smsMessage,
+        forwardingJobId: forwardingJobId,
+        forwardingSenderDeviceName: forwardingSenderDeviceName,
+        parentTransactionId: parentTransactionId,
+      );
+    }
+
+    final claim = await _sqliteService.claimIncomingMpesaReceipt(receiptCode);
+    if (claim['claimed'] != true) {
+      return int.tryParse(claim['localTransactionId']?.toString() ?? '');
+    }
+
+    final localTransactionId = await _makeTransaction(
+      smsMessage,
+      forwardingJobId: forwardingJobId,
+      forwardingSenderDeviceName: forwardingSenderDeviceName,
+      parentTransactionId: parentTransactionId,
+    );
+    await _sqliteService.completeIncomingMpesaReceipt(
+      receiptCode,
+      localTransactionId: localTransactionId,
+    );
+    return localTransactionId;
+  }
+
+  Future<int?> _makeTransaction(
     TransactionMessage smsMessage, {
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
@@ -740,6 +822,7 @@ class TransactionController {
               forwardingResult.state ==
                   ForwardingAttemptState.configuredButPaused) {
             return _persistUnavailableForwardingTransaction(
+              transactionId: forwardingResult.transactionId,
               initialMessage: smsMessage.body ?? '',
               transactionCode: mpesaCode,
               number: number,
@@ -1070,6 +1153,7 @@ class TransactionController {
               compoundForwardingResult.state ==
                   ForwardingAttemptState.configuredButPaused) {
             return _persistUnavailableForwardingTransaction(
+              transactionId: compoundForwardingResult.transactionId,
               initialMessage: compoundMessage,
               transactionCode: mpesaCode,
               number: number,
@@ -1143,6 +1227,7 @@ class TransactionController {
             ForwardingAttemptState.configuredButUnavailable ||
         forwardingResult.state == ForwardingAttemptState.configuredButPaused) {
       return _persistUnavailableForwardingTransaction(
+        transactionId: forwardingResult.transactionId,
         initialMessage: smsMessage.body ?? '',
         transactionCode: mpesaCode,
         number: number,
@@ -1260,6 +1345,7 @@ class TransactionController {
             compoundedForwarding.state ==
                 ForwardingAttemptState.configuredButPaused) {
           return _persistUnavailableForwardingTransaction(
+            transactionId: compoundedForwarding.transactionId,
             initialMessage: compoundedSmsBody,
             transactionCode: mpesaCode,
             number: number,
@@ -2031,25 +2117,50 @@ class TransactionController {
               targetOfferId: unavailableTarget?.id,
             );
           } else {
+            final candidateRecipient = recipientDeviceName;
+            final candidateJobId = forwardingJobId;
+            if (candidateRecipient.isEmpty || candidateJobId.isEmpty) {
+              throw StateError(
+                'Forwarding recipient and job ID are required for retry',
+              );
+            }
+            final forwardingIdentity =
+                await _sqliteService.ensureForwardingIdentity(
+              transactionId: transactionId,
+              candidateForwardingJobId: candidateJobId,
+              candidateRecipientDeviceName: candidateRecipient,
+              candidateSenderDeviceName: senderDeviceName,
+            );
+            forwardingJobId =
+                forwardingIdentity['forwardingJobId']?.toString();
+            recipientDeviceName =
+                forwardingIdentity['forwardingRecipientDeviceName']
+                    ?.toString();
+            for (final device in forwardingDevices) {
+              if (device['device_name']?.toString() == recipientDeviceName) {
+                selectedDevice = device;
+                break;
+              }
+            }
+            final stableJobId = forwardingJobId;
+            final stableRecipient = recipientDeviceName;
+            if (stableJobId == null ||
+                stableJobId.isEmpty ||
+                stableRecipient == null ||
+                stableRecipient.isEmpty) {
+              throw StateError(
+                'Persisted forwarding identity is incomplete',
+              );
+            }
             final Map<String, dynamic> updateData = {
-              'forwardingJobId': forwardingJobId,
+              'forwardingJobId': stableJobId,
               'status': TransactionStatuses.forwardedPending,
               'canRetry': 1,
               'ussdReply': 'Forwarding to device',
+              'forwardingRecipientDeviceName': stableRecipient,
+              'forwardingSenderDeviceName':
+                  forwardingIdentity['forwardingSenderDeviceName'],
             };
-
-            // Never overwrite an existing recipient during retry.
-            if (savedRecipientDeviceName == null ||
-                savedRecipientDeviceName.isEmpty) {
-              updateData['forwardingRecipientDeviceName'] = recipientDeviceName;
-            }
-
-            if (existingTransaction?['forwardingSenderDeviceName']
-                    ?.toString()
-                    .isEmpty ??
-                true) {
-              updateData['forwardingSenderDeviceName'] = senderDeviceName;
-            }
 
             await _sqliteService.updateStuff(
               updateData,
@@ -2097,25 +2208,54 @@ class TransactionController {
             'sender=$senderDeviceName, '
             'recipient=$recipientDeviceName',
           );
-          final result = await BackendService().post(
-            '/api/fcm/send-secure',
-            body: {
-              'title': "BSAT Online Forwarding",
-              'body': smsMessageBody,
-              'senderDeviceName': senderDeviceName,
-              'recipientDeviceName': recipientDeviceName,
-              'data': {
-                'type': 'forwarded_sms',
-                'body': smsMessageBody,
-                'title': "Forwarded Message",
-                'messageId': mpesaCode,
-                'transactionId': transactionId,
-                'forwardingJobId': forwardingJobId,
-                'forwardingStatus': ForwardingJobStatuses.pending,
-                'senderDeviceName': senderDeviceName,
-              }
-            },
+          final stableForwardingJobId = forwardingJobId;
+          if (stableForwardingJobId == null ||
+              stableForwardingJobId.isEmpty) {
+            throw StateError(
+              'Forwarding job ID must be persisted before submission',
+            );
+          }
+          final submissionNow = DateTime.now().millisecondsSinceEpoch;
+          final submissionClaimed =
+              await _sqliteService.claimForwardingSubmission(
+            stableForwardingJobId,
+            now: submissionNow,
+            leaseExpiresAt: submissionNow +
+                _forwardingSubmissionClaimLease.inMilliseconds,
           );
+          if (!submissionClaimed) {
+            return ForwardingAttemptResult(
+              ForwardingAttemptState.configuredButUnavailable,
+              transactionId: transactionId,
+            );
+          }
+
+          late final Map<String, dynamic> result;
+          try {
+            result = await BackendService().post(
+              '/api/fcm/send-secure',
+              body: {
+                'title': "BSAT Online Forwarding",
+                'body': smsMessageBody,
+                'senderDeviceName': senderDeviceName,
+                'recipientDeviceName': recipientDeviceName,
+                'data': {
+                  'type': 'forwarded_sms',
+                  'body': smsMessageBody,
+                  'title': "Forwarded Message",
+                  'messageId': mpesaCode,
+                  'transactionId': transactionId,
+                  'forwardingJobId': stableForwardingJobId,
+                  'forwardingStatus': ForwardingJobStatuses.pending,
+                  'senderDeviceName': senderDeviceName,
+                }
+              },
+            );
+          } finally {
+            await _sqliteService.releaseForwardingSubmission(
+              stableForwardingJobId,
+            );
+          }
 
           final String messageId = result['messageId'] ?? "";
 
@@ -2138,8 +2278,9 @@ class TransactionController {
               'transactions',
             );
 
-            return const ForwardingAttemptResult(
+            return ForwardingAttemptResult(
               ForwardingAttemptState.configuredButUnavailable,
+              transactionId: transactionId,
             );
           }
 

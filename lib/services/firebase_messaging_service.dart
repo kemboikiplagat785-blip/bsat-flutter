@@ -256,10 +256,29 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         'sender=${forwardingSenderDeviceName ?? ''}, '
         'recipient=${message.data['recipientDeviceName'] ?? ''}',
       );
+      final transactionController = TransactionController();
+      Map<String, dynamic>? forwardingJobClaim;
+      if (body.isNotEmpty &&
+          forwardingJobId != null &&
+          forwardingJobId.trim().isNotEmpty) {
+        forwardingJobClaim = await transactionController.claimForwardedSmsJob(
+          forwardingJobId: forwardingJobId.trim(),
+          sourceTransactionId: message.data['transactionId']?.toString(),
+        );
+        if (forwardingJobClaim['claimed'] != true) {
+          await transactionController.acknowledgeDuplicateForwardedSmsJob(
+            forwardingJobId.trim(),
+            localTransactionId: int.tryParse(
+              forwardingJobClaim['localTransactionId']?.toString() ?? '',
+            ),
+          );
+          return;
+        }
+      }
       if (!await subscribedToOnline("Online")) {
         // If not subscribed to Online,
         if (!(await PaymentOps().deductSingleToken())) {
-          await TransactionController().dontProcess(
+          final transactionId = await transactionController.dontProcess(
             body,
             "00",
             0,
@@ -270,14 +289,23 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
                 "You received a forwarded message but it seems you are not subscribed to the Online tier. Please subscribe to Online to process forwarded messages.",
             status: TransactionStatuses.paused,
           );
+          if (forwardingJobClaim != null && forwardingJobId != null) {
+            await SQLiteService().completeForwardedSmsJob(
+              forwardingJobId.trim(),
+              localTransactionId: transactionId,
+            );
+          }
           return;
         }
       }
       if (body.isNotEmpty) {
-        await TransactionController().makeTransactionGivenSmsBody(
+        await transactionController.makeTransactionGivenSmsBody(
           body,
           forwardingJobId: forwardingJobId,
           forwardingSenderDeviceName: forwardingSenderDeviceName,
+          forwardingSourceTransactionId:
+              message.data['transactionId']?.toString(),
+          forwardingJobClaimed: forwardingJobClaim != null,
         );
       }
       break;

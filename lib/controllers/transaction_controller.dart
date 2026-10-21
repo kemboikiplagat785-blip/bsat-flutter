@@ -24,6 +24,7 @@ import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
 import '../utils/forwarding_job_id.dart';
 import '../utils/top_up.dart';
+import '../utils/transaction_execution_safety.dart';
 
 // import '../services/skills.dart';
 import '../services/skills.dart';
@@ -63,8 +64,7 @@ class TransactionController {
       'Paired device forwarding is configured but currently on pause. '
       'Will retry after initiation play';
   static const Duration _pausedOfferResumeClaimLease = Duration(seconds: 60);
-  static const Duration _forwardingSubmissionClaimLease =
-      Duration(minutes: 2);
+  static const Duration _forwardingSubmissionClaimLease = Duration(minutes: 2);
   final PhoneService _phoneService = PhoneService();
   final SQLiteService _sqliteService = SQLiteService();
   final _paymentOps = PaymentOps();
@@ -593,6 +593,7 @@ class TransactionController {
     int? parentTransactionId,
     String? forwardingSourceTransactionId,
     bool forwardingJobClaimed = false,
+    int? retryTransactionId,
   }) async {
     final jobId = forwardingJobId?.trim() ?? '';
     if (jobId.isNotEmpty) {
@@ -616,6 +617,7 @@ class TransactionController {
         forwardingJobId: forwardingJobId,
         forwardingSenderDeviceName: forwardingSenderDeviceName,
         parentTransactionId: parentTransactionId,
+        retryTransactionId: retryTransactionId,
       );
       await _sqliteService.completeForwardedSmsJob(
         jobId,
@@ -629,6 +631,7 @@ class TransactionController {
       forwardingJobId: forwardingJobId,
       forwardingSenderDeviceName: forwardingSenderDeviceName,
       parentTransactionId: parentTransactionId,
+      retryTransactionId: retryTransactionId,
     );
   }
 
@@ -693,6 +696,7 @@ class TransactionController {
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
     int? parentTransactionId,
+    int? retryTransactionId,
   }) async {
     TransactionMessage fakeMessage = TransactionMessage(
       body: smsBody,
@@ -705,6 +709,7 @@ class TransactionController {
       forwardingJobId: forwardingJobId,
       forwardingSenderDeviceName: forwardingSenderDeviceName,
       parentTransactionId: parentTransactionId,
+      retryTransactionId: retryTransactionId,
     );
   }
 
@@ -713,6 +718,7 @@ class TransactionController {
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
     int? parentTransactionId,
+    int? retryTransactionId,
   }) async {
     final receiptCode =
         getMpesaCode(smsMessage.body ?? '').trim().toUpperCase();
@@ -727,6 +733,7 @@ class TransactionController {
         forwardingJobId: forwardingJobId,
         forwardingSenderDeviceName: forwardingSenderDeviceName,
         parentTransactionId: parentTransactionId,
+        retryTransactionId: retryTransactionId,
       );
     }
 
@@ -740,6 +747,7 @@ class TransactionController {
       forwardingJobId: forwardingJobId,
       forwardingSenderDeviceName: forwardingSenderDeviceName,
       parentTransactionId: parentTransactionId,
+      retryTransactionId: retryTransactionId,
     );
     await _sqliteService.completeIncomingMpesaReceipt(
       receiptCode,
@@ -753,6 +761,7 @@ class TransactionController {
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
     int? parentTransactionId,
+    int? retryTransactionId,
   }) async {
     // if (DateTime.now().millisecondsSinceEpoch > 1772303182000) return;
 
@@ -1571,6 +1580,7 @@ class TransactionController {
       );
     }
 
+    var transactionExecutionStartedAt = 0;
     List requestResponse = [];
 
     if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]) {
@@ -1591,6 +1601,25 @@ class TransactionController {
         );
       }
 
+      if (retryTransactionId != null &&
+          await _sqliteService.claimTransactionRetry(retryTransactionId) != 1) {
+        debugPrint(
+          'Skipping stale midnight recovery for transaction '
+          '$retryTransactionId before dispatch.',
+        );
+        return null;
+      }
+      if (retryTransactionId != null &&
+          await _sqliteService.beginTransactionRetryDispatch(
+                retryTransactionId,
+              ) !=
+              1) {
+        await _sqliteService.releaseUndispatchedTransactionRetryClaim(
+          retryTransactionId,
+        );
+        return null;
+      }
+      transactionExecutionStartedAt = DateTime.now().millisecondsSinceEpoch;
       requestResponse = await PhoneService().makeAdvancedRequest(
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
@@ -1603,6 +1632,25 @@ class TransactionController {
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[2] = true;
       }
     } else {
+      if (retryTransactionId != null &&
+          await _sqliteService.claimTransactionRetry(retryTransactionId) != 1) {
+        debugPrint(
+          'Skipping stale midnight recovery for transaction '
+          '$retryTransactionId before dispatch.',
+        );
+        return null;
+      }
+      if (retryTransactionId != null &&
+          await _sqliteService.beginTransactionRetryDispatch(
+                retryTransactionId,
+              ) !=
+              1) {
+        await _sqliteService.releaseUndispatchedTransactionRetryClaim(
+          retryTransactionId,
+        );
+        return null;
+      }
+      transactionExecutionStartedAt = DateTime.now().millisecondsSinceEpoch;
       requestResponse = await PhoneService().makeMyRequest(
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
@@ -1611,6 +1659,25 @@ class TransactionController {
     }
 
     debugPrint("Rechecking status after USSD execution: ${requestResponse[1]}");
+
+    if (retryTransactionId != null) {
+      final recoveryReply = requestResponse.isNotEmpty
+          ? requestResponse[0]?.toString() ?? ''
+          : '';
+      await _sqliteService.finishTransactionRetryClaim(
+        retryTransactionId,
+        ambiguousOutcome: isAmbiguousTransactionOutcome(
+          status: requestResponse[1]?.toString() ?? TransactionStatuses.error,
+          reply: recoveryReply,
+        ),
+        retryableOutcome: requestResponse[1] == TransactionStatuses.error &&
+            !isAmbiguousTransactionOutcome(
+              status:
+                  requestResponse[1]?.toString() ?? TransactionStatuses.error,
+              reply: recoveryReply,
+            ),
+      );
+    }
 
     if (requestResponse[1] == TransactionStatuses.hasOkoa) {
       processReply(
@@ -1672,12 +1739,28 @@ class TransactionController {
           'firstFailedTimeStamp': firstFailedTimeStamp,
         'simSubId': ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
         'source': name,
-        'timeStamp': DateTime.now().millisecondsSinceEpoch,
+        'timeStamp': transactionExecutionStartedAt,
         'canRetry':
             ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[2] ? 1 : 0,
       },
       'transactions',
     );
+    await _retryUnresolvedSafaricomMessages();
+    final reconciledTransaction = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [transactionID],
+      columns: ['status', 'ussdReply'],
+      limit: 1,
+    );
+    if (reconciledTransaction.isNotEmpty &&
+        (reconciledTransaction.first['status'] ==
+                TransactionStatuses.successfulPending ||
+            reconciledTransaction.first['status'] ==
+                TransactionStatuses.doneConfirmed)) {
+      requestResponse[1] = reconciledTransaction.first['status'];
+      requestResponse[0] = reconciledTransaction.first['ussdReply'] ?? '';
+    }
     debugPrint(
       'FORWARDED SMS STORED: '
       'localTransactionId=$transactionID, '
@@ -2131,11 +2214,9 @@ class TransactionController {
               candidateRecipientDeviceName: candidateRecipient,
               candidateSenderDeviceName: senderDeviceName,
             );
-            forwardingJobId =
-                forwardingIdentity['forwardingJobId']?.toString();
+            forwardingJobId = forwardingIdentity['forwardingJobId']?.toString();
             recipientDeviceName =
-                forwardingIdentity['forwardingRecipientDeviceName']
-                    ?.toString();
+                forwardingIdentity['forwardingRecipientDeviceName']?.toString();
             for (final device in forwardingDevices) {
               if (device['device_name']?.toString() == recipientDeviceName) {
                 selectedDevice = device;
@@ -2162,11 +2243,9 @@ class TransactionController {
                   forwardingIdentity['forwardingSenderDeviceName'],
             };
 
-            await _sqliteService.updateStuff(
+            await _sqliteService.updateTransactionUnlessSafaricomSuccess(
+              transactionId,
               updateData,
-              'id = ?',
-              [transactionId],
-              'transactions',
             );
 
             debugPrint(
@@ -2209,8 +2288,7 @@ class TransactionController {
             'recipient=$recipientDeviceName',
           );
           final stableForwardingJobId = forwardingJobId;
-          if (stableForwardingJobId == null ||
-              stableForwardingJobId.isEmpty) {
+          if (stableForwardingJobId == null || stableForwardingJobId.isEmpty) {
             throw StateError(
               'Forwarding job ID must be persisted before submission',
             );
@@ -2220,8 +2298,8 @@ class TransactionController {
               await _sqliteService.claimForwardingSubmission(
             stableForwardingJobId,
             now: submissionNow,
-            leaseExpiresAt: submissionNow +
-                _forwardingSubmissionClaimLease.inMilliseconds,
+            leaseExpiresAt:
+                submissionNow + _forwardingSubmissionClaimLease.inMilliseconds,
           );
           if (!submissionClaimed) {
             return ForwardingAttemptResult(
@@ -2267,16 +2345,16 @@ class TransactionController {
           // Do NOT advance the round-robin index.
           // ------------------------------------------------------------
           if (result['success'] != true) {
-            await _sqliteService.updateStuff(
-              {
-                'status': TransactionStatuses.error,
-                'ussdReply':
-                    'Forwarding failed: Phone offline or server not reachable. Will retry later.',
-              },
-              'id = ?',
-              [transactionId],
-              'transactions',
-            );
+            if (transactionId != null) {
+              await _sqliteService.updateTransactionUnlessSafaricomSuccess(
+                transactionId,
+                {
+                  'status': TransactionStatuses.error,
+                  'ussdReply':
+                      'Forwarding failed: Phone offline or server not reachable. Will retry later.',
+                },
+              );
+            }
 
             return ForwardingAttemptResult(
               ForwardingAttemptState.configuredButUnavailable,
@@ -2306,17 +2384,17 @@ class TransactionController {
             );
           }
 
-          await _sqliteService.updateStuff(
-            {
-              'status': TransactionStatuses.forwardedPending,
-              'forwardingRecipientDeviceName': recipientDeviceName,
-              'ussdReply': 'Forwarded to $recipientDeviceName'
-                  '${selectedDevice != null && selectedDevice['device_id'] != null ? ' (ID: ${selectedDevice['device_id']})' : ''}',
-            },
-            'id = ?',
-            [transactionId],
-            'transactions',
-          );
+          if (transactionId != null) {
+            await _sqliteService.updateTransactionUnlessSafaricomSuccess(
+              transactionId,
+              {
+                'status': TransactionStatuses.forwardedPending,
+                'forwardingRecipientDeviceName': recipientDeviceName,
+                'ussdReply': 'Forwarded to $recipientDeviceName'
+                    '${selectedDevice != null && selectedDevice['device_id'] != null ? ' (ID: ${selectedDevice['device_id']})' : ''}',
+              },
+            );
+          }
 
           // Preserve the existing online-forwarding flow.
           await processReply(
@@ -2371,19 +2449,13 @@ class TransactionController {
         : 'Paired-device forwarding is configured but currently unavailable. '
             'Will retry forwarding later.';
     if (transactionId != null) {
-      await _sqliteService.updateStuff(
+      await _sqliteService.updateTransactionUnlessSafaricomSuccess(
+        transactionId,
         {
           'status': status,
           'canRetry': destinationPaused ? 0 : 1,
           'ussdReply': reply,
         },
-        'id = ? AND status NOT IN (?, ?)',
-        [
-          transactionId,
-          TransactionStatuses.forwardedPending,
-          TransactionStatuses.forwardedConfirmed,
-        ],
-        'transactions',
       );
       return transactionId;
     }
@@ -3116,15 +3188,13 @@ class TransactionController {
     }
     if (currentOfferId != null &&
         !await _isOfferWindowOpen(offerId: currentOfferId)) {
-      await _sqliteService.updateStuff(
+      await _sqliteService.updateRetryTransactionIfEligible(
+        id,
         {
           'status': TransactionStatuses.paused,
           'targetOfferId': currentOfferId,
           'ussdReply': 'Offer is outside its configured execution time.',
         },
-        'id = ?',
-        [id],
-        'transactions',
       );
       return;
     }
@@ -3316,6 +3386,12 @@ class TransactionController {
         return;
       }
       if (ussdCode.isNotEmpty && simSubId > -1) {
+        final claim = await _sqliteService.claimTransactionRetryWithReason(id);
+        if (claim['claimed'] != 1) {
+          debugPrint('Skipping retry for transaction $id before dispatch: '
+              '${claim['reason']}.');
+          return;
+        }
         int? transactionId;
         transactionId = await transactGivenUssdAndDialSim(
           ussdCode,
@@ -3324,9 +3400,52 @@ class TransactionController {
           true,
           extract9DigitNumber(ussdCode),
           message: mpesaMessage,
+          retryTransactionId: id,
         );
 
-        await purgeAndMerge(transactionId ?? -1, id);
+        if (transactionId == null) {
+          await _sqliteService.releaseUndispatchedTransactionRetryClaim(id);
+          return;
+        }
+        final fallbackRows = await _sqliteService.queryCustom(
+          'transactions',
+          'id = ?',
+          [transactionId],
+          columns: ['status', 'ussdReply'],
+          limit: 1,
+        );
+        if (fallbackRows.isNotEmpty) {
+          final fallbackStatus = fallbackRows.first['status']?.toString() ??
+              TransactionStatuses.error;
+          final fallbackReply =
+              fallbackRows.first['ussdReply']?.toString() ?? '';
+          if (fallbackStatus == TransactionStatuses.successfulPending ||
+              fallbackStatus == TransactionStatuses.doneConfirmed) {
+            await _sqliteService.reconcileSafaricomTransaction(
+              transactionId: id,
+              targetStatus: fallbackStatus,
+              message: fallbackReply,
+            );
+          }
+          await _sqliteService.completeTransactionRetry(
+            transactionId: id,
+            resultStatus: fallbackStatus,
+            reply: fallbackReply,
+            ambiguousOutcome: isAmbiguousTransactionOutcome(
+              status: fallbackStatus,
+              reply: fallbackReply,
+            ),
+            fields: {
+              'canRetry': canRetry + 2,
+              'ussdDialed': ussdCode,
+              'date': getNormalDate(DateTime.now()),
+              'time': getNormalTime(DateTime.now()),
+              'initialMessage': transaction.initialMessage,
+            },
+          );
+        }
+        await _sqliteService.deleteStuff(transactionId, 'transactions');
+        await _retryUnresolvedSafaricomMessages();
         return;
       }
     }
@@ -3350,14 +3469,12 @@ class TransactionController {
               limit: 1,
             );
       if (exactOfferRows.isEmpty) {
-        await _sqliteService.updateStuff(
+        await _sqliteService.updateRetryTransactionIfEligible(
+          id,
           {
             'status': TransactionStatuses.paused,
             'ussdReply': 'Offer paused. Please check/retry.',
           },
-          'id = ? AND status = ? AND ussdReply = ?',
-          [id, TransactionStatuses.paused, _pausedOfferLocalExecutionClaim],
-          'transactions',
         );
         return;
       }
@@ -3383,15 +3500,13 @@ class TransactionController {
 
     if (currentOfferId != null &&
         !await _isOfferWindowOpen(offerId: currentOfferId)) {
-      await _sqliteService.updateStuff(
+      await _sqliteService.updateRetryTransactionIfEligible(
+        id,
         {
           'status': TransactionStatuses.paused,
           'targetOfferId': currentOfferId,
           'ussdReply': 'Offer is outside its configured execution time.',
         },
-        'id = ?',
-        [id],
-        'transactions',
       );
       return;
     }
@@ -3445,6 +3560,18 @@ class TransactionController {
               ))) {
         return;
       }
+      final claim = await _sqliteService.claimTransactionRetryWithReason(id);
+      if (claim['claimed'] != 1) {
+        debugPrint('Skipping retry for transaction $id before dispatch: '
+            '${claim['reason']}.');
+        return;
+      }
+      if (await _sqliteService.beginTransactionRetryDispatch(id) != 1) {
+        await _sqliteService.releaseUndispatchedTransactionRetryClaim(id);
+        debugPrint('Retry dispatch blocked for transaction $id: state or '
+            'Safaricom evidence changed after the claim.');
+        return;
+      }
       response = await PhoneService().makeAdvancedRequest(
         ussdCode,
         simSubId,
@@ -3457,16 +3584,66 @@ class TransactionController {
         if (kDebugMode) {
           debugPrint("MissingPluginException yoo");
         }
+        if (await _sqliteService.resetKnownUndispatchedTransactionRetry(id) !=
+            1) {
+          debugPrint(
+            'Skipping advanced fallback for transaction $id because its '
+            'dispatch state or Safaricom evidence changed.',
+          );
+          return;
+        }
         int? newTxId = await transactGivenUssdAndDialSim(
           ussdCode,
           simSubId,
           amount,
           true,
           extract9DigitNumber(ussdCode),
+          retryTransactionId: id,
         );
 
-        if (newTxId != null) {
-          await purgeAndMerge(newTxId, id);
+        if (newTxId == null) {
+          await _sqliteService.releaseUndispatchedTransactionRetryClaim(id);
+          return;
+        }
+        final fallbackResult = await _sqliteService.queryCustom(
+          'transactions',
+          'id = ?',
+          [newTxId],
+          columns: ['status', 'ussdReply'],
+          limit: 1,
+        );
+        if (fallbackResult.isNotEmpty) {
+          final fallbackStatus = fallbackResult.first['status']?.toString() ??
+              TransactionStatuses.error;
+          final fallbackReply =
+              fallbackResult.first['ussdReply']?.toString() ?? '';
+          response[0] = fallbackReply;
+          response[1] = fallbackStatus;
+          if (fallbackStatus == TransactionStatuses.successfulPending ||
+              fallbackStatus == TransactionStatuses.doneConfirmed) {
+            await _sqliteService.reconcileSafaricomTransaction(
+              transactionId: id,
+              targetStatus: fallbackStatus,
+              message: fallbackReply,
+            );
+          }
+        }
+        await _sqliteService.deleteStuff(newTxId, 'transactions');
+        await _retryUnresolvedSafaricomMessages();
+        final latestRetry = await _sqliteService.queryCustom(
+          'transactions',
+          'id = ?',
+          [id],
+          columns: ['status', 'ussdReply'],
+          limit: 1,
+        );
+        if (latestRetry.isNotEmpty &&
+            (latestRetry.first['status'] ==
+                    TransactionStatuses.successfulPending ||
+                latestRetry.first['status'] ==
+                    TransactionStatuses.doneConfirmed)) {
+          response[0] = latestRetry.first['ussdReply']?.toString() ?? '';
+          response[1] = latestRetry.first['status'];
         }
       }
     } else {
@@ -3479,11 +3656,40 @@ class TransactionController {
               ))) {
         return;
       }
+      final claim = await _sqliteService.claimTransactionRetryWithReason(id);
+      if (claim['claimed'] != 1) {
+        debugPrint('Skipping retry for transaction $id before dispatch: '
+            '${claim['reason']}.');
+        return;
+      }
+      if (await _sqliteService.beginTransactionRetryDispatch(id) != 1) {
+        await _sqliteService.releaseUndispatchedTransactionRetryClaim(id);
+        debugPrint('Retry dispatch blocked for transaction $id: state or '
+            'Safaricom evidence changed after the claim.');
+        return;
+      }
       response = await PhoneService().makeMyRequest(
         ussdCode,
         simSubId,
       );
       response[1] = await transactionStatus(response);
+    }
+
+    final stateAfterDispatch = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [id],
+      columns: ['status', 'ussdReply'],
+      limit: 1,
+    );
+    final latestRetryStatus =
+        stateAfterDispatch.firstOrNull?['status']?.toString();
+    final safaricomOutcomeArrived =
+        latestRetryStatus == TransactionStatuses.successfulPending ||
+            latestRetryStatus == TransactionStatuses.doneConfirmed;
+    if (safaricomOutcomeArrived) {
+      response[1] = latestRetryStatus;
+      response[0] = stateAfterDispatch.first['ussdReply']?.toString() ?? '';
     }
 
     if (response[1] == TransactionStatuses.done ||
@@ -3493,7 +3699,8 @@ class TransactionController {
       }
     }
 
-    if (response[1] == TransactionStatuses.secondAttempt) {
+    if (response[1] == TransactionStatuses.secondAttempt &&
+        !safaricomOutcomeArrived) {
       String bsatMessage = "(Number Altered by BSAT): ";
       canRetry = 20;
       if (kDebugMode) {
@@ -3553,21 +3760,36 @@ class TransactionController {
 
     final updateFirstFailedTimeStamp =
         response[1] == TransactionStatuses.secondAttempt;
-    await _sqliteService.updateOnly(
-      "UPDATE transactions SET ussdDialed=?, date=?, time=?, ussdReply=?, status=?, timeStamp=?, canRetry=?, initialMessage=?${updateFirstFailedTimeStamp ? ', firstFailedTimeStamp=COALESCE(firstFailedTimeStamp, ?)' : ''} WHERE id=?",
-      [
-        ussdCode,
-        getNormalDate(DateTime.now()),
-        getNormalTime(DateTime.now()),
-        response[0],
-        response[1] == "" ? "No reply" : response[1],
-        DateTime.now().millisecondsSinceEpoch,
-        canRetry,
-        transaction.initialMessage,
-        if (updateFirstFailedTimeStamp) firstFailedTimeStamp,
-        id,
-      ],
+    final retryReply = response.isNotEmpty ? response[0]?.toString() ?? '' : '';
+    final retryStatus = response.length > 1
+        ? response[1]?.toString() ?? TransactionStatuses.error
+        : TransactionStatuses.error;
+    final retryCompletion = await _sqliteService.completeTransactionRetry(
+      transactionId: id,
+      resultStatus: retryStatus,
+      reply: retryReply.isEmpty ? 'No reply' : retryReply,
+      ambiguousOutcome: isAmbiguousTransactionOutcome(
+        status: retryStatus,
+        reply: retryReply,
+      ),
+      fields: {
+        'ussdDialed': ussdCode,
+        'date': getNormalDate(DateTime.now()),
+        'time': getNormalTime(DateTime.now()),
+        'canRetry': canRetry,
+        'initialMessage': transaction.initialMessage,
+        if (updateFirstFailedTimeStamp)
+          'firstFailedTimeStamp': firstFailedTimeStamp,
+      },
     );
+    if (retryCompletion?['updated'] != true) {
+      debugPrint(
+        'Retry result for transaction $id was not persisted because newer '
+        'state already exists.',
+      );
+      return;
+    }
+    response[1] = retryCompletion?['status'] ?? retryStatus;
     if (updateFirstFailedTimeStamp) {
       debugPrint('[ALT FIX] transaction=$id');
       debugPrint('[ALT FIX] status=${response[1]}');
@@ -4263,14 +4485,16 @@ class TransactionController {
 
       if (target == null || target.trim().isEmpty) {
         // Leave the retryable state before dialing to avoid duplicate runs.
-        await _sqliteService.updateOnly(
-          'UPDATE transactions SET status = ?, alternativeExecuteAt = -1 WHERE id = ? AND status = ?',
-          [
-            TransactionStatuses.alternativeExecuting,
-            transactionId,
-            TransactionStatuses.secondAttempt
-          ],
+        final alternativeClaimed = await _sqliteService.updateStuff(
+          {
+            'status': TransactionStatuses.alternativeExecuting,
+            'alternativeExecuteAt': -1,
+          },
+          'id = ? AND status = ?',
+          [transactionId, TransactionStatuses.secondAttempt],
+          'transactions',
         );
+        if (alternativeClaimed != 1) continue;
         final signatureRows = isAdvanced
             ? await _sqliteService.queryCustom(
                 'codeSignature',
@@ -4283,6 +4507,14 @@ class TransactionController {
         final signature = signatureRows.isEmpty
             ? null
             : CodeSignature.fromMap(signatureRows.first);
+        final currentAlternativeRows = await _sqliteService.queryCustom(
+          'transactions',
+          'id = ? AND status = ?',
+          [transactionId, TransactionStatuses.alternativeExecuting],
+          columns: ['id'],
+          limit: 1,
+        );
+        if (currentAlternativeRows.isEmpty) continue;
         final List<dynamic> altResponse = useMainEngineBridge
             ? backgroundService == null
                 ? <String>[
@@ -4327,23 +4559,32 @@ class TransactionController {
         final latestStatus = latestRows.firstOrNull?['status']?.toString();
         final bool smsAlreadyConfirmed =
             latestStatus == TransactionStatuses.doneConfirmed;
+        final bool smsAlreadyPending =
+            latestStatus == TransactionStatuses.successfulPending;
         final bool smsAlreadyFailed =
             latestStatus == TransactionStatuses.alternativeFailed;
-        final finalAlternativeStatus = smsAlreadyConfirmed || smsAlreadyFailed
-            ? latestStatus
-            : altResponse[1];
+        final bool safaricomEvidenceAlreadyRecorded =
+            smsAlreadyConfirmed || smsAlreadyPending;
+        final finalAlternativeStatus =
+            safaricomEvidenceAlreadyRecorded || smsAlreadyFailed
+                ? latestStatus
+                : altResponse[1];
 
         final alternativeUpdateRows = await _sqliteService.updateStuff(
           {
             'ussdDialed': processedCode,
-            'ussdReply': smsAlreadyConfirmed || smsAlreadyFailed
+            'ussdReply': safaricomEvidenceAlreadyRecorded || smsAlreadyFailed
                 ? latestRows.first['ussdReply']?.toString() ?? ''
                 : altResponse[0]?.toString() ?? '',
             'status': finalAlternativeStatus,
             'timeStamp': DateTime.now().millisecondsSinceEpoch,
           },
-          'id = ? AND (status IS NULL OR status != ?)',
-          [transactionId, TransactionStatuses.doneConfirmed],
+          'id = ? AND (status IS NULL OR status NOT IN (?, ?))',
+          [
+            transactionId,
+            TransactionStatuses.doneConfirmed,
+            TransactionStatuses.successfulPending,
+          ],
           'transactions',
         );
         final transactionRows = await _sqliteService.queryCustom(
@@ -4606,33 +4847,10 @@ class TransactionController {
 
     // print("Retrying. all: ${await _sqliteService.queryAll('transactions')}");
 
-    String query = '''
-     (status = ? AND (canRetry >= 1 OR canRetry = ? OR canRetry IS NULL)) 
-     OR 
-     (status = ? AND date = ? AND canRetry < $retryTimes)
-    ''';
-
-    List<Object> args = [
-      TransactionStatuses.error,
-      isAutoRetrying ? 1 : 0,
-      TransactionStatuses.timedOut,
-      getNormalDate(DateTime.now()),
-      // TransactionStatuses.advance
-    ];
-
-    List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
-      'transactions',
-      query,
-      args,
-      columns: [
-        'id',
-        'ussdDialed',
-        'simSubId',
-        'canRetry',
-        'ussdReply',
-        'amount',
-        'initialMessage'
-      ],
+    final rawStuff = await _sqliteService.getAutomaticRetryCandidates(
+      isAutoRetrying: isAutoRetrying,
+      retryLimit: retryTimes,
+      today: getNormalDate(DateTime.now()),
     );
 
     //print('Retrying all: ${rawStuff.length}');
@@ -4643,7 +4861,7 @@ class TransactionController {
       List<Map<String, dynamic>> codeMap = await _sqliteService.queryCustom(
         'ussdCodes',
         'amount = ?',
-        [rawStuff.first['amount']],
+        [stuff['amount']],
         limit: 1,
       );
 
@@ -5306,6 +5524,7 @@ class TransactionController {
     String? forwardingTransactionId,
     String? forwardingSenderDeviceName,
     String? forwardingRecipientDeviceName,
+    int? retryTransactionId,
   }) async {
     bool hasPaid = await _paymentOps.hasActiveSubscription();
 
@@ -5350,6 +5569,19 @@ class TransactionController {
     }
 
     List<dynamic> response = [];
+
+    if (retryTransactionId != null &&
+        await _sqliteService.beginTransactionRetryDispatch(
+              retryTransactionId,
+            ) !=
+            1) {
+      await _sqliteService.releaseUndispatchedTransactionRetryClaim(
+        retryTransactionId,
+      );
+      debugPrint('Retry dispatch blocked for transaction $retryTransactionId: '
+          'state or Safaricom evidence changed after the claim.');
+      return null;
+    }
 
     if (isAdvanced) {
       if (forwardingJobId != null && forwardingJobId.isNotEmpty) {
@@ -5399,6 +5631,22 @@ class TransactionController {
       },
       'transactions',
     );
+    await _retryUnresolvedSafaricomMessages();
+    final reconciledTransaction = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [insertedId],
+      columns: ['status', 'ussdReply'],
+      limit: 1,
+    );
+    if (reconciledTransaction.isNotEmpty &&
+        (reconciledTransaction.first['status'] ==
+                TransactionStatuses.successfulPending ||
+            reconciledTransaction.first['status'] ==
+                TransactionStatuses.doneConfirmed)) {
+      response[1] = reconciledTransaction.first['status'];
+      response[0] = reconciledTransaction.first['ussdReply'] ?? '';
+    }
     debugPrint(
       'ALT USSD STORED: localTransactionId=$insertedId, '
       'forwardingTransactionId=${forwardingTransactionId ?? ''}, '
@@ -5513,7 +5761,11 @@ class TransactionController {
     return code;
   }
 
-  Future<void> updateWithMessage(TransactionMessage smsMessage) async {
+  Future<void> updateWithMessage(
+    TransactionMessage smsMessage, {
+    bool retryUnresolvedMessages = true,
+    bool notifyReplies = true,
+  }) async {
     final confirmationBody = smsMessage.body ?? '';
     final isGiftConfirmation = RegExp(
       r'you\s+have\s+gifted',
@@ -5774,21 +6026,13 @@ class TransactionController {
     }
 
     final body = smsMessage.body ?? '';
-    final purchaseConfirmed = RegExp(
-      r'thank\s+you\s+for\s+choosing\s+safaricom'
-      r'.*?you\s+have\s+purchased\s+.+?'
-      r'(?:for\s+\d+)?',
-      caseSensitive: false,
-      dotAll: true,
-    ).hasMatch(body);
-    final recommendationSubmitted = RegExp(
-      r'recommendation\s+for\s+\d+\s+submitted\s+successfully',
-      caseSensitive: false,
-    ).hasMatch(body);
-    final recommendationSuccessful = RegExp(
-      r'you\s+have\s+successfully\s+recommended\s+offer',
-      caseSensitive: false,
-    ).hasMatch(body);
+    final safaricomEvidence = SafaricomTransactionEvidence.parse(body);
+    final purchaseConfirmed = safaricomEvidence?.kind ==
+        SafaricomTransactionMessageKind.giftBundlePurchased;
+    final recommendationSubmitted = safaricomEvidence?.kind ==
+        SafaricomTransactionMessageKind.recommendationSubmitted;
+    final recommendationSuccessful = safaricomEvidence?.kind ==
+        SafaricomTransactionMessageKind.recommendationConfirmed;
     final hasTotalCommission = RegExp(
       r'total\s+commission',
       caseSensitive: false,
@@ -5810,9 +6054,10 @@ class TransactionController {
         purchaseConfirmed || recommendationSuccessful || hasTotalCommission;
     final targetStatus = recommendationFailed
         ? TransactionStatuses.secondAttempt
-        : confirmed
-            ? TransactionStatuses.doneConfirmed
-            : TransactionStatuses.successfulPending;
+        : safaricomEvidence?.targetStatus ??
+            (confirmed
+                ? TransactionStatuses.doneConfirmed
+                : TransactionStatuses.successfulPending);
 
     // Safaricom confirmations can omit the M-PESA code and offer amount. Only
     // use amount when the SMS ties a currency value directly to the offer or
@@ -5834,9 +6079,10 @@ class TransactionController {
         recipientDigits.length >= 9 && recipientDigits.length <= 12
             ? normalizeIncomingCallNumber(recipientDigits)
             : '';
-    final recipientNumber = normalizedRecipientNumber.length == 9
-        ? '0$normalizedRecipientNumber'
-        : normalizedRecipientNumber;
+    final recipientNumber = safaricomEvidence?.recipientNumber ??
+        (normalizedRecipientNumber.length == 9
+            ? '0$normalizedRecipientNumber'
+            : normalizedRecipientNumber);
     final amountMatch = RegExp(
       r'(?:offer|bundle|purchase|purchased)[^\n]{0,35}?(?:kshs?|kes)\s*([\d,]+)'
       r'|(?:kshs?|kes)\s*([\d,]+)[^\n]{0,25}?(?:offer|bundle|purchase)',
@@ -5865,11 +6111,23 @@ class TransactionController {
     const confirmationWindowMs = 20 * 60 * 1000;
     final eligibleTransactions = await _sqliteService.queryCustom(
       'transactions',
-      'status IN (?, ?, ?) AND timeStamp BETWEEN ? AND ?',
+      'status IN (?, ?, ?, ?, ?, ?, ?, ?, ?) AND '
+          '(timeStamp BETWEEN ? AND ? OR retryStartedAt BETWEEN ? AND ?)',
+      // Include the latest retry's durable dispatch time while retaining the
+      // original execution timestamp. Both timestamps are correlation evidence;
+      // the window itself remains unchanged.
       [
         TransactionStatuses.successfulPending,
         TransactionStatuses.advancedUssd,
         TransactionStatuses.alternativeExecuting,
+        TransactionStatuses.error,
+        TransactionStatuses.secondAttempt,
+        TransactionStatuses.timedOut,
+        TransactionStatuses.done,
+        TransactionStatuses.advancedQueue,
+        TransactionStatuses.doneConfirmed,
+        smsTimestamp - confirmationWindowMs,
+        smsTimestamp + confirmationWindowMs,
         smsTimestamp - confirmationWindowMs,
         smsTimestamp + confirmationWindowMs,
       ],
@@ -5881,6 +6139,7 @@ class TransactionController {
         'timeStamp',
         'status',
         'ussdReply',
+        'retryStartedAt',
         'source',
         'forwardingJobId',
         'forwardingSenderDeviceName',
@@ -5916,7 +6175,8 @@ class TransactionController {
           .toList();
     }
 
-    if (candidates.length != 1) {
+    final uniqueCandidate = uniqueSafaricomTransactionCandidate(candidates);
+    if (uniqueCandidate == null) {
       if (candidates.isEmpty &&
           targetStatus == TransactionStatuses.doneConfirmed) {
         final resolvedAmbiguous =
@@ -5928,6 +6188,20 @@ class TransactionController {
         );
         if (resolvedAmbiguous) return;
       }
+      if (retryUnresolvedMessages) {
+        await _sqliteService.recordUnresolvedSafaricomMessage(
+          body: body,
+          smsTimestamp: smsTimestamp,
+        );
+        // Close the race where the transaction row is inserted between the
+        // first lookup and recording this message as unresolved.
+        await updateWithMessage(
+          smsMessage,
+          retryUnresolvedMessages: false,
+          notifyReplies: notifyReplies,
+        );
+        return;
+      }
       debugPrint(
         'SAFARICOM CONFIRMATION: ${candidates.isEmpty ? 'no' : 'ambiguous'} '
         'eligible match; candidates=${candidates.length}, code=$code, '
@@ -5937,7 +6211,7 @@ class TransactionController {
       return;
     }
 
-    final candidate = candidates.single;
+    final candidate = uniqueCandidate;
     final transactionId = candidate['id'];
     final currentStatus = candidate['status']?.toString() ?? '';
     final status = recommendationFailed
@@ -5945,31 +6219,35 @@ class TransactionController {
             ? TransactionStatuses.alternativeFailed
             : TransactionStatuses.secondAttempt)
         : targetStatus;
-    final updatedRows = await _sqliteService.updateStuff(
-      {
-        'ussdReply': '$body \n$interpunct ${candidate['ussdReply'] ?? ''}',
-        'status': status,
-        if (status == TransactionStatuses.secondAttempt)
-          'firstFailedTimeStamp': candidate['firstFailedTimeStamp'] ??
-              DateTime.now().millisecondsSinceEpoch,
-        if (status == TransactionStatuses.doneConfirmed) 'canRetry': 0,
-      },
-      'id = ? AND status IN (?, ?, ?)',
-      [
-        transactionId,
-        TransactionStatuses.successfulPending,
-        TransactionStatuses.advancedUssd,
-        TransactionStatuses.alternativeExecuting,
-      ],
-      'transactions',
+    final updatedRows = await _sqliteService.reconcileSafaricomTransaction(
+      transactionId: int.tryParse(transactionId.toString()) ?? -1,
+      targetStatus: status,
+      message: body,
     );
     if (updatedRows != 1) {
+      final latest = await _sqliteService.queryCustom(
+        'transactions',
+        'id = ?',
+        [transactionId],
+        columns: ['status'],
+        limit: 1,
+      );
+      if (latest.firstOrNull?['status'] == TransactionStatuses.doneConfirmed) {
+        await _sqliteService.resolveSafaricomMessage(
+          body: body,
+          smsTimestamp: smsTimestamp,
+        );
+      }
       debugPrint(
         'SAFARICOM CONFIRMATION: transaction=$transactionId was not updated '
         '(row count=$updatedRows); leaving state unchanged',
       );
       return;
     }
+    await _sqliteService.resolveSafaricomMessage(
+      body: body,
+      smsTimestamp: smsTimestamp,
+    );
 
     final number = int.tryParse(candidate['number']?.toString() ?? '') ?? 0;
     final amount = int.tryParse(candidate['amount']?.toString() ?? '') ?? 0;
@@ -6015,15 +6293,31 @@ class TransactionController {
       }
     }
 
-    processReply(
-      number,
-      status,
-      (candidate['source'] ?? 'unknown').toString().split(' ').first,
-      (candidate['source'] ?? 'unknown').toString().split(' ').length > 1
-          ? (candidate['source'] ?? 'unknown').toString().split(' ')[1]
-          : '',
-      amount,
-    );
+    if (notifyReplies) {
+      processReply(
+        number,
+        status,
+        (candidate['source'] ?? 'unknown').toString().split(' ').first,
+        (candidate['source'] ?? 'unknown').toString().split(' ').length > 1
+            ? (candidate['source'] ?? 'unknown').toString().split(' ')[1]
+            : '',
+        amount,
+      );
+    }
+  }
+
+  Future<void> _retryUnresolvedSafaricomMessages() async {
+    final messages = await _sqliteService.getUnresolvedSafaricomMessages();
+    for (final message in messages) {
+      await updateWithMessage(
+        TransactionMessage(
+          body: message['body']?.toString() ?? '',
+          date: int.tryParse(message['smsTimestamp']?.toString() ?? ''),
+        ),
+        retryUnresolvedMessages: false,
+        notifyReplies: false,
+      );
+    }
   }
 
   String alterMpesaMessage(String smsMessage, int amount) {
@@ -6416,14 +6710,19 @@ class TransactionController {
             [TransactionStatuses.secondAttempt, timestamp24HoursAgo]);
 
     for (var recommendation in failedRecommendations) {
+      final originalId = int.tryParse(recommendation['id']?.toString() ?? '');
+      if (originalId == null) continue;
       String? initialMessage = recommendation['initialMessage'];
 
       if (initialMessage != null) {
         initialMessage = "Yesterday's transaction redone: $initialMessage";
 
-        int? newTxId = await makeTransactionGivenSmsBody(initialMessage);
+        int? newTxId = await makeTransactionGivenSmsBody(
+          initialMessage,
+          retryTransactionId: originalId,
+        );
         if (newTxId != null) {
-          await purgeAndMerge(newTxId, recommendation['id']);
+          await purgeAndMerge(newTxId, originalId);
         }
       }
     }
@@ -6595,15 +6894,13 @@ class TransactionController {
       }
     }
 
-    await _sqliteService.deleteStuff(toMergeId, 'transactions');
-    await _sqliteService.deleteStuff(toPurgeId, 'transactions');
-
     purgeTransaction.id = toMergeId;
     mergedTransaction['id'] = toMergeId;
 
-    await _sqliteService.insertStuff(
+    await _sqliteService.mergeTransactionUnlessSafaricomSuccess(
+      toMergeId,
+      toPurgeId,
       mergedTransaction,
-      'transactions',
     );
   }
 }

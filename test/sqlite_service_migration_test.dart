@@ -48,6 +48,73 @@ void main() {
     }
   });
 
+  test('critical schema repair is repeatable and preserves existing rows',
+      () async {
+    final service = SQLiteService();
+    final db = await databaseFactoryFfi.openDatabase(
+      databasePath,
+      options: OpenDatabaseOptions(
+        version: 22,
+        onCreate: service.onCreate,
+      ),
+    );
+    try {
+      await db.insert('transactions', {
+        'initialMessage': 'kept transaction',
+        'status': 'completed',
+      });
+      await db.insert('forwarded', {
+        'numberToReceive': 254700000001,
+        'paused': 0,
+      });
+      // Model an interrupted/partially upgraded install while retaining rows.
+      await db
+          .execute('ALTER TABLE transactions DROP COLUMN firstFailedTimeStamp');
+      await db.execute('ALTER TABLE transactions DROP COLUMN targetOfferId');
+      await db.execute('ALTER TABLE forwarded DROP COLUMN paused');
+      await db.execute('ALTER TABLE ussdCodes DROP COLUMN offerName');
+
+      await service.ensureCriticalSchema(db);
+      await service.ensureCriticalSchema(db);
+
+      expect((await db.query('transactions')).single['initialMessage'],
+          'kept transaction');
+      expect((await db.query('forwarded')).single['numberToReceive'],
+          254700000001);
+      for (final tableAndColumn in const [
+        ['transactions', 'firstFailedTimeStamp'],
+        ['transactions', 'targetOfferId'],
+        ['forwarded', 'paused'],
+        ['ussdCodes', 'offerName'],
+      ]) {
+        final columns = await db.rawQuery(
+          'PRAGMA table_info("${tableAndColumn[0]}")',
+        );
+        expect(columns.any((row) => row['name'] == tableAndColumn[1]), isTrue);
+      }
+      final indexes = await db.rawQuery(
+        "SELECT name, tbl_name FROM sqlite_master "
+        "WHERE type = 'index' AND name = 'idx_forwarding_devices_name'",
+      );
+      expect(indexes.single['tbl_name'], 'forwardingDevices');
+      await db.insert('forwardingDevices', {
+        'device_name': 'duplicate',
+        'device_id': 'device-1',
+        'owner_email': 'one@example.com',
+      });
+      await expectLater(
+        db.insert('forwardingDevices', {
+          'device_name': 'duplicate',
+          'device_id': 'device-2',
+          'owner_email': 'other@example.com',
+        }),
+        throwsA(isA<DatabaseException>()),
+      );
+    } finally {
+      await db.close();
+    }
+  });
+
   test('repeated versioned upgrade preserves all original rows', () async {
     final expectedRows = _rows();
     await _seedLegacyDatabase(databasePath, expectedRows);

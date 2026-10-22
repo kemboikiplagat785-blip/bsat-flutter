@@ -119,7 +119,7 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
 
       name = await sharedPreferencesService.getUserName() ?? "Bingwa";
       webLink =
-          "https://bingwa.bsat.co.ke/${await sharedPreferencesService.getLinkExtension()}" ??
+          "https://bingwa.$kBaseAppUrl/${await sharedPreferencesService.getLinkExtension()}" ??
               "bingwa";
       email = await sharedPreferencesService.getUserEmail() ?? "";
       setState(() {});
@@ -329,7 +329,7 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
             ),
             buttonDescriptive(
               context,
-              title: 'view/manage your phones (https://portal.bsat.co.ke)',
+              title: 'view/manage your phones (https://portal.$kBaseAppUrl)',
               subtitle: 'Remote Device Control',
               icon: Icon(CupertinoIcons.device_laptop, color: kErrorColor),
               onTap: () async {

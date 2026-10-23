@@ -39,6 +39,14 @@ enum ForwardingAttemptState {
   forwardedSuccessfully,
 }
 
+enum ManualRetryResult {
+  executionDispatched,
+  executionAmbiguous,
+  forwardingDispatched,
+  forwardingFailed,
+  rejected,
+}
+
 class ForwardingAttemptResult {
   final ForwardingAttemptState state;
   final int? transactionId;
@@ -2326,6 +2334,7 @@ class TransactionController {
                   'forwardingJobId': stableForwardingJobId,
                   'forwardingStatus': ForwardingJobStatuses.pending,
                   'senderDeviceName': senderDeviceName,
+                  'recipientDeviceName': recipientDeviceName,
                 }
               },
             );
@@ -2685,6 +2694,7 @@ class TransactionController {
               'forwardingJobId': forwardingJobId,
               'forwardingStatus': ForwardingJobStatuses.pending,
               'senderDeviceName': senderDeviceName,
+              'recipientDeviceName': recipientDeviceName,
             }
           },
         );
@@ -4898,20 +4908,134 @@ class TransactionController {
     }
   }
 
-  Future<void> retryTransactionsGivenIds(List<int> ids) async {
-    if (ids.isEmpty) return;
-
-    List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
+  Future<({
+    int dispatched,
+    int ambiguous,
+    int forwarded,
+    int failed,
+    int existingFlowInvoked,
+  })> retryTransactionsGivenIds(
+    List<int> ids,
+  ) async {
+    if (ids.isEmpty) {
+      return (
+        dispatched: 0,
+        ambiguous: 0,
+        forwarded: 0,
+        failed: 0,
+        existingFlowInvoked: 0,
+      );
+    }
+    final rows = await _sqliteService.queryCustom(
       'transactions',
-      'id IN (${ids.join(',')})',
+      'id IN (${ids.toSet().join(',')})',
       [],
-      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
+      columns: ['id', 'status', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
+    );
+    var dispatched = 0;
+    var ambiguous = 0;
+    var forwarded = 0;
+    var failed = 0;
+    var existingFlowInvoked = 0;
+    for (final row in rows) {
+      if (row['status'] != TransactionStatuses.error) {
+        await redoTransaction(
+          row['id'],
+          row['ussdDialed']?.toString() ?? '',
+          int.tryParse(row['simSubId']?.toString() ?? '') ?? -1,
+          int.tryParse(row['canRetry']?.toString() ?? '') ?? 0,
+          row['ussdReply']?.toString() ?? '',
+        );
+        existingFlowInvoked++;
+        continue;
+      }
+
+      final result = await manuallyRetryTransaction(row['id'] as int);
+      if (result == ManualRetryResult.executionDispatched) {
+        dispatched++;
+      } else if (result == ManualRetryResult.executionAmbiguous) {
+        ambiguous++;
+      } else if (result == ManualRetryResult.forwardingDispatched) {
+        forwarded++;
+      } else {
+        failed++;
+      }
+    }
+    return (
+      dispatched: dispatched,
+      ambiguous: ambiguous,
+      forwarded: forwarded,
+      failed: failed,
+      existingFlowInvoked: existingFlowInvoked,
+    );
+  }
+
+  /// Runs the explicit user retry path. Automatic retry limits are applied by
+  /// candidate selection, while this path still passes through the durable
+  /// atomic claim and Safaricom ambiguity checks in [redoTransaction].
+  Future<ManualRetryResult> manuallyRetryTransaction(int id) async {
+    final before = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [id],
+      limit: 1,
+    );
+    if (before.isEmpty || before.first['status'] != TransactionStatuses.error) {
+      return ManualRetryResult.rejected;
+    }
+    final row = before.first;
+    final initialReply = row['ussdReply']?.toString() ?? '';
+    final initialState = row['retryState']?.toString() ?? 'ready';
+    if (initialState == 'ambiguous' || initialState == 'dispatching') {
+      return ManualRetryResult.rejected;
+    }
+    final initialRetryStartedAt =
+        int.tryParse(row['retryStartedAt']?.toString() ?? '');
+
+    await redoTransaction(
+      id,
+      row['ussdDialed']?.toString() ?? '',
+      int.tryParse(row['simSubId']?.toString() ?? '') ?? -1,
+      int.tryParse(row['canRetry']?.toString() ?? '') ?? 0,
+      initialReply,
     );
 
-    for (var stuff in rawStuff) {
-      await redoTransaction(stuff['id'], stuff['ussdDialed'], stuff['simSubId'],
-          stuff['canRetry'] ?? 0, stuff["ussdReply"]);
+    final after = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [id],
+      columns: ['status', 'ussdReply', 'retryState', 'retryStartedAt'],
+      limit: 1,
+    );
+    if (after.isEmpty) return ManualRetryResult.rejected;
+    final updatedRetryStartedAt =
+        int.tryParse(after.first['retryStartedAt']?.toString() ?? '');
+    if (updatedRetryStartedAt != null &&
+        updatedRetryStartedAt != initialRetryStartedAt) {
+      final updatedRetryState = after.first['retryState']?.toString() ?? '';
+      if (updatedRetryState == 'ambiguous' ||
+          updatedRetryState == 'dispatching' ||
+          isAmbiguousTransactionOutcome(
+            status:
+                after.first['status']?.toString() ?? TransactionStatuses.error,
+            reply: after.first['ussdReply']?.toString() ?? '',
+          )) {
+        return ManualRetryResult.executionAmbiguous;
+      }
+      return ManualRetryResult.executionDispatched;
     }
+    if (after.first['status'] == TransactionStatuses.forwardedPending ||
+        after.first['status'] == TransactionStatuses.forwardedConfirmed) {
+      return ManualRetryResult.forwardingDispatched;
+    }
+    final updatedReply = after.first['ussdReply']?.toString() ?? '';
+    final lowerReply = updatedReply.toLowerCase();
+    if (after.first['status'] == TransactionStatuses.error &&
+        lowerReply.contains('forward') &&
+        lowerReply.contains('fail')) {
+      return ManualRetryResult.forwardingFailed;
+    }
+    return ManualRetryResult.rejected;
   }
 
   Future<bool> reserveAlternativeRequest({

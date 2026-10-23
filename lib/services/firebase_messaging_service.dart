@@ -22,6 +22,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 
 import '../utils/constants.dart';
+import '../utils/forwarding_identifiers.dart';
 import 'payments.dart';
 import 'skills.dart';
 
@@ -103,7 +104,8 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
   // sender/recipient fields that endpoint requires.
   if ((type ?? '').toUpperCase() != 'CHECK_UPDATE' &&
       (type ?? '').toUpperCase() != 'PROCESS_ALT_REQUEST' &&
-      (type ?? '').toUpperCase() != 'FORWARDED_ALT_RESULT') {
+      (type ?? '').toUpperCase() != 'FORWARDED_ALT_RESULT' &&
+      (type ?? '').toLowerCase() != 'forwarded_sms') {
     await _sendImmediateAck(message, originalType: type);
   }
 
@@ -249,6 +251,47 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
           message.data['forwardingJobId']?.toString();
       final String? forwardingSenderDeviceName =
           message.data['senderDeviceName']?.toString();
+      final isForwardedSmsRequest =
+          (type ?? '').toLowerCase() == 'forwarded_sms';
+      if (isForwardedSmsRequest) {
+        final forwardingRecipientDeviceName =
+            message.data['recipientDeviceName']?.toString().trim() ?? '';
+        final senderName = forwardingSenderDeviceName?.trim() ?? '';
+        final sourceTransactionId =
+            int.tryParse(message.data['transactionId']?.toString() ?? '');
+        final ownDeviceName =
+            (await SharedPreferencesService().getDeviceName() ?? '').trim();
+        final registeredSender = senderName.isEmpty
+            ? <Map<String, dynamic>>[]
+            : await SQLiteService().queryCustom(
+                'whitelistedDevices',
+                'device_name = ?',
+                [senderName],
+                columns: ['device_id'],
+                limit: 2,
+              );
+        if (body.isEmpty ||
+            forwardingJobId == null ||
+            forwardingJobId.trim().isEmpty ||
+            sourceTransactionId == null ||
+            sourceTransactionId <= 0 ||
+            senderName.isEmpty ||
+            forwardingRecipientDeviceName.isEmpty ||
+            ownDeviceName.isEmpty ||
+            forwardingRecipientDeviceName != ownDeviceName ||
+            registeredSender.length != 1 ||
+            registeredSender.single['device_id']
+                    ?.toString()
+                    .trim()
+                    .isNotEmpty !=
+                true) {
+          debugPrint(
+            'FORWARDED SMS REJECTED before receipt ACK: '
+            'missing or invalid job, transaction, sender, or recipient.',
+          );
+          break;
+        }
+      }
       debugPrint(
         'FORWARDED SMS RECEIVE: '
         'incomingTransactionId=${message.data['transactionId'] ?? ''}, '
@@ -265,13 +308,32 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
           forwardingJobId: forwardingJobId.trim(),
           sourceTransactionId: message.data['transactionId']?.toString(),
         );
-        if (forwardingJobClaim['claimed'] != true) {
-          await transactionController.acknowledgeDuplicateForwardedSmsJob(
-            forwardingJobId.trim(),
-            localTransactionId: int.tryParse(
-              forwardingJobClaim['localTransactionId']?.toString() ?? '',
-            ),
+        final claimIdentifierMismatch =
+            forwardingJobClaim['state'] == 'identifier_mismatch';
+        if (isForwardedSmsRequest && !claimIdentifierMismatch) {
+          // Receipt means the job is now durably claimed on Phone B. Do not
+          // acknowledge merely because the FCM handler started running.
+          await _sendImmediateAck(
+            message,
+            originalType: type,
+            ackKind: 'received',
+            status: 'received',
           );
+        }
+        if (forwardingJobClaim['claimed'] != true) {
+          if (!claimIdentifierMismatch) {
+            await transactionController.acknowledgeDuplicateForwardedSmsJob(
+              forwardingJobId.trim(),
+              localTransactionId: int.tryParse(
+                forwardingJobClaim['localTransactionId']?.toString() ?? '',
+              ),
+            );
+          } else {
+            debugPrint(
+              'FORWARDED SMS REJECTED: job ID is already bound to a '
+              'different source transaction.',
+            );
+          }
           return;
         }
       }
@@ -1318,6 +1380,48 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
   // A normal "received" ACK only means Phone B received
   // the forwarded SMS. It MUST NOT confirm Phone A.
   if (ackKind == 'received' || status == 'received') {
+    final transactionId = message.data['transactionId']?.toString() ?? '';
+    final receivedBy = message.data['senderDeviceName']?.toString() ?? '';
+    final receivedFor = message.data['recipientDeviceName']?.toString() ?? '';
+    final localSender = await SharedPreferencesService().getDeviceName() ?? '';
+    final matchingRows = await SQLiteService().queryCustom(
+      'transactions',
+      'forwardingJobId = ? AND id = ?',
+      [forwardingJobId, int.tryParse(transactionId) ?? -1],
+    );
+    final matchingTransaction = matchingRows.singleOrNull;
+    final persistedSender =
+        matchingTransaction?['forwardingSenderDeviceName']?.toString().trim() ??
+            '';
+    if (matchingTransaction == null ||
+        !isMatchingForwardingReceipt(
+          expectedJobId:
+              matchingTransaction['forwardingJobId']?.toString() ?? '',
+          receivedJobId: forwardingJobId,
+          expectedTransactionId: matchingTransaction['id']?.toString() ?? '',
+          receivedTransactionId: transactionId,
+          expectedRecipientDeviceName:
+              matchingTransaction['forwardingRecipientDeviceName']
+                      ?.toString() ??
+                  '',
+          receivedSenderDeviceName: receivedBy,
+          expectedSenderDeviceName:
+              persistedSender.isEmpty ? localSender : persistedSender,
+          receivedRecipientDeviceName: receivedFor,
+        )) {
+      debugPrint(
+        'FORWARDED_SMS: received ACK correlation mismatch; ignoring. '
+        'job=$forwardingJobId transaction=$transactionId '
+        'from=$receivedBy to=$receivedFor',
+      );
+      return;
+    }
+    const receiptNote = 'Receipt acknowledged by destination device';
+    await SQLiteService().recordForwardingReceiptAcknowledgement(
+      transactionId: int.parse(matchingTransaction['id'].toString()),
+      forwardingJobId: forwardingJobId,
+      note: receiptNote,
+    );
     debugPrint(
       'FORWARDED_SMS: received ACK only. '
       'Keeping transaction forwarded-pending.',

@@ -1,6 +1,7 @@
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/screens/transactions/single_transacton.dart';
 import 'package:bsat/utils/constants.dart';
+import 'package:bsat/utils/forwarding_display.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,7 +22,15 @@ Widget transactionListItem(
     String ussdReply,
     {int? lineLimit,
     bool? selectionMode,
-    bool? isNewClient}) {
+    bool? isNewClient,
+    String? destinationDeviceName,
+    String? transactionId}) {
+  final displayReply = forwardingDisplayReply(
+    status: status,
+    reply: reply,
+    destinationDeviceName: destinationDeviceName,
+    transactionId: transactionId,
+  );
   String displayNum =
       number > 10000000 ? number.toString().substring(0, 4) : '0000';
 
@@ -167,7 +176,7 @@ Widget transactionListItem(
               ),
             const SizedBox(height: kPagePadding / 3),
             Text(
-              reply,
+              displayReply,
               // "You have"
               maxLines: lineLimit,
               overflow: lineLimit != null
@@ -186,18 +195,24 @@ Widget transactionListItem(
                                 ? null
                                 : () async {
                                     // //print("Codes: $code $amount $id $status");
-                                    await TransactionController()
-                                        .redoTransaction(
-                                      id,
-                                      code,
-                                      simSubId,
-                                      canRetry,
-                                      ussdReply,
-                                    );
-
+                                    final result = await TransactionController()
+                                        .manuallyRetryTransaction(id);
+                                    if (!context.mounted) return;
+                                    final message = switch (result) {
+                                      ManualRetryResult.executionDispatched =>
+                                        'Retry execution completed; check the updated transaction status.',
+                                      ManualRetryResult.executionAmbiguous =>
+                                        'Retry was dispatched, but the purchase outcome is ambiguous. Check confirmation before retrying again.',
+                                      ManualRetryResult.forwardingDispatched =>
+                                        'Forwarding request dispatched; awaiting destination receipt.',
+                                      ManualRetryResult.forwardingFailed =>
+                                        'Forwarding retry failed; transaction remains in error.',
+                                      ManualRetryResult.rejected =>
+                                        'Retry was not started. The transaction may be confirmed, in progress, or unsafe to retry.',
+                                    };
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text('Transaction redone'),
+                                        content: Text(message),
                                       ),
                                     );
                                   },

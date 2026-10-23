@@ -24,9 +24,30 @@ String forwardingDisplayReply({
   required String status,
   required String reply,
   String? destinationDeviceName,
+  String? transactionId,
 }) {
   if (!_forwardedStatuses.contains(status)) return reply;
-  final name = meaningfulForwardingDeviceName(destinationDeviceName);
+  final entries = reply.split('\n•\n');
+  final forwardingEntryIndex = entries.indexWhere(
+    (entry) =>
+        RegExp(r'^\s*Forwarded to\b', caseSensitive: false).hasMatch(entry),
+  );
+  final forwardingEntry =
+      forwardingEntryIndex >= 0 ? entries[forwardingEntryIndex] : reply;
+  final embeddedDeviceId = RegExp(
+    r'\(ID:\s*([^)]+)\)',
+    caseSensitive: false,
+  ).firstMatch(forwardingEntry)?.group(1)?.trim();
+  final name = meaningfulForwardingDeviceName(destinationDeviceName) ??
+      meaningfulForwardingDeviceName(embeddedDeviceId);
   if (name == null) return reply;
-  return 'Forwarded to $name';
+  final id = transactionId?.trim() ?? '';
+  final label =
+      'Forwarded to $name${id.isEmpty ? '' : ' — Transaction ID: $id'}';
+  if (forwardingEntryIndex >= 0) {
+    entries[forwardingEntryIndex] = label;
+  } else {
+    entries.insert(0, label);
+  }
+  return entries.join('\n•\n');
 }

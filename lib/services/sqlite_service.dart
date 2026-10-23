@@ -1435,6 +1435,38 @@ class SQLiteService {
     final db = await database;
     final now = DateTime.now().millisecondsSinceEpoch;
     return db.transaction((txn) async {
+      final existingClaims = await txn.query(
+        'forwardedSmsJobs',
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+        limit: 1,
+      );
+      if (existingClaims.isNotEmpty) {
+        final existingSourceTransactionId =
+            existingClaims.first['sourceTransactionId']?.toString() ?? '';
+        if (sourceTransactionId != null &&
+            sourceTransactionId.isNotEmpty &&
+            existingSourceTransactionId.isNotEmpty &&
+            sourceTransactionId != existingSourceTransactionId) {
+          return {
+            'claimed': false,
+            'localTransactionId': int.tryParse(
+              existingClaims.first['localTransactionId']?.toString() ?? '',
+            ),
+            'sourceTransactionId': existingSourceTransactionId,
+            'state': 'identifier_mismatch',
+          };
+        }
+        return {
+          'claimed': false,
+          'localTransactionId': int.tryParse(
+            existingClaims.first['localTransactionId']?.toString() ?? '',
+          ),
+          'sourceTransactionId': existingSourceTransactionId,
+          'state': existingClaims.first['state'],
+        };
+      }
+
       final existingTransactions = await txn.query(
         'transactions',
         columns: ['id'],
@@ -1463,22 +1495,6 @@ class SQLiteService {
           'claimed': false,
           'localTransactionId': existingTransactionId,
           'state': 'completed',
-        };
-      }
-
-      final existingClaims = await txn.query(
-        'forwardedSmsJobs',
-        where: 'forwardingJobId = ?',
-        whereArgs: [forwardingJobId],
-        limit: 1,
-      );
-      if (existingClaims.isNotEmpty) {
-        return {
-          'claimed': false,
-          'localTransactionId': int.tryParse(
-            existingClaims.first['localTransactionId']?.toString() ?? '',
-          ),
-          'state': existingClaims.first['state'],
         };
       }
 
@@ -1519,6 +1535,33 @@ class SQLiteService {
     if (updated != 1) {
       throw StateError('No forwarding job claim exists for $forwardingJobId');
     }
+  }
+
+  Future<int> recordForwardingReceiptAcknowledgement({
+    required int transactionId,
+    required String forwardingJobId,
+    required String note,
+  }) async {
+    final db = await database;
+    return db.rawUpdate(
+      '''
+      UPDATE transactions
+      SET ussdReply = CASE
+        WHEN instr(COALESCE(ussdReply, ''), ?) > 0 THEN ussdReply
+        WHEN COALESCE(ussdReply, '') = '' THEN ?
+        ELSE ussdReply || char(10) || '•' || char(10) || ?
+      END
+      WHERE id = ? AND forwardingJobId = ? AND status = ?
+      ''',
+      [
+        note,
+        note,
+        note,
+        transactionId,
+        forwardingJobId,
+        TransactionStatuses.forwardedPending,
+      ],
+    );
   }
 
   Future<bool> claimForwardingSubmission(
@@ -2307,6 +2350,8 @@ class SQLiteService {
       if (rows.isEmpty) return 0;
       final row = rows.first;
       final status = row['status']?.toString() ?? '';
+      final previousRetryStartedAt =
+          int.tryParse(row['retryStartedAt']?.toString() ?? '');
       const eligibleStatuses = {
         TransactionStatuses.error,
         TransactionStatuses.timedOut,
@@ -2352,7 +2397,13 @@ class SQLiteService {
       }
       return txn.update(
         'transactions',
-        {'retryState': 'dispatching', 'retryStartedAt': now},
+        {
+          'retryState': 'dispatching',
+          'retryStartedAt':
+              previousRetryStartedAt != null && now <= previousRetryStartedAt
+                  ? previousRetryStartedAt + 1
+                  : now,
+        },
         where:
             'id = ? AND status = ? AND retryState = ? AND retryClaimOwner = ?',
         whereArgs: [transactionId, status, 'claimed', _retryClaimOwner],

@@ -474,7 +474,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                         transaction['simSubId'],
                                         transaction['canRetry'] ?? 0,
                                         selectionMode: _selectionMode,
-                                        transaction["ussdReply"]),
+                                        transaction["ussdReply"],
+                                        destinationDeviceName: transaction[
+                                                'forwardingRecipientDeviceName']
+                                            ?.toString(),
+                                        transactionId:
+                                            transaction['transactionId']
+                                                ?.toString()),
                                   ),
                                 ],
                               ),
@@ -786,6 +792,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                 'forwardingJobId': forwardingJobId,
                 'forwardingStatus': ForwardingJobStatuses.pending,
                 'senderDeviceName': senderDeviceName,
+                'recipientDeviceName': recipientDeviceName,
               },
             },
           );
@@ -1024,12 +1031,23 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         title: 'Retry Transactions',
         message: 'Retry these ${_selectedTransactionIds.length} transactions?');
     if (val == true) {
+      final selectedCount = _selectedTransactionIds.length;
       showLoadingDialog(context);
-      await TransactionController()
+      final result = await TransactionController()
           .retryTransactionsGivenIds(_selectedTransactionIds.toList());
       _resetSelectionState();
       reloadForNewDate();
       Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Execution retries dispatched: ${result.dispatched}; '
+              'ambiguous outcomes: ${result.ambiguous}; forwarding requests '
+              'dispatched: ${result.forwarded}; rejected/failed: '
+              '${result.failed}; existing retry flow invoked for '
+              '${result.existingFlowInvoked} other selected transactions '
+              'of $selectedCount.'),
+        ),
+      );
     }
   }
 

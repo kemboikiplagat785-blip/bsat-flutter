@@ -22,6 +22,7 @@ import '../../services/shared_preferences_service.dart';
 import '../../utils/constants.dart';
 import '../../utils/forwarding_job_id.dart';
 import '../../utils/forwarding_mode.dart';
+import '../../utils/forwarding_display.dart';
 import '../clients/single_client.dart';
 import '../tasks/edit_task.dart';
 
@@ -588,14 +589,32 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       child: Text("Redialing"),
                                     ),
                                     () async {
-                                      await TransactionController()
-                                          .redoTransaction(
-                                              _details["id"],
-                                              _details["ussdDialed"],
-                                              _details["simSubId"],
-                                              _details["canRetry"],
-                                              _details["ussdReply"]);
-
+                                      final scaffoldMessenger =
+                                          ScaffoldMessenger.of(context);
+                                      final result =
+                                          await TransactionController()
+                                              .manuallyRetryTransaction(
+                                                  _details['id']);
+                                      if (mounted) {
+                                        final message = switch (result) {
+                                          ManualRetryResult
+                                                .executionDispatched =>
+                                            'Retry execution completed; check the updated transaction status.',
+                                          ManualRetryResult
+                                                .executionAmbiguous =>
+                                            'Retry was dispatched, but the purchase outcome is ambiguous. Check confirmation before retrying again.',
+                                          ManualRetryResult
+                                                .forwardingDispatched =>
+                                            'Forwarding request dispatched; awaiting destination receipt.',
+                                          ManualRetryResult.forwardingFailed =>
+                                            'Forwarding retry failed; transaction remains in error.',
+                                          ManualRetryResult.rejected =>
+                                            'Retry was not started. The transaction may be confirmed, in progress, or unsafe to retry.',
+                                        };
+                                        scaffoldMessenger.showSnackBar(SnackBar(
+                                          content: Text(message),
+                                        ));
+                                      }
                                       getStuff();
                                     },
                                   );
@@ -736,7 +755,15 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                             ],
                           ),
                           Text(
-                            '${_details["ussdReply"]}',
+                            forwardingDisplayReply(
+                              status: _details['status']?.toString() ?? '',
+                              reply: _details['ussdReply']?.toString() ?? '',
+                              destinationDeviceName:
+                                  _details['forwardingRecipientDeviceName']
+                                      ?.toString(),
+                              transactionId:
+                                  _details['transactionId']?.toString(),
+                            ),
                             maxLines: showFullReply ? null : 1,
                           ),
                           const SizedBox(height: kPagePadding),
@@ -1000,6 +1027,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                               ForwardingJobStatuses.pending,
                                           'title': "Forwarded Message",
                                           'senderDeviceName': senderDeviceName,
+                                          'recipientDeviceName':
+                                              recipientDeviceName,
                                         }
                                       },
                                     );

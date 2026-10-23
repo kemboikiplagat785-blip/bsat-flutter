@@ -11,6 +11,29 @@ String? originatingForwardingTransactionId(
   return id != null && id > 0 ? id.toString() : null;
 }
 
+bool isMatchingForwardingReceipt({
+  required String expectedJobId,
+  required String receivedJobId,
+  required String expectedTransactionId,
+  required String receivedTransactionId,
+  required String expectedRecipientDeviceName,
+  required String receivedSenderDeviceName,
+  required String expectedSenderDeviceName,
+  required String receivedRecipientDeviceName,
+}) {
+  final expectedLocalId = int.tryParse(expectedTransactionId.trim());
+  final receivedLocalId = int.tryParse(receivedTransactionId.trim());
+  return expectedJobId.trim().isNotEmpty &&
+      expectedJobId.trim() == receivedJobId.trim() &&
+      expectedLocalId != null &&
+      expectedLocalId > 0 &&
+      expectedLocalId == receivedLocalId &&
+      expectedRecipientDeviceName.trim().isNotEmpty &&
+      expectedRecipientDeviceName.trim() == receivedSenderDeviceName.trim() &&
+      expectedSenderDeviceName.trim().isNotEmpty &&
+      expectedSenderDeviceName.trim() == receivedRecipientDeviceName.trim();
+}
+
 bool isFinalForwardedSmsConfirmation({
   required String ackKind,
   required String status,

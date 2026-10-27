@@ -46,3 +46,10 @@ bool isFinalForwardedSmsConfirmation({
   return normalizedAckKind == 'confirmed' ||
       normalizedStatus == 'transaction-confirmed';
 }
+
+bool isForwardingReceiptAcknowledgement({
+  required String ackKind,
+  required String status,
+}) =>
+    ackKind.toLowerCase() == 'received' &&
+    status.toLowerCase() == 'received';

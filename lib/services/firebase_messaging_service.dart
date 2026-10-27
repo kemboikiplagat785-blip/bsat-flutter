@@ -85,6 +85,9 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       type = 'forwarded_sms';
     }
   }
+  if ((type ?? '').toLowerCase() == 'forwarded_sms') {
+    type = 'forwarded_sms';
+  }
 
   developer.log('Hello fcm');
 
@@ -243,7 +246,6 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
       await _handleForwardedAltResult(message);
       break;
 
-    case 'request_contacts_from_device':
     case 'forwarded_sms':
       // Handle the forwarded SMS case
       String body = message.data['body'] ?? message.notification?.body ?? "";
@@ -657,14 +659,6 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
     default:
       // Show notification for other types
       await _showNotification(message);
-
-      // Fallback: If no type is specified but notification exists, treat as SMS (legacy behavior)
-      if (message.notification != null) {
-        String body = message.notification!.body ?? "";
-        if (body.isNotEmpty) {
-          TransactionController().makeTransactionGivenSmsBody(body);
-        }
-      }
       break;
   }
 }
@@ -728,12 +722,28 @@ Future<void> _sendImmediateAck(
   };
 
   try {
-    await BackendService().post(callbackUrl, body: postBody);
-    debugPrint('Ack sent');
-  } catch (e) {
-    if (kDebugMode) {
-      print('Failed to send immediate message ack: $e');
+    final result = await BackendService().post(callbackUrl, body: postBody);
+    if (result['success'] == true) {
+      debugPrint(
+        'MESSAGE ACK accepted by backend: '
+        'type=${originalType ?? ''}, '
+        'job=${message.data['forwardingJobId'] ?? ''}',
+      );
+    } else {
+      debugPrint(
+        'MESSAGE ACK POST failed: '
+        'type=${originalType ?? ''}, '
+        'job=${message.data['forwardingJobId'] ?? ''}, '
+        'status=${result['statusCode'] ?? 'unknown'}',
+      );
     }
+  } catch (e) {
+    debugPrint(
+      'MESSAGE ACK POST exception: '
+      'type=${originalType ?? ''}, '
+      'job=${message.data['forwardingJobId'] ?? ''}, '
+      'error=$e',
+    );
   }
 }
 
@@ -1380,35 +1390,29 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
   // A normal "received" ACK only means Phone B received
   // the forwarded SMS. It MUST NOT confirm Phone A.
   if (ackKind == 'received' || status == 'received') {
+    if (!isForwardingReceiptAcknowledgement(
+      ackKind: ackKind,
+      status: status,
+    )) {
+      debugPrint(
+        'FORWARDED_SMS: malformed receipt ACK; ignoring. '
+        'ackKind=$ackKind status=$status job=$forwardingJobId',
+      );
+      return;
+    }
     final transactionId = message.data['transactionId']?.toString() ?? '';
     final receivedBy = message.data['senderDeviceName']?.toString() ?? '';
     final receivedFor = message.data['recipientDeviceName']?.toString() ?? '';
     final localSender = await SharedPreferencesService().getDeviceName() ?? '';
-    final matchingRows = await SQLiteService().queryCustom(
-      'transactions',
-      'forwardingJobId = ? AND id = ?',
-      [forwardingJobId, int.tryParse(transactionId) ?? -1],
+    final acknowledged =
+        await SQLiteService().acknowledgeForwardingDeliveryIfMatches(
+      forwardingJobId: forwardingJobId,
+      transactionRowId: transactionId,
+      receivedSenderDeviceName: receivedBy,
+      receivedRecipientDeviceName: receivedFor,
+      localDeviceName: localSender,
     );
-    final matchingTransaction = matchingRows.singleOrNull;
-    final persistedSender =
-        matchingTransaction?['forwardingSenderDeviceName']?.toString().trim() ??
-            '';
-    if (matchingTransaction == null ||
-        !isMatchingForwardingReceipt(
-          expectedJobId:
-              matchingTransaction['forwardingJobId']?.toString() ?? '',
-          receivedJobId: forwardingJobId,
-          expectedTransactionId: matchingTransaction['id']?.toString() ?? '',
-          receivedTransactionId: transactionId,
-          expectedRecipientDeviceName:
-              matchingTransaction['forwardingRecipientDeviceName']
-                      ?.toString() ??
-                  '',
-          receivedSenderDeviceName: receivedBy,
-          expectedSenderDeviceName:
-              persistedSender.isEmpty ? localSender : persistedSender,
-          receivedRecipientDeviceName: receivedFor,
-        )) {
+    if (!acknowledged) {
       debugPrint(
         'FORWARDED_SMS: received ACK correlation mismatch; ignoring. '
         'job=$forwardingJobId transaction=$transactionId '
@@ -1416,12 +1420,6 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
       );
       return;
     }
-    const receiptNote = 'Receipt acknowledged by destination device';
-    await SQLiteService().recordForwardingReceiptAcknowledgement(
-      transactionId: int.parse(matchingTransaction['id'].toString()),
-      forwardingJobId: forwardingJobId,
-      note: receiptNote,
-    );
     debugPrint(
       'FORWARDED_SMS: received ACK only. '
       'Keeping transaction forwarded-pending.',
@@ -1437,9 +1435,10 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
 
   // Only an explicit transaction confirmation is allowed
   // to change Phone A to forwarded-confirmed.
-  if (ackKind != 'confirmed' &&
-      status != TransactionStatuses.doneConfirmed &&
-      status != 'transaction-confirmed') {
+  if (!isFinalForwardedSmsConfirmation(
+    ackKind: ackKind,
+    status: status,
+  )) {
     debugPrint(
       'FORWARDED_SMS: non-confirmation ACK. '
       'Keeping transaction forwarded-pending.',
@@ -1991,6 +1990,10 @@ class FirebaseMessagingService {
     // Handle initial message (terminated state)
     _firebaseMessaging.getInitialMessage().then((RemoteMessage? message) {
       if (message != null) {
+        if (isForwardedSmsNotification(message)) {
+          handleRemoteMessage(message);
+          return;
+        }
         if (message.data['type'] == 'pairing_request') {
           // Provide delayed navigation to ensure context is ready
           Future.delayed(const Duration(milliseconds: 500), () {
@@ -2006,6 +2009,10 @@ class FirebaseMessagingService {
 
     // Handle background message tap (app running in background)
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      if (isForwardedSmsNotification(message)) {
+        handleRemoteMessage(message);
+        return;
+      }
       if (message.data['type'] == 'pairing_request') {
         navigatorKey.currentState?.push(
           CupertinoPageRoute(
@@ -2032,4 +2039,12 @@ class FirebaseMessagingService {
       }
     });
   }
+}
+
+bool isForwardedSmsNotification(RemoteMessage message) {
+  final type = message.data['type']?.toString().toLowerCase();
+  return type == 'forwarded_sms' ||
+      (type == null &&
+          (message.data['title'] ?? message.notification?.title) ==
+              'BSAT Online Forwarding');
 }

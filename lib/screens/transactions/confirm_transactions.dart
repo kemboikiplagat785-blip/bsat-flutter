@@ -141,6 +141,8 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
     final body = item.sms.body ?? '';
     if (body.isEmpty) return;
 
+    debugPrint('Retrying message: ${item.sms.address} | $body');
+
     await TransactionController().makeTransactionGivenSmsBody(
       body,
       address: item.sms.address,

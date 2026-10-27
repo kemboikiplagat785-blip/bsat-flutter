@@ -1,6 +1,7 @@
 // import 'dart:ui';
 
 import 'package:bsat/firebase_options.dart';
+import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/screens/home/home.dart';
 import 'package:bsat/screens/onboarding/main_page.dart';
 import 'package:bsat/services/firebase_messaging_service.dart';
@@ -43,6 +44,10 @@ Future<void> main() async {
   );
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Construct once at startup so persisted forwarding delivery retries are
+  // recovered even when no transaction screen has been opened yet.
+  TransactionController();
 
   registerMainEngineAlternativeUssdBridge();
 

@@ -23,6 +23,8 @@ import '../models/ussd_code.dart';
 import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
 import '../utils/forwarding_job_id.dart';
+import '../utils/forwarding_delivery_retry.dart';
+import '../utils/logger.dart';
 import '../utils/top_up.dart';
 import '../utils/transaction_execution_safety.dart';
 
@@ -73,18 +75,123 @@ class TransactionController {
       'Will retry after initiation play';
   static const Duration _pausedOfferResumeClaimLease = Duration(seconds: 60);
   static const Duration _forwardingSubmissionClaimLease = Duration(minutes: 2);
-  final PhoneService _phoneService = PhoneService();
-  final SQLiteService _sqliteService = SQLiteService();
-  final _paymentOps = PaymentOps();
+  final PhoneService _phoneService;
+  final SQLiteService _sqliteService;
+  final PaymentOps _paymentOps;
+  final SharedPreferencesService _sharedPreferencesService;
 
-  final _sharedPreferencesService = SharedPreferencesService();
-
-  TransactionController() {
-    _forwardingConfirmationTimer ??= Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _retryPendingForwardingConfirmations(),
-    );
+  TransactionController({
+    PhoneService? phoneService,
+    SQLiteService? sqliteService,
+    PaymentOps? paymentOps,
+    SharedPreferencesService? sharedPreferencesService,
+    bool startConfirmationTimer = true,
+  })  : _phoneService = phoneService ?? PhoneService(),
+        _sqliteService = sqliteService ?? SQLiteService(),
+        _paymentOps = paymentOps ?? PaymentOps(),
+        _sharedPreferencesService =
+            sharedPreferencesService ?? SharedPreferencesService() {
+    if (startConfirmationTimer) {
+      _forwardingConfirmationTimer ??= Timer.periodic(
+        const Duration(seconds: 15),
+        (_) async {
+          await _retryPendingForwardingConfirmations();
+          await _retryPendingForwardingDeliveries();
+        },
+      );
+      _retryPendingForwardingDeliveries();
+    }
   }
+
+  Future<void> _retryPendingForwardingDeliveries() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final due = await _sqliteService.dueForwardingDeliveryRetries(now);
+    for (final row in due) {
+      final jobId = row['forwardingJobId']?.toString() ?? '';
+      final transactionId =
+          int.tryParse(row['transactionRowId']?.toString() ?? '');
+      final recipient = row['forwardingRecipientDeviceName']?.toString() ?? '';
+      final message = row['initialMessage']?.toString() ?? '';
+      final sender = row['forwardingSenderDeviceName']?.toString() ?? '';
+      if (jobId.isEmpty ||
+          transactionId == null ||
+          recipient.isEmpty ||
+          message.isEmpty ||
+          sender.isEmpty) continue;
+      final claimToken = _newForwardingSubmissionClaimToken(jobId);
+      final claimed = await _sqliteService.claimForwardingSubmission(
+        jobId,
+        now: now,
+        leaseExpiresAt: now + _forwardingSubmissionClaimLease.inMilliseconds,
+        claimToken: claimToken,
+      );
+      if (!claimed) continue;
+      var renewalInProgress = false;
+      final claimRenewalTimer =
+          Timer.periodic(const Duration(seconds: 30), (_) async {
+        if (renewalInProgress) return;
+        renewalInProgress = true;
+        try {
+          final renewed = await _sqliteService.renewForwardingSubmission(
+            jobId,
+            claimToken: claimToken,
+            leaseExpiresAt: DateTime.now()
+                .add(_forwardingSubmissionClaimLease)
+                .millisecondsSinceEpoch,
+          );
+          if (!renewed) {
+            debugPrint(
+              'Forwarding retry claim was lost before submission completed: '
+              'job=$jobId',
+            );
+          }
+        } catch (error, stackTrace) {
+          debugPrint(
+            'Failed to renew forwarding retry claim: '
+            'job=$jobId error=$error stackTrace=$stackTrace',
+          );
+        } finally {
+          renewalInProgress = false;
+        }
+      });
+      try {
+        final result = await BackendService().post(
+          '/api/fcm/send-secure',
+          body: buildForwardedSmsRequestPayload(
+            message: message,
+            messageId: row['transactionId']?.toString() ?? '',
+            transactionRowId: transactionId,
+            forwardingJobId: jobId,
+            senderDeviceName: sender,
+            recipientDeviceName: recipient,
+          ),
+        );
+        final attempt =
+            (int.tryParse(row['attempt']?.toString() ?? '') ?? 0) + 1;
+        final delay = forwardingDeliveryRetryDelayAfterAttempt(attempt);
+        await _sqliteService.scheduleForwardingDeliveryRetry(
+          jobId,
+          attempt: attempt,
+          nextAttemptAt: delay == null
+              ? 0
+              : DateTime.now().add(delay).millisecondsSinceEpoch,
+          lastFailure: result['success'] == true
+              ? null
+              : 'HTTP/API submission failed (${result['statusCode'] ?? 'unknown'})',
+        );
+      } finally {
+        claimRenewalTimer.cancel();
+        await _sqliteService.releaseForwardingSubmission(
+          jobId,
+          claimToken: claimToken,
+        );
+      }
+    }
+  }
+
+  static String _newForwardingSubmissionClaimToken(String jobId) =>
+      '$jobId:${DateTime.now().microsecondsSinceEpoch}:'
+      '${Random.secure().nextInt(1 << 32)}';
 
   Future<void> _retryPendingForwardingConfirmations() async {
     final due = await _sqliteService
@@ -603,6 +710,13 @@ class TransactionController {
     bool forwardingJobClaimed = false,
     int? retryTransactionId,
   }) async {
+    debugPrint(
+      'makeTransactionGivenSmsBody called with forwardingJobId=$forwardingJobId, '
+      'forwardingJobClaimed=$forwardingJobClaimed, '
+      'forwardingSourceTransactionId=$forwardingSourceTransactionId, '
+      'parentTransactionId=$parentTransactionId, '
+      'retryTransactionId=$retryTransactionId',
+    );
     final jobId = forwardingJobId?.trim() ?? '';
     if (jobId.isNotEmpty) {
       Map<String, dynamic>? claim;
@@ -631,8 +745,15 @@ class TransactionController {
         jobId,
         localTransactionId: localTransactionId,
       );
+      debugPrint(
+        'Forwarded SMS job $jobId completed with localTransactionId=$localTransactionId',
+      );
       return localTransactionId;
     }
+
+    debugPrint(
+      'makeTransactionGivenSmsBody: no forwardingJobId provided, proceeding with normal transaction creation. with address=$address, parentTransactionId=$parentTransactionId, retryTransactionId=$retryTransactionId, smsBody = $smsBody, forwardingSenderDeviceName = $forwardingSenderDeviceName, forwardingJobId = $forwardingJobId',
+    );
     return _makeTransactionFromSmsBody(
       smsBody,
       address: address,
@@ -1674,16 +1795,13 @@ class TransactionController {
           : '';
       await _sqliteService.finishTransactionRetryClaim(
         retryTransactionId,
-        ambiguousOutcome: isAmbiguousTransactionOutcome(
-          status: requestResponse[1]?.toString() ?? TransactionStatuses.error,
-          reply: recoveryReply,
-        ),
-        retryableOutcome: requestResponse[1] == TransactionStatuses.error &&
-            !isAmbiguousTransactionOutcome(
+        ambiguousOutcome: requestResponse[1] != TransactionStatuses.error &&
+            isAmbiguousTransactionOutcome(
               status:
                   requestResponse[1]?.toString() ?? TransactionStatuses.error,
               reply: recoveryReply,
             ),
+        retryableOutcome: requestResponse[1] == TransactionStatuses.error,
       );
     }
 
@@ -1955,6 +2073,7 @@ class TransactionController {
           final senderDeviceName =
               await SharedPreferencesService().getDeviceName() ??
                   "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
+          var stableSenderDeviceName = senderDeviceName;
 
           // ------------------------------------------------------------
           // STEP 1: Build the list of devices that are allowed to
@@ -2222,6 +2341,14 @@ class TransactionController {
               candidateRecipientDeviceName: candidateRecipient,
               candidateSenderDeviceName: senderDeviceName,
             );
+            stableSenderDeviceName =
+                forwardingIdentity['forwardingSenderDeviceName']?.toString() ??
+                    '';
+            if (stableSenderDeviceName.isEmpty) {
+              throw StateError(
+                'Persisted forwarding sender identity is incomplete',
+              );
+            }
             forwardingJobId = forwardingIdentity['forwardingJobId']?.toString();
             recipientDeviceName =
                 forwardingIdentity['forwardingRecipientDeviceName']?.toString();
@@ -2301,13 +2428,28 @@ class TransactionController {
               'Forwarding job ID must be persisted before submission',
             );
           }
+          if (transactionId == null) {
+            throw StateError(
+              'Forwarding transaction row must be persisted before submission',
+            );
+          }
+          final stableRecipientDeviceName = recipientDeviceName;
+          if (stableRecipientDeviceName == null ||
+              stableRecipientDeviceName.isEmpty) {
+            throw StateError(
+              'Forwarding recipient must be persisted before submission',
+            );
+          }
           final submissionNow = DateTime.now().millisecondsSinceEpoch;
+          final submissionClaimToken =
+              _newForwardingSubmissionClaimToken(stableForwardingJobId);
           final submissionClaimed =
               await _sqliteService.claimForwardingSubmission(
             stableForwardingJobId,
             now: submissionNow,
             leaseExpiresAt:
                 submissionNow + _forwardingSubmissionClaimLease.inMilliseconds,
+            claimToken: submissionClaimToken,
           );
           if (!submissionClaimed) {
             return ForwardingAttemptResult(
@@ -2316,114 +2458,116 @@ class TransactionController {
             );
           }
 
-          late final Map<String, dynamic> result;
           try {
-            result = await BackendService().post(
+            final result = await BackendService().post(
               '/api/fcm/send-secure',
-              body: {
-                'title': "BSAT Online Forwarding",
-                'body': smsMessageBody,
-                'senderDeviceName': senderDeviceName,
-                'recipientDeviceName': recipientDeviceName,
-                'data': {
-                  'type': 'forwarded_sms',
-                  'body': smsMessageBody,
-                  'title': "Forwarded Message",
-                  'messageId': mpesaCode,
-                  'transactionId': transactionId,
-                  'forwardingJobId': stableForwardingJobId,
-                  'forwardingStatus': ForwardingJobStatuses.pending,
-                  'senderDeviceName': senderDeviceName,
-                  'recipientDeviceName': recipientDeviceName,
-                }
-              },
+              body: buildForwardedSmsRequestPayload(
+                message: smsMessageBody,
+                messageId: mpesaCode,
+                transactionRowId: transactionId,
+                forwardingJobId: stableForwardingJobId,
+                senderDeviceName: stableSenderDeviceName,
+                recipientDeviceName: stableRecipientDeviceName,
+              ),
             );
-          } finally {
-            await _sqliteService.releaseForwardingSubmission(
-              stableForwardingJobId,
-            );
-          }
 
-          final String messageId = result['messageId'] ?? "";
+            final String messageId = result['messageId'] ?? "";
 
-          debugPrint("MessageID: $messageId");
+            debugPrint("MessageID: $messageId");
 
-          // ------------------------------------------------------------
-          // STEP 7: Backend send failed.
-          //
-          // Do NOT advance the round-robin index.
-          // ------------------------------------------------------------
-          if (result['success'] != true) {
-            if (transactionId != null) {
-              await _sqliteService.updateTransactionUnlessSafaricomSuccess(
-                transactionId,
-                {
-                  'status': TransactionStatuses.error,
-                  'ussdReply':
-                      'Forwarding failed: Phone offline or server not reachable. Will retry later.',
-                },
+            // ------------------------------------------------------------
+            // STEP 7: Backend send failed.
+            //
+            // Do NOT advance the round-robin index.
+            // ------------------------------------------------------------
+            if (result['success'] != true) {
+              final failedUpdate = await _sqliteService
+                  .markForwardingSubmissionFailedIfUnacknowledged(
+                transactionId: transactionId,
+                forwardingJobId: stableForwardingJobId,
+                reply:
+                    'Forwarding failed: Phone offline or server not reachable. Will retry later.',
+              );
+              if (failedUpdate == 0) {
+                debugPrint(
+                  'FORWARDED SMS POST failed after receipt acknowledgement '
+                  'or a later state transition; preserving transaction state. '
+                  'job=$stableForwardingJobId',
+                );
+              }
+
+              return ForwardingAttemptResult(
+                ForwardingAttemptState.configuredButUnavailable,
+                transactionId: transactionId,
               );
             }
 
-            return ForwardingAttemptResult(
-              ForwardingAttemptState.configuredButUnavailable,
-              transactionId: transactionId,
-            );
-          }
+            // ------------------------------------------------------------
+            // STEP 8: Backend send succeeded.
+            //
+            // Only NEW transactions advance the per-amount index.
+            // Retries NEVER rotate.
+            // ------------------------------------------------------------
+            if (!isRetryWithSavedRecipient &&
+                selectedIndex != null &&
+                eligibleDevices.isNotEmpty) {
+              final nextIndex = (selectedIndex + 1) % eligibleDevices.length;
 
-          // ------------------------------------------------------------
-          // STEP 8: Backend send succeeded.
-          //
-          // Only NEW transactions advance the per-amount index.
-          // Retries NEVER rotate.
-          // ------------------------------------------------------------
-          if (!isRetryWithSavedRecipient &&
-              selectedIndex != null &&
-              eligibleDevices.isNotEmpty) {
-            final nextIndex = (selectedIndex + 1) % eligibleDevices.length;
+              await SharedPreferencesService()
+                  .setOnlineForwardingIndex(amount, nextIndex);
 
-            await SharedPreferencesService()
-                .setOnlineForwardingIndex(amount, nextIndex);
+              debugPrint(
+                'ONLINE FORWARDING ROUND-ROBIN: '
+                'amount=$amount '
+                'selected=$recipientDeviceName '
+                'nextIndex=$nextIndex',
+              );
+            }
 
-            debugPrint(
-              'ONLINE FORWARDING ROUND-ROBIN: '
-              'amount=$amount '
-              'selected=$recipientDeviceName '
-              'nextIndex=$nextIndex',
-            );
-          }
-
-          if (transactionId != null) {
             await _sqliteService.updateTransactionUnlessSafaricomSuccess(
               transactionId,
               {
                 'status': TransactionStatuses.forwardedPending,
-                'forwardingRecipientDeviceName': recipientDeviceName,
-                'ussdReply': 'Forwarded to $recipientDeviceName'
+                'forwardingRecipientDeviceName': stableRecipientDeviceName,
+                'ussdReply': 'Forwarded to $stableRecipientDeviceName'
                     '${selectedDevice != null && selectedDevice['device_id'] != null ? ' (ID: ${selectedDevice['device_id']})' : ''}',
               },
             );
+            await _sqliteService.scheduleForwardingDeliveryRetry(
+              stableForwardingJobId,
+              attempt: 0,
+              nextAttemptAt: DateTime.now()
+                  .add(Duration(
+                    seconds: initialForwardingDeliveryRetryDelaySeconds,
+                  ))
+                  .millisecondsSinceEpoch,
+            );
+
+            // Preserve the existing online-forwarding flow.
+            await processReply(
+              number,
+              TransactionStatuses.forwardedOnline,
+              name.split(' ')[0],
+              name.trim().split(RegExp(r'\s+')).length > 1
+                  ? name.trim().split(RegExp(r'\s+'))[1]
+                  : '',
+              amount,
+            );
+
+            debugPrint(
+              'ONLINE FORWARDING FINAL: amount=$amount '
+              'state=forwardedSuccessfully',
+            );
+            return ForwardingAttemptResult(
+              ForwardingAttemptState.forwardedSuccessfully,
+              transactionId: transactionId,
+            );
+          } finally {
+            await _sqliteService.releaseForwardingSubmission(
+              stableForwardingJobId,
+              claimToken: submissionClaimToken,
+            );
           }
-
-          // Preserve the existing online-forwarding flow.
-          await processReply(
-            number,
-            TransactionStatuses.forwardedOnline,
-            name.split(' ')[0],
-            name.trim().split(RegExp(r'\s+')).length > 1
-                ? name.trim().split(RegExp(r'\s+'))[1]
-                : '',
-            amount,
-          );
-
-          debugPrint(
-            'ONLINE FORWARDING FINAL: amount=$amount '
-            'state=forwardedSuccessfully',
-          );
-          return ForwardingAttemptResult(
-            ForwardingAttemptState.forwardedSuccessfully,
-            transactionId: transactionId,
-          );
         }
       }
     } catch (e) {
@@ -3582,7 +3726,7 @@ class TransactionController {
             'Safaricom evidence changed after the claim.');
         return;
       }
-      response = await PhoneService().makeAdvancedRequest(
+      response = await _phoneService.makeAdvancedRequest(
         ussdCode,
         simSubId,
         codeSignature: codeSignature,
@@ -3678,7 +3822,7 @@ class TransactionController {
             'Safaricom evidence changed after the claim.');
         return;
       }
-      response = await PhoneService().makeMyRequest(
+      response = await _phoneService.makeMyRequest(
         ussdCode,
         simSubId,
       );
@@ -3822,9 +3966,9 @@ class TransactionController {
         transactionId: id.toString(),
       );
     }
-    if (canRetry < (retryTimes) &&
-        (response[1] == TransactionStatuses.secondAttempt ||
-            response[1] == TransactionStatuses.error)) {
+    if (response[1] == TransactionStatuses.error ||
+        (canRetry < retryTimes &&
+            response[1] == TransactionStatuses.secondAttempt)) {
       return;
     }
 
@@ -4908,13 +5052,14 @@ class TransactionController {
     }
   }
 
-  Future<({
-    int dispatched,
-    int ambiguous,
-    int forwarded,
-    int failed,
-    int existingFlowInvoked,
-  })> retryTransactionsGivenIds(
+  Future<
+      ({
+        int dispatched,
+        int ambiguous,
+        int forwarded,
+        int failed,
+        int existingFlowInvoked,
+      })> retryTransactionsGivenIds(
     List<int> ids,
   ) async {
     if (ids.isEmpty) {
@@ -4930,7 +5075,14 @@ class TransactionController {
       'transactions',
       'id IN (${ids.toSet().join(',')})',
       [],
-      columns: ['id', 'status', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
+      columns: [
+        'id',
+        'status',
+        'ussdDialed',
+        'simSubId',
+        'canRetry',
+        'ussdReply'
+      ],
     );
     var dispatched = 0;
     var ambiguous = 0;
@@ -4970,9 +5122,8 @@ class TransactionController {
     );
   }
 
-  /// Runs the explicit user retry path. Automatic retry limits are applied by
-  /// candidate selection, while this path still passes through the durable
-  /// atomic claim and Safaricom ambiguity checks in [redoTransaction].
+  /// Runs an explicit retry through the same durable claim and dispatch path
+  /// used by automatic retries.
   Future<ManualRetryResult> manuallyRetryTransaction(int id) async {
     final before = await _sqliteService.queryCustom(
       'transactions',
@@ -4981,14 +5132,13 @@ class TransactionController {
       limit: 1,
     );
     if (before.isEmpty || before.first['status'] != TransactionStatuses.error) {
+      debugPrint(
+        'Manual retry rejected: transaction $id not found or not in error state.',
+      );
       return ManualRetryResult.rejected;
     }
     final row = before.first;
     final initialReply = row['ussdReply']?.toString() ?? '';
-    final initialState = row['retryState']?.toString() ?? 'ready';
-    if (initialState == 'ambiguous' || initialState == 'dispatching') {
-      return ManualRetryResult.rejected;
-    }
     final initialRetryStartedAt =
         int.tryParse(row['retryStartedAt']?.toString() ?? '');
 
@@ -5007,21 +5157,14 @@ class TransactionController {
       columns: ['status', 'ussdReply', 'retryState', 'retryStartedAt'],
       limit: 1,
     );
-    if (after.isEmpty) return ManualRetryResult.rejected;
+    if (after.isEmpty) {
+      debugPrint('Manual retry rejected: transaction $id not found.');
+      return ManualRetryResult.rejected;
+    }
     final updatedRetryStartedAt =
         int.tryParse(after.first['retryStartedAt']?.toString() ?? '');
     if (updatedRetryStartedAt != null &&
         updatedRetryStartedAt != initialRetryStartedAt) {
-      final updatedRetryState = after.first['retryState']?.toString() ?? '';
-      if (updatedRetryState == 'ambiguous' ||
-          updatedRetryState == 'dispatching' ||
-          isAmbiguousTransactionOutcome(
-            status:
-                after.first['status']?.toString() ?? TransactionStatuses.error,
-            reply: after.first['ussdReply']?.toString() ?? '',
-          )) {
-        return ManualRetryResult.executionAmbiguous;
-      }
       return ManualRetryResult.executionDispatched;
     }
     if (after.first['status'] == TransactionStatuses.forwardedPending ||
@@ -5033,8 +5176,11 @@ class TransactionController {
     if (after.first['status'] == TransactionStatuses.error &&
         lowerReply.contains('forward') &&
         lowerReply.contains('fail')) {
+      debugPrint("Manual retry failed: transaction $id forwarding failed.");
       return ManualRetryResult.forwardingFailed;
     }
+    debugPrint(
+        "Manual retry rejected: transaction $id not found or not in error state.");
     return ManualRetryResult.rejected;
   }
 

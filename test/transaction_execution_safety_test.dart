@@ -106,8 +106,16 @@ void main() {
     final saved = unresolved.where((row) => row['body'] == message).toList();
     expect(saved, hasLength(1));
     expect(saved.single['smsTimestamp'], timestamp);
-    expect(await sqlite.claimTransactionRetry(firstTransactionId), 0);
-    expect(await sqlite.claimTransactionRetry(secondTransactionId), 0);
+    expect(await sqlite.claimTransactionRetry(firstTransactionId), 1);
+    expect(
+        await sqlite
+            .releaseUndispatchedTransactionRetryClaim(firstTransactionId),
+        1);
+    expect(await sqlite.claimTransactionRetry(secondTransactionId), 1);
+    expect(
+        await sqlite
+            .releaseUndispatchedTransactionRetryClaim(secondTransactionId),
+        1);
 
     await sqlite.resolveSafaricomMessage(
       body: message,
@@ -266,6 +274,12 @@ void main() {
   test('retry dispatch claim is atomic across concurrent workers', () async {
     final id = await _insertTransaction(sqlite, TransactionStatuses.error);
     addTearDown(() => _deleteTransaction(sqlite, id));
+    await (await sqlite.database).update(
+      'transactions',
+      {'retryState': 'ambiguous'},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
 
     final claims = await Future.wait(
       List.generate(8, (_) => sqlite.claimTransactionRetry(id)),
@@ -555,14 +569,14 @@ void main() {
     expect(row['ussdReply'], isNot(contains('Error sending code')));
   });
 
-  test('genuine retryable error may be retried but ambiguous outcome may not',
-      () async {
+  test('ambiguous error outcomes remain eligible for repeated retry', () async {
     final retryableId = await _insertTransaction(
       sqlite,
       TransactionStatuses.error,
     );
     addTearDown(() => _deleteTransaction(sqlite, retryableId));
     expect(await sqlite.claimTransactionRetry(retryableId), 1);
+    expect(await sqlite.beginTransactionRetryDispatch(retryableId), 1);
     final retryableCompletion = await sqlite.completeTransactionRetry(
       transactionId: retryableId,
       resultStatus: TransactionStatuses.error,
@@ -580,6 +594,7 @@ void main() {
     );
     addTearDown(() => _deleteTransaction(sqlite, ambiguousId));
     expect(await sqlite.claimTransactionRetry(ambiguousId), 1);
+    expect(await sqlite.beginTransactionRetryDispatch(ambiguousId), 1);
     await sqlite.completeTransactionRetry(
       transactionId: ambiguousId,
       resultStatus: TransactionStatuses.error,
@@ -587,17 +602,12 @@ void main() {
       ambiguousOutcome: true,
       fields: {'canRetry': 3},
     );
-    expect((await _readTransaction(sqlite, ambiguousId))['retryState'],
-        'ambiguous');
-    final rejected = await sqlite.claimTransactionRetryWithReason(ambiguousId);
-    expect(rejected['claimed'], 0);
     expect(
-      rejected['reason'],
-      'previous dispatch has an ambiguous outcome',
-    );
+        (await _readTransaction(sqlite, ambiguousId))['retryState'], 'ready');
+    expect(await sqlite.claimTransactionRetry(ambiguousId), 1);
   });
 
-  test('automatic retry selection excludes ambiguous and exhausted rows',
+  test('automatic retry selection ignores error retry flags and ambiguity',
       () async {
     final eligibleId = await _insertTransaction(
       sqlite,
@@ -612,7 +622,7 @@ void main() {
     final exhaustedId = await _insertTransaction(
       sqlite,
       TransactionStatuses.error,
-      canRetry: 6,
+      canRetry: 100,
     );
     addTearDown(() async {
       await _deleteTransaction(sqlite, eligibleId);
@@ -634,8 +644,8 @@ void main() {
     );
     final candidateIds = candidates.map((row) => row['id']).toSet();
     expect(candidateIds, contains(eligibleId));
-    expect(candidateIds, isNot(contains(ambiguousId)));
-    expect(candidateIds, isNot(contains(exhaustedId)));
+    expect(candidateIds, contains(ambiguousId));
+    expect(candidateIds, contains(exhaustedId));
   });
 
   test('version 21 upgrade preserves rows and startup recovery is conservative',

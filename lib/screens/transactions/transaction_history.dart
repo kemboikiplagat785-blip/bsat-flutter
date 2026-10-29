@@ -5,6 +5,7 @@ import 'package:bsat/components/transaction_list_item.dart';
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/screens/online_management/search_device.dart';
 import 'package:bsat/services/backend_service.dart';
+import 'package:bsat/services/forwarding_transport_selection.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
@@ -719,16 +720,47 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     final senderDeviceName =
         await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
 
+    // The destination's transport decides how these jobs are sent; a LAN
+    // destination is never sent online.
+    final manualTransport = await resolveManualForwardingTransport(
+      sqliteService: SQLiteService(),
+      deviceId: device['device_id']?.toString() ?? '',
+      deviceName: recipientDeviceName,
+    );
+    if (!mounted) return;
+    if (manualTransport == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('Could not determine how to reach '
+                '$recipientDeviceName. Nothing was sent.')),
+      );
+      return;
+    }
+    if (manualTransport == ForwardingTransportKind.lan) {
+      await _forwardSelectedOverLan(recipientDeviceName, senderDeviceName);
+      return;
+    }
+
     showLoadingDialog(context, text: 'Forwarding online...');
 
     int forwarded = 0;
     int failed = 0;
+    int alreadyReceived = 0;
+    final reforwardGuard = TransactionController();
 
     try {
       final transactions = await _getSelectedTransactions();
 
       for (final transaction in transactions) {
         final message = (transaction['initialMessage'] ?? '').toString().trim();
+        final rowId = _toInt(transaction['id']);
+        // A job its destination already received is never sent again as a
+        // new job.
+        if (rowId != null &&
+            await reforwardGuard.manualReforwardRefusal(rowId) != null) {
+          alreadyReceived++;
+          continue;
+        }
 
         final forwardingJobId = ForwardingJobId.generate(
           mpesaCode: (transaction['transactionId'] ?? '').toString(),
@@ -758,6 +790,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
             id: _toInt(transaction['id']),
             reply: 'Forwarded to $recipientDeviceName',
             forwardingJobId: forwardingJobId,
+            forwardingTransport: ForwardingTransportKind.online.name,
           );
           final storedRows = txId == null
               ? <Map<String, dynamic>>[]
@@ -818,8 +851,87 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     reloadForNewDate();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content:
-              Text('Forwarded $forwarded transaction(s). Failed $failed.')),
+          content: Text('Forwarded $forwarded transaction(s). Failed $failed.'
+              '${alreadyReceived == 0 ? '' : ' Not sent (already received): $alreadyReceived.'}')),
+    );
+  }
+
+  /// Bulk forward to a LAN destination: the same jobs as the Online bulk
+  /// forward, sent only over LAN. A job counts as forwarded only when the
+  /// destination durably acknowledged receipt.
+  Future<void> _forwardSelectedOverLan(
+    String recipientDeviceName,
+    String senderDeviceName,
+  ) async {
+    showLoadingDialog(context, text: 'Forwarding over LAN...');
+    int forwarded = 0;
+    int failed = 0;
+    int alreadyReceived = 0;
+    try {
+      final controller = TransactionController();
+      final transactions = await _getSelectedTransactions();
+      for (final transaction in transactions) {
+        final message = (transaction['initialMessage'] ?? '').toString().trim();
+        if (message.isEmpty) {
+          failed++;
+          continue;
+        }
+        final rowId = _toInt(transaction['id']);
+        if (rowId != null &&
+            await controller.manualReforwardRefusal(rowId) != null) {
+          alreadyReceived++;
+          continue;
+        }
+        final forwardingJobId = ForwardingJobId.generate(
+          mpesaCode: (transaction['transactionId'] ?? '').toString(),
+        );
+        try {
+          final txId = await controller.dontProcess(
+            message,
+            (transaction['transactionId'] ?? '').toString(),
+            _toInt(transaction['number']) ?? 0,
+            (transaction['ussdDialed'] ?? '').toString(),
+            _toInt(transaction['amount']) ?? 0,
+            _toInt(transaction['simSubId']) ?? 0,
+            status: TransactionStatuses.forwardedPending,
+            source: (transaction['source'] ?? 'bingwa').toString(),
+            canRetry: (transaction['canRetry'] ?? 0) == 1,
+            id: _toInt(transaction['id']),
+            reply: 'Forwarding to $recipientDeviceName over LAN',
+            forwardingJobId: forwardingJobId,
+            forwardingSenderDeviceName: senderDeviceName,
+            forwardingRecipientDeviceName: recipientDeviceName,
+            forwardingTransport: ForwardingTransportKind.lan.name,
+          );
+          final delivered = txId != null &&
+              await controller.submitManualLanForwardingJob(
+                transactionId: txId,
+                forwardingJobId: forwardingJobId,
+                message: message,
+                messageId: (transaction['transactionId'] ?? '').toString(),
+                senderDeviceName: senderDeviceName,
+                recipientDeviceName: recipientDeviceName,
+              );
+          delivered ? forwarded++ : failed++;
+        } catch (_) {
+          failed++;
+        }
+      }
+    } finally {
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
+
+    if (!mounted) return;
+    _resetSelectionState();
+    reloadForNewDate();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text('$recipientDeviceName acknowledged $forwarded '
+              'transaction(s) over LAN. Not confirmed: $failed '
+              '(kept for retry).'
+              '${alreadyReceived == 0 ? '' : ' Not sent (already received): $alreadyReceived.'}')),
     );
   }
 

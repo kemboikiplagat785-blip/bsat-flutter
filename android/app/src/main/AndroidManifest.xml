@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.SEND_SMS" />
@@ -14,9 +15,26 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- LAN forwarding pairing: in-app scanning of the pairing QR code. Asked
+         at runtime only when the user taps "Scan pairing QR"; frames are
+         decoded on the phone and never stored or sent. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Declared by the camera plugin for video recording; never used by
+         BSAT (no audio, no recordings), so it is removed. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove" />
+    <!-- Manual pairing-code entry works without a camera. -->
+    <uses-feature android:name="android.hardware.camera.any"
+        android:required="false" tools:node="replace" />
+    <uses-feature android:name="android.hardware.camera"
+        android:required="false" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Keeps BSAT's existing declaration unchanged: the camera plugin (LAN
+         pairing QR scanner) declares this permission with maxSdkVersion 28,
+         which the manifest merger would otherwise apply to BSAT. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:remove="android:maxSdkVersion" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />

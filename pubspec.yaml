@@ -79,6 +79,13 @@ dependencies:
   dio: ^5.9.2
   whatsapp_bot_flutter: ^2.1.2
   whatsapp_bot_flutter_mobile: ^2.1.2
+  # LAN forwarding (ported from the BSAT Local Lab prototype, same pinned
+  # versions it assessed): pure-Dart crypto, QR encoding, in-app QR scanning
+  # decoded on the phone (no ML Kit / network).
+  cryptography: 2.9.0
+  qr: 4.0.0
+  camera: 0.12.2
+  zxing2: 0.2.4
   # connectivity_plus: ^6.1.4
 
 dev_dependencies:

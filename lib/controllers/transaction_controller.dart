@@ -7,6 +7,12 @@ import 'package:bsat/models/transaction.dart';
 import 'package:bsat/services/auth_service.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/contacts_service.dart';
+import 'package:bsat/services/forwarding_transport.dart';
+import 'package:bsat/services/forwarding_transport_selection.dart';
+import 'package:bsat/services/internet_forwarding_transport.dart';
+import 'package:bsat/services/lan/lan_forwarding_service.dart';
+import 'package:bsat/services/lan/lan_local_identity.dart';
+import 'package:bsat/services/lan_forwarding_transport.dart';
 import 'package:bsat/services/payments.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
@@ -80,17 +86,46 @@ class TransactionController {
   final PaymentOps _paymentOps;
   final SharedPreferencesService _sharedPreferencesService;
 
+  /// Submits forwarded-SMS requests, their retries and final confirmations.
+  final ForwardingTransport _forwardingTransport;
+
+  /// Submits forwarding jobs whose persisted transport is `lan`, and the
+  /// replies for jobs received over LAN. Never used for any other job.
+  final ForwardingTransport _lanForwardingTransport;
+
+  /// Whether a LAN destination is paired and answering now. Used only to
+  /// pick destinations for *new* jobs, like the Internet presence ping.
+  final Future<LanReachability> Function(String deviceName) _lanReachability;
+
+  /// Decides the transport of *new* forwarding jobs from the destination's
+  /// preference. Existing jobs use their persisted transport and are never
+  /// re-resolved.
+  final ForwardingTransportResolver _forwardingTransportResolver;
+
   TransactionController({
     PhoneService? phoneService,
     SQLiteService? sqliteService,
     PaymentOps? paymentOps,
     SharedPreferencesService? sharedPreferencesService,
+    ForwardingTransport? forwardingTransport,
+    ForwardingTransportPreferences? forwardingTransportPreferences,
+    ForwardingTransport? lanForwardingTransport,
+    Future<LanReachability> Function(String deviceName)? lanReachability,
     bool startConfirmationTimer = true,
   })  : _phoneService = phoneService ?? PhoneService(),
         _sqliteService = sqliteService ?? SQLiteService(),
         _paymentOps = paymentOps ?? PaymentOps(),
         _sharedPreferencesService =
-            sharedPreferencesService ?? SharedPreferencesService() {
+            sharedPreferencesService ?? SharedPreferencesService(),
+        _forwardingTransport =
+            forwardingTransport ?? InternetForwardingTransport(),
+        _lanForwardingTransport =
+            lanForwardingTransport ?? LanForwardingTransport(),
+        _lanReachability = lanReachability ?? LanServiceRegistry.probe,
+        _forwardingTransportResolver = ForwardingTransportResolver(
+          forwardingTransportPreferences ??
+              SQLiteForwardingTransportPreferences(sqliteService),
+        ) {
     if (startConfirmationTimer) {
       _forwardingConfirmationTimer ??= Timer.periodic(
         const Duration(seconds: 15),
@@ -118,6 +153,28 @@ class TransactionController {
           recipient.isEmpty ||
           message.isEmpty ||
           sender.isEmpty) continue;
+      // A retry uses the job's persisted transport; the destination's current
+      // preference is not consulted. A job without one is never sent.
+      final jobTransport = row['forwardingTransport'];
+      final transport = _transportForJob(jobTransport);
+      if (transport == null) {
+        final attempt =
+            (int.tryParse(row['attempt']?.toString() ?? '') ?? 0) + 1;
+        final delay = forwardingDeliveryRetryDelayAfterAttempt(attempt);
+        debugPrint(
+          'Forwarding retry not sent: job=$jobId has no usable transport '
+          '(${jobTransport ?? 'none'})',
+        );
+        await _sqliteService.scheduleForwardingDeliveryRetry(
+          jobId,
+          attempt: attempt,
+          nextAttemptAt: delay == null
+              ? 0
+              : DateTime.now().add(delay).millisecondsSinceEpoch,
+          lastFailure: 'Forwarding transport unavailable for this job',
+        );
+        continue;
+      }
       final claimToken = _newForwardingSubmissionClaimToken(jobId);
       final claimed = await _sqliteService.claimForwardingSubmission(
         jobId,
@@ -155,16 +212,15 @@ class TransactionController {
         }
       });
       try {
-        final result = await BackendService().post(
-          '/api/fcm/send-secure',
-          body: buildForwardedSmsRequestPayload(
+        final result = await transport.submit(
+          ForwardingSubmission(buildForwardedSmsRequestPayload(
             message: message,
             messageId: row['transactionId']?.toString() ?? '',
             transactionRowId: transactionId,
             forwardingJobId: jobId,
             senderDeviceName: sender,
             recipientDeviceName: recipient,
-          ),
+          )),
         );
         final attempt =
             (int.tryParse(row['attempt']?.toString() ?? '') ?? 0) + 1;
@@ -175,9 +231,11 @@ class TransactionController {
           nextAttemptAt: delay == null
               ? 0
               : DateTime.now().add(delay).millisecondsSinceEpoch,
-          lastFailure: result['success'] == true
+          lastFailure: result.accepted
               ? null
-              : 'HTTP/API submission failed (${result['statusCode'] ?? 'unknown'})',
+              : jobTransport == 'lan'
+                  ? 'LAN submission failed (${result.details['lanOutcome'] ?? 'unknown'})'
+                  : 'HTTP/API submission failed (${result.details['statusCode'] ?? 'unknown'})',
         );
       } finally {
         claimRenewalTimer.cancel();
@@ -186,6 +244,42 @@ class TransactionController {
           claimToken: claimToken,
         );
       }
+    }
+  }
+
+  /// The transport for a job whose persisted `forwardingTransport` is
+  /// [persisted]. Only the exact values `online` and `lan` have one; NULL,
+  /// empty or unknown values have none, and such a job is never sent.
+  ForwardingTransport? _transportForJob(Object? persisted) =>
+      switch (persisted) {
+        'online' => _forwardingTransport,
+        'lan' => _lanForwardingTransport,
+        _ => null,
+      };
+
+  /// The transport for replies (receipt ACKs, final confirmations) to a job
+  /// this device received: LAN when the job arrived over LAN, the Internet
+  /// when it arrived over FCM or was claimed before claims recorded a
+  /// transport (no claim, or a claim without one: every claim made by this
+  /// version records it, a LAN claim always as `lan`). Null for any other
+  /// recorded value: such a reply is not sent.
+  Future<ForwardingTransport?> _replyTransportForInboundJob(
+    String forwardingJobId,
+  ) async {
+    final inbound =
+        await _sqliteService.getInboundForwardingTransport(forwardingJobId);
+    return switch (inbound) {
+      null || '' || 'online' => _forwardingTransport,
+      'lan' => _lanForwardingTransport,
+      _ => null,
+    };
+  }
+
+  Future<bool> _isLanDestinationReachable(String deviceName) async {
+    try {
+      return await _lanReachability(deviceName) == LanReachability.reachable;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -268,8 +362,7 @@ class TransactionController {
     int? requiredTopUp,
     int? targetAmount,
   }) async {
-    final senderDeviceName =
-        await SharedPreferencesService().getDeviceName() ?? '';
+    final senderDeviceName = await forwardingDeviceName() ?? '';
 
     if (senderDeviceName.isEmpty || recipientDeviceName.isEmpty) {
       debugPrint(
@@ -287,35 +380,37 @@ class TransactionController {
       return;
     }
 
+    // The confirmation goes back over the transport the job arrived on.
+    final replyTransport = await _replyTransportForInboundJob(forwardingJobId);
     try {
-      final result = await BackendService().post(
-        '/api/fcm/send-secure',
-        body: {
-          'title': 'BSAT Online Forwarding',
-          'body': 'Forwarded transaction confirmed',
+      if (replyTransport == null) {
+        throw StateError('no usable reply transport for this job');
+      }
+      final result = await replyTransport.submit(ForwardingSubmission({
+        'title': 'BSAT Online Forwarding',
+        'body': 'Forwarded transaction confirmed',
+        'senderDeviceName': senderDeviceName,
+        'recipientDeviceName': recipientDeviceName,
+        'data': {
+          'type': 'forwarded_sms_ack',
+          'ackKind': 'confirmed',
+          'status': TransactionStatuses.doneConfirmed,
+          'resultStatus': resultStatus,
+          if (requiredTopUp != null) 'requiredTopUp': requiredTopUp,
+          if (targetAmount != null) 'targetAmount': targetAmount,
+          'forwardingJobId': forwardingJobId,
+          'transactionId': transactionId ?? '',
           'senderDeviceName': senderDeviceName,
           'recipientDeviceName': recipientDeviceName,
-          'data': {
-            'type': 'forwarded_sms_ack',
-            'ackKind': 'confirmed',
-            'status': TransactionStatuses.doneConfirmed,
-            'resultStatus': resultStatus,
-            if (requiredTopUp != null) 'requiredTopUp': requiredTopUp,
-            if (targetAmount != null) 'targetAmount': targetAmount,
-            'forwardingJobId': forwardingJobId,
-            'transactionId': transactionId ?? '',
-            'senderDeviceName': senderDeviceName,
-            'recipientDeviceName': recipientDeviceName,
-          },
         },
-      );
+      }));
 
       debugPrint(
         'FORWARDED_SMS CONFIRMATION SENT: '
         'jobId=$forwardingJobId, '
         'from=$senderDeviceName, '
         'to=$recipientDeviceName, '
-        'result=$result',
+        'result=${result.details}',
       );
     } catch (e) {
       debugPrint(
@@ -767,10 +862,12 @@ class TransactionController {
   Future<Map<String, dynamic>> claimForwardedSmsJob({
     required String forwardingJobId,
     String? sourceTransactionId,
+    String transport = 'online',
   }) {
     return _sqliteService.claimForwardedSmsJob(
       forwardingJobId: forwardingJobId,
       sourceTransactionId: sourceTransactionId,
+      transport: transport,
     );
   }
 
@@ -1189,6 +1286,7 @@ class TransactionController {
                 'forwardingJobId',
                 'forwardingSenderDeviceName',
                 'forwardingRecipientDeviceName',
+                'forwardingTransport',
                 'status',
               ],
               limit: 1,
@@ -1203,6 +1301,9 @@ class TransactionController {
                       combinedRows.first['forwardingSenderDeviceName'],
                   'forwardingRecipientDeviceName':
                       combinedRows.first['forwardingRecipientDeviceName'],
+                  // The job's transport travels with its identity.
+                  'forwardingTransport':
+                      combinedRows.first['forwardingTransport'],
                 },
                 'id = ?',
                 [originalId],
@@ -1972,6 +2073,30 @@ class TransactionController {
     bool pairedDeviceOnly = false,
   }) async {
     var pairedConfigurationExists = false;
+    // An existing job (a row that already has a recipient) keeps its
+    // persisted transport. A job that is not an Online job is sent only over
+    // its own transport: never by SMS, never over the Internet, and never
+    // reported as "no configuration" (which would allow local USSD).
+    Object? existingJobTransport;
+    var existingJobHasRoute = false;
+    if (txId != null) {
+      final rows = await _sqliteService.queryCustom(
+        'transactions',
+        'id = ?',
+        [txId],
+        limit: 1,
+      );
+      if (rows.isNotEmpty) {
+        final savedRecipient = forwardingRecipientDeviceName ??
+            rows.first['forwardingRecipientDeviceName']?.toString() ??
+            '';
+        existingJobHasRoute = savedRecipient.isNotEmpty;
+        existingJobTransport = rows.first['forwardingTransport'];
+      }
+    }
+    final existingJobIsNotOnline =
+        existingJobHasRoute && existingJobTransport != 'online';
+    if (existingJobIsNotOnline) pairedConfigurationExists = true;
     List toForward = await _sqliteService.queryCustom(
       "forwarded",
       "(amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ? OR amounts LIKE ?)",
@@ -1990,7 +2115,7 @@ class TransactionController {
       (smsMessageBody).length > 160 ? 160 : (smsMessageBody).length,
     );
 
-    if (!pairedDeviceOnly && toForward.isNotEmpty) {
+    if (!pairedDeviceOnly && !existingJobIsNotOnline && toForward.isNotEmpty) {
       if (toForward[0]["paused"] != 1) {
         // debugPrint(
         //     "Forwarding is paused for device ${toForward[0]["numberToReceive"]}. Skipping forwarding.");
@@ -2069,10 +2194,9 @@ class TransactionController {
         List<Map<String, dynamic>> forwardingDevices =
             await _sqliteService.queryAll('forwardingDevices');
 
-        if (forwardingDevices.isNotEmpty) {
-          final senderDeviceName =
-              await SharedPreferencesService().getDeviceName() ??
-                  "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
+        if (forwardingDevices.isNotEmpty || existingJobIsNotOnline) {
+          final senderDeviceName = await forwardingDeviceName() ??
+              "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
           var stableSenderDeviceName = senderDeviceName;
 
           // ------------------------------------------------------------
@@ -2081,6 +2205,7 @@ class TransactionController {
           // ------------------------------------------------------------
           final List<Map<String, dynamic>> configuredDevices = [];
           final List<Map<String, dynamic>> eligibleDevices = [];
+          final routeKindByDeviceName = <String, ForwardingTransportKind>{};
 
           for (final device in forwardingDevices) {
             final recipientDeviceName = device['device_name']?.toString() ??
@@ -2101,9 +2226,30 @@ class TransactionController {
 
             configuredDevices.add(device);
             pairedConfigurationExists = true;
+            // An existing non-Online job is sent only over its own transport
+            // below; new-job eligibility (and its presence checks) is unused.
+            if (existingJobIsNotOnline) continue;
+            // The destination's preference decides the transport of a new
+            // job. An unreadable preference is not eligible; a LAN
+            // destination is never sent over the Internet.
+            final route = await _forwardingTransportResolver
+                .resolve(ForwardingDestination.fromDeviceRow(device));
+            final routeKind = route.selected;
+            if (routeKind == null) {
+              debugPrint(
+                'ONLINE FORWARDING ROUTE: amount=$amount '
+                'device=$recipientDeviceName transport=${route.label} '
+                'not available; device not eligible for new jobs',
+              );
+              continue;
+            }
             final isPaused = (device['paused'] ?? 0) == 1;
-            final isOnline =
-                await AuthService().pingDevice(recipientDeviceName);
+            // A LAN destination is eligible only while it answers an
+            // authenticated probe; a past pairing alone is not enough.
+            final isOnline = routeKind == ForwardingTransportKind.lan
+                ? !isPaused &&
+                    await _isLanDestinationReachable(recipientDeviceName)
+                : await AuthService().pingDevice(recipientDeviceName);
             debugPrint(
               'ONLINE FORWARDING ROUTE: amount=$amount '
               'device=$recipientDeviceName paused=$isPaused online=$isOnline',
@@ -2119,6 +2265,7 @@ class TransactionController {
               continue;
             }
 
+            routeKindByDeviceName[recipientDeviceName] = routeKind;
             eligibleDevices.add(device);
           }
           debugPrint(
@@ -2201,8 +2348,11 @@ class TransactionController {
             // Important:
             // If the original recipient is currently offline, do not
             // silently redirect this transaction to another phone.
-            final recipientOnline =
-                await AuthService().pingDevice(recipientDeviceName);
+            // A LAN job is not checked over the Internet: its own LAN
+            // submission below reports whether the destination answered.
+            final recipientOnline = existingJobTransport == 'lan' ||
+                (existingJobTransport == 'online' &&
+                    await AuthService().pingDevice(recipientDeviceName));
 
             if (!recipientOnline) {
               debugPrint(
@@ -2215,8 +2365,11 @@ class TransactionController {
                 await _sqliteService.updateStuff(
                   {
                     'status': TransactionStatuses.error,
-                    'ussdReply': 'Forwarding failed: original forwarding device '
-                        '$recipientDeviceName is offline. Will retry later.',
+                    'ussdReply': existingJobTransport == 'online'
+                        ? 'Forwarding failed: original forwarding device '
+                            '$recipientDeviceName is offline. Will retry later.'
+                        : 'Forwarding not sent: this job has no usable '
+                            'forwarding transport.',
                   },
                   'id = ?',
                   [txId],
@@ -2238,7 +2391,7 @@ class TransactionController {
             //
             // Round-robin index is stored separately for each amount.
             // ----------------------------------------------------------
-            if (eligibleDevices.isEmpty) {
+            if (eligibleDevices.isEmpty || existingJobIsNotOnline) {
               debugPrint(
                 'ONLINE FORWARDING: '
                 'No online forwarding device available for amount $amount',
@@ -2246,7 +2399,7 @@ class TransactionController {
               final allConfiguredDevicesPaused = configuredDevices.isNotEmpty &&
                   configuredDevices
                       .every((device) => (device['paused'] ?? 0) == 1);
-              final state = configuredDevices.isEmpty
+              final state = configuredDevices.isEmpty && !existingJobIsNotOnline
                   ? ForwardingAttemptState.noConfiguration
                   : allConfiguredDevicesPaused
                       ? ForwardingAttemptState.configuredButPaused
@@ -2305,6 +2458,11 @@ class TransactionController {
           // exactly which phone originally received the transaction.
           // ------------------------------------------------------------
           int? transactionId = txId;
+          // The transport of this job: chosen now for a new route, otherwise
+          // the persisted one (read back from the row below).
+          Object? jobTransport = isRetryWithSavedRecipient
+              ? existingJobTransport
+              : routeKindByDeviceName[recipientDeviceName]?.name;
 
           if (transactionId == null) {
             final unavailableTarget =
@@ -2323,6 +2481,7 @@ class TransactionController {
               forwardingJobId: forwardingJobId,
               forwardingSenderDeviceName: senderDeviceName,
               forwardingRecipientDeviceName: recipientDeviceName,
+              forwardingTransport: jobTransport?.toString(),
               parentTransactionId: parentTransactionId,
               targetOfferId: unavailableTarget?.id,
             );
@@ -2340,7 +2499,30 @@ class TransactionController {
               candidateForwardingJobId: candidateJobId,
               candidateRecipientDeviceName: candidateRecipient,
               candidateSenderDeviceName: senderDeviceName,
+              candidateForwardingTransport:
+                  isRetryWithSavedRecipient ? null : jobTransport?.toString(),
             );
+            // The persisted transport is authoritative for this job.
+            jobTransport = forwardingIdentity['forwardingTransport'];
+            if (_transportForJob(jobTransport) == null) {
+              debugPrint(
+                'ONLINE FORWARDING: transactionId=$transactionId has no usable '
+                'forwarding transport (${jobTransport ?? 'none'}); not sent',
+              );
+              await _sqliteService.updateTransactionUnlessSafaricomSuccess(
+                transactionId,
+                {
+                  'status': TransactionStatuses.error,
+                  'canRetry': 1,
+                  'ussdReply': 'Forwarding not sent: this job has no usable '
+                      'forwarding transport.',
+                },
+              );
+              return ForwardingAttemptResult(
+                ForwardingAttemptState.configuredButUnavailable,
+                transactionId: transactionId,
+              );
+            }
             stableSenderDeviceName =
                 forwardingIdentity['forwardingSenderDeviceName']?.toString() ??
                     '';
@@ -2458,20 +2640,38 @@ class TransactionController {
             );
           }
 
+          final jobSubmissionTransport = _transportForJob(jobTransport);
+          if (jobSubmissionTransport == null) {
+            await _sqliteService.releaseForwardingSubmission(
+              stableForwardingJobId,
+              claimToken: submissionClaimToken,
+            );
+            await _sqliteService.markForwardingSubmissionFailedIfUnacknowledged(
+              transactionId: transactionId,
+              forwardingJobId: stableForwardingJobId,
+              reply: 'Forwarding not sent: this job has no usable '
+                  'forwarding transport.',
+            );
+            return ForwardingAttemptResult(
+              ForwardingAttemptState.configuredButUnavailable,
+              transactionId: transactionId,
+            );
+          }
+          final isLanJob = jobTransport == 'lan';
+
           try {
-            final result = await BackendService().post(
-              '/api/fcm/send-secure',
-              body: buildForwardedSmsRequestPayload(
+            final result = await jobSubmissionTransport.submit(
+              ForwardingSubmission(buildForwardedSmsRequestPayload(
                 message: smsMessageBody,
                 messageId: mpesaCode,
                 transactionRowId: transactionId,
                 forwardingJobId: stableForwardingJobId,
                 senderDeviceName: stableSenderDeviceName,
                 recipientDeviceName: stableRecipientDeviceName,
-              ),
+              )),
             );
 
-            final String messageId = result['messageId'] ?? "";
+            final String messageId = result.details['messageId'] ?? "";
 
             debugPrint("MessageID: $messageId");
 
@@ -2480,13 +2680,16 @@ class TransactionController {
             //
             // Do NOT advance the round-robin index.
             // ------------------------------------------------------------
-            if (result['success'] != true) {
+            if (!result.accepted) {
               final failedUpdate = await _sqliteService
                   .markForwardingSubmissionFailedIfUnacknowledged(
                 transactionId: transactionId,
                 forwardingJobId: stableForwardingJobId,
-                reply:
-                    'Forwarding failed: Phone offline or server not reachable. Will retry later.',
+                reply: isLanJob
+                    ? 'LAN forwarding failed: $stableRecipientDeviceName did '
+                        'not confirm receipt over the local network. '
+                        'Will retry later.'
+                    : 'Forwarding failed: Phone offline or server not reachable. Will retry later.',
               );
               if (failedUpdate == 0) {
                 debugPrint(
@@ -2529,8 +2732,12 @@ class TransactionController {
               {
                 'status': TransactionStatuses.forwardedPending,
                 'forwardingRecipientDeviceName': stableRecipientDeviceName,
-                'ussdReply': 'Forwarded to $stableRecipientDeviceName'
-                    '${selectedDevice != null && selectedDevice['device_id'] != null ? ' (ID: ${selectedDevice['device_id']})' : ''}',
+                'ussdReply': isLanJob
+                    ? 'Forwarded to $stableRecipientDeviceName over LAN'
+                        '${selectedDevice != null && selectedDevice['device_id'] != null ? ' (ID: ${selectedDevice['device_id']})' : ''}'
+                        '. Receipt acknowledged; waiting for confirmation.'
+                    : 'Forwarded to $stableRecipientDeviceName'
+                        '${selectedDevice != null && selectedDevice['device_id'] != null ? ' (ID: ${selectedDevice['device_id']})' : ''}',
               },
             );
             await _sqliteService.scheduleForwardingDeliveryRetry(
@@ -2766,6 +2973,26 @@ class TransactionController {
 
     for (var device in devices) {
       if ((device['paused'] ?? 0) != 1) {
+        final route = await _forwardingTransportResolver
+            .resolve(ForwardingDestination.fromDeviceRow(device));
+        if (route.selected == ForwardingTransportKind.lan) {
+          await _forwardToLanAvenue(
+            device,
+            message,
+            name: name,
+            amount: amount,
+            number: number,
+            parentTransactionId: parentTransactionId,
+          );
+          continue;
+        }
+        if (!route.deliverable) {
+          debugPrint(
+            'FORWARD TO ALL: device=${device['device_name']} '
+            'transport=${route.label} not available; skipped',
+          );
+          continue;
+        }
         String recipientDeviceName = device['device_name'] ?? "Unknown Device";
         String senderDeviceName =
             await SharedPreferencesService().getDeviceName() ??
@@ -2798,6 +3025,7 @@ class TransactionController {
           forwardingJobId: forwardingJobId,
           forwardingSenderDeviceName: senderDeviceName,
           forwardingRecipientDeviceName: recipientDeviceName,
+          forwardingTransport: ForwardingTransportKind.online.name,
           parentTransactionId: parentTransactionId,
         );
         final storedRows = transactionId == null
@@ -2870,6 +3098,196 @@ class TransactionController {
 
     // debugPrint("No forwarding devices found to forward the message.");
     return false;
+  }
+
+  /// Why a manual forward must not create a new forwarding job for
+  /// transaction [transactionId], or null when it may.
+  ///
+  /// Refused only when the transaction already has a job that its
+  /// destination durably received (receipt acknowledged) or confirmed. The
+  /// destination deduplicates by job ID, so a new job ID for the same M-PESA
+  /// payment would be processed as a second, independent purchase request,
+  /// over the Internet and over LAN alike. Existing jobs keep their own
+  /// retries. Jobs without such evidence are not refused here: whether a
+  /// user may redirect them is a product decision (MANUAL_REFORWARD_SAFETY.md).
+  Future<String?> manualReforwardRefusal(int transactionId) async {
+    final rows = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [transactionId],
+      columns: [
+        'status',
+        'forwardingJobId',
+        'forwardingRecipientDeviceName',
+        'ussdReply',
+      ],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.single;
+    final jobId = row['forwardingJobId']?.toString().trim() ?? '';
+    if (jobId.isEmpty) return null;
+    final received = row['status'] == TransactionStatuses.forwardedConfirmed ||
+        (row['ussdReply']?.toString() ?? '')
+            .contains('Receipt acknowledged by destination device') ||
+        await _sqliteService.isForwardingDeliveryAcknowledged(jobId);
+    if (!received) return null;
+    final recipient = row['forwardingRecipientDeviceName']?.toString().trim();
+    return '${recipient == null || recipient.isEmpty ? 'The destination' : recipient} '
+        'already received this transaction. Forwarding it again would send a '
+        'second purchase request for the same payment, so nothing was sent.';
+  }
+
+  /// Submits a forwarding job a screen created manually for a LAN
+  /// destination (row already persisted with transport `lan`). Uses the same
+  /// submission claim and payload as automatic forwarding. Returns true only
+  /// when the destination durably acknowledged receipt; otherwise the row is
+  /// left in error for retry. It is never sent over the Internet.
+  Future<bool> submitManualLanForwardingJob({
+    required int transactionId,
+    required String forwardingJobId,
+    required String message,
+    required String messageId,
+    required String senderDeviceName,
+    required String recipientDeviceName,
+  }) async {
+    final rows = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ? AND forwardingJobId = ?',
+      [transactionId, forwardingJobId],
+      columns: ['forwardingTransport'],
+      limit: 1,
+    );
+    if (rows.isEmpty || rows.single['forwardingTransport'] != 'lan') {
+      return false;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final claimToken = _newForwardingSubmissionClaimToken(forwardingJobId);
+    if (!await _sqliteService.claimForwardingSubmission(
+      forwardingJobId,
+      now: now,
+      leaseExpiresAt: now + _forwardingSubmissionClaimLease.inMilliseconds,
+      claimToken: claimToken,
+    )) {
+      return false;
+    }
+    try {
+      final result = await _lanForwardingTransport.submit(
+        ForwardingSubmission(buildForwardedSmsRequestPayload(
+          message: message,
+          messageId: messageId,
+          transactionRowId: transactionId,
+          forwardingJobId: forwardingJobId,
+          senderDeviceName: senderDeviceName,
+          recipientDeviceName: recipientDeviceName,
+        )),
+      );
+      if (!result.accepted) {
+        await _sqliteService.markForwardingSubmissionFailedIfUnacknowledged(
+          transactionId: transactionId,
+          forwardingJobId: forwardingJobId,
+          reply: 'LAN forwarding failed: $recipientDeviceName did not confirm '
+              'receipt over the local network. Will retry later.',
+        );
+      }
+      return result.accepted;
+    } finally {
+      await _sqliteService.releaseForwardingSubmission(
+        forwardingJobId,
+        claimToken: claimToken,
+      );
+    }
+  }
+
+  /// [forwardToAllAvenues] for a destination with a LAN preference: the same
+  /// job and payload, sent only over LAN. An unreachable or unconfirmed LAN
+  /// destination is left for retry; it is never sent over the Internet.
+  Future<void> _forwardToLanAvenue(
+    Map<String, dynamic> device,
+    String message, {
+    required String name,
+    required int amount,
+    required int number,
+    int? parentTransactionId,
+  }) async {
+    final recipientDeviceName = device['device_name']?.toString() ?? '';
+    if (recipientDeviceName.isEmpty ||
+        !await _isLanDestinationReachable(recipientDeviceName)) {
+      debugPrint(
+        'FORWARD TO ALL: device=$recipientDeviceName transport=lan '
+        'not reachable; skipped',
+      );
+      return;
+    }
+    final senderDeviceName = await forwardingDeviceName() ??
+        "Unknown Device ${DateTime.now().millisecondsSinceEpoch}";
+    final forwardingJobId =
+        ForwardingJobId.generate(mpesaCode: getMpesaCode(message));
+    final transactionId = await dontProcess(
+      message,
+      getMpesaCode(message),
+      number,
+      '',
+      amount,
+      -1,
+      status: TransactionStatuses.forwardedPending,
+      reply: 'Forwarded unavailable amount(Ksh $amount) to all paired devices',
+      canRetry: false,
+      source: name,
+      forwardingJobId: forwardingJobId,
+      forwardingSenderDeviceName: senderDeviceName,
+      forwardingRecipientDeviceName: recipientDeviceName,
+      forwardingTransport: ForwardingTransportKind.lan.name,
+      parentTransactionId: parentTransactionId,
+    );
+    if (transactionId == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final claimToken = _newForwardingSubmissionClaimToken(forwardingJobId);
+    if (!await _sqliteService.claimForwardingSubmission(
+      forwardingJobId,
+      now: now,
+      leaseExpiresAt: now + _forwardingSubmissionClaimLease.inMilliseconds,
+      claimToken: claimToken,
+    )) {
+      return;
+    }
+    try {
+      final result = await _lanForwardingTransport.submit(
+        ForwardingSubmission(buildForwardedSmsRequestPayload(
+          message: message,
+          messageId: getMpesaCode(message),
+          transactionRowId: transactionId,
+          forwardingJobId: forwardingJobId,
+          senderDeviceName: senderDeviceName,
+          recipientDeviceName: recipientDeviceName,
+        )),
+      );
+      debugPrint(
+        'FORWARDED SMS SEND RESULT: transactionId=$transactionId, '
+        'forwardingJobId=$forwardingJobId, transport=lan, '
+        'accepted=${result.accepted}',
+      );
+      if (!result.accepted) {
+        await _sqliteService.updateStuff(
+          {
+            'status': TransactionStatuses.error,
+            'canRetry': 1,
+            'ussdReply':
+                'LAN forwarding request was not confirmed. Will retry later.',
+          },
+          'id = ? AND status = ? AND NOT EXISTS ('
+              'SELECT 1 FROM forwardingDeliveryRetries '
+              'WHERE forwardingJobId = ? AND acknowledged = 1)',
+          [transactionId, TransactionStatuses.forwardedPending, forwardingJobId],
+          'transactions',
+        );
+      }
+    } finally {
+      await _sqliteService.releaseForwardingSubmission(
+        forwardingJobId,
+        claimToken: claimToken,
+      );
+    }
   }
 
   Future<List<dynamic>> unavailableAmountCanCompound(
@@ -4461,6 +4879,7 @@ class TransactionController {
     String? forwardingJobId,
     String? forwardingSenderDeviceName,
     String? forwardingRecipientDeviceName,
+    String? forwardingTransport,
     int? parentTransactionId,
     bool awaitingTopUp = false,
     int? requiredTopUp,
@@ -4472,6 +4891,15 @@ class TransactionController {
       'id = ?',
       [id ?? -1],
     );
+
+    // Replacing a row keeps its job transport only together with its job ID.
+    if (forwardingTransport == null &&
+        transactions.isNotEmpty &&
+        forwardingJobId != null &&
+        forwardingJobId.isNotEmpty &&
+        transactions.first['forwardingJobId']?.toString() == forwardingJobId) {
+      forwardingTransport = transactions.first['forwardingTransport']?.toString();
+    }
 
     if (transactions.isNotEmpty && id != null) {
       await _sqliteService.deleteStuff(id, 'transactions');
@@ -4485,6 +4913,8 @@ class TransactionController {
         'forwardingJobId': forwardingJobId,
         'forwardingSenderDeviceName': forwardingSenderDeviceName,
         'forwardingRecipientDeviceName': forwardingRecipientDeviceName,
+        if (forwardingTransport != null)
+          'forwardingTransport': forwardingTransport,
         'parentTransactionId': parentTransactionId,
         'awaitingTopUp': awaitingTopUp ? 1 : 0,
         'requiredTopUp': requiredTopUp,
@@ -4783,6 +5213,7 @@ class TransactionController {
         'device_name = ?',
         [target],
       );
+      final isForwardingDevice = devices.isNotEmpty;
       if (devices.isEmpty) {
         devices = await _sqliteService.queryCustom(
           'whitelistedDevices',
@@ -4791,6 +5222,21 @@ class TransactionController {
         );
       }
       if (devices.isEmpty) continue;
+      // Not queued for a destination whose transport is not implemented
+      // (LAN) or cannot be resolved; the row stays secondAttempt and is
+      // re-evaluated later.
+      final alternativeRoute = await _forwardingTransportResolver.resolve(
+        isForwardingDevice
+            ? ForwardingDestination.fromDeviceRow(devices.first)
+            : ForwardingDestination.fromWhitelistedDeviceRow(devices.first),
+      );
+      if (!alternativeRoute.deliverable) {
+        debugPrint(
+          'ALT FORWARD DISPATCH: target=$target '
+          'transport=${alternativeRoute.label} not available; not queued',
+        );
+        continue;
+      }
 
       var remoteForwardingJobId = tx['forwardingJobId']?.toString() ?? '';
       final alternativeRequestSenderDeviceName =
@@ -4848,6 +5294,8 @@ class TransactionController {
           'status': TransactionStatuses.alternativeDeliveryPending,
           'forwardingJobId': remoteForwardingJobId,
           'forwardingRecipientDeviceName': target,
+          // Alternative requests are queued only for Online targets.
+          'forwardingTransport': ForwardingTransportKind.online.name,
           'alternativeRequestSenderDeviceName':
               alternativeRequestSenderDeviceName,
           'alternativeQueueState': 'waiting',
@@ -4934,6 +5382,14 @@ class TransactionController {
       return;
     }
 
+    // Only Online alternatives are queued; anything else is never sent.
+    if (tx['forwardingTransport'] != ForwardingTransportKind.online.name) {
+      debugPrint(
+        'ALT DELIVERY PENDING: job=$jobId has no Online transport '
+        '(${tx['forwardingTransport'] ?? 'none'}); not sent',
+      );
+      return;
+    }
     final sender = tx['alternativeRequestSenderDeviceName']?.toString() ??
         await SharedPreferencesService().getDeviceName() ??
         'Unknown Device';
@@ -5897,6 +6353,10 @@ class TransactionController {
         'forwardingJobId': forwardingJobId ?? '',
         'forwardingSenderDeviceName': forwardingSenderDeviceName ?? '',
         'forwardingRecipientDeviceName': forwardingRecipientDeviceName ?? '',
+        // Alternative requests arrive only over the Internet. Ordinary
+        // transactions (no job) are not marked as forwarding jobs.
+        if ((forwardingJobId ?? '').isNotEmpty)
+          'forwardingTransport': ForwardingTransportKind.online.name,
         'source': 'manual',
       },
       'transactions',
@@ -7151,6 +7611,17 @@ class TransactionController {
     }
 
     final mergedTransaction = purgeTransaction.toMap();
+    // The job transport belongs to the job identity kept above: the original
+    // row's when its job ID was preserved, otherwise the new row's.
+    final purgeRow = await _sqliteService.queryOne('transactions', toPurgeId);
+    final transportSource =
+        originalForwardingJobId != null && originalForwardingJobId.isNotEmpty
+            ? originalTransaction
+            : purgeRow;
+    if (transportSource.containsKey('forwardingTransport')) {
+      mergedTransaction['forwardingTransport'] =
+          transportSource['forwardingTransport'];
+    }
     for (final field in const [
       'parentTransactionId',
       'awaitingTopUp',

@@ -7,6 +7,10 @@ import 'package:bsat/main.dart';
 import 'package:bsat/screens/online_management/paired_devices.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/contacts_service.dart';
+import 'package:bsat/services/forwarding_transport.dart';
+import 'package:bsat/services/internet_forwarding_transport.dart';
+import 'package:bsat/services/lan/lan_local_identity.dart';
+import 'package:bsat/services/lan/lan_peer_store.dart';
 import 'package:bsat/services/offers_transfer_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
@@ -70,13 +74,46 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await handleRemoteMessage(message);
 }
 
+/// Sends a reply (an Internet-style request body) back over the transport a
+/// message arrived on. Only the LAN transport provides one.
+typedef ForwardingReplySink = Future<void> Function(
+  Map<String, dynamic> postBody,
+);
+
+/// Message types the LAN transport may deliver to [handleRemoteMessage].
+const Set<String> _lanDeliverableTypes = {
+  'forwarded_sms',
+  'forwarded_sms_ack',
+  'MESSAGE_ACK',
+};
+
+/// Handles one forwarding message.
+///
+/// FCM calls this with the message only. The LAN transport also passes
+/// [replySink], which then carries every reply (receipt ACK, confirmation
+/// receipt) instead of the Internet, and [authenticatedSenderDeviceName], the
+/// paired device whose pinned key authenticated the session. Everything
+/// else (validation, durable claims, purchase, confirmation rules) is the
+/// same for both transports.
 @pragma('vm:entry-point')
-Future<void> handleRemoteMessage(RemoteMessage message) async {
+Future<void> handleRemoteMessage(
+  RemoteMessage message, {
+  ForwardingReplySink? replySink,
+  String? authenticatedSenderDeviceName,
+}) async {
   // if (kDebugMode) {
   // }
 
   // Use 'type' from data payload to distinguish message types
   String? type = message.data['type'];
+  final receivedOverLan = replySink != null;
+  if (receivedOverLan &&
+      (!_lanDeliverableTypes.contains(type) ||
+          authenticatedSenderDeviceName == null ||
+          authenticatedSenderDeviceName.trim().isEmpty)) {
+    debugPrint('LAN message refused: type is not deliverable over LAN.');
+    return;
+  }
 
   // Check if it's a forwarded SMS based on title if type is missing (backend might not pass data)
   if (type == null) {
@@ -94,9 +131,15 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
   developer.log(
       "Received FCM message with type: $type, data: ${message.data}, notification: ${message.notification}");
 
-  if (await _processIncomingAcknowledgement(message, type)) {
+  if (await _processIncomingAcknowledgement(
+    message,
+    type,
+    authenticatedSenderDeviceName: authenticatedSenderDeviceName,
+    replySink: replySink,
+  )) {
     return;
   }
+  if (receivedOverLan && type != 'forwarded_sms') return;
 
   // return acknowledgement first
   developer.log(
@@ -261,18 +304,38 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         final senderName = forwardingSenderDeviceName?.trim() ?? '';
         final sourceTransactionId =
             int.tryParse(message.data['transactionId']?.toString() ?? '');
-        final ownDeviceName =
-            (await SharedPreferencesService().getDeviceName() ?? '').trim();
-        final registeredSender = senderName.isEmpty
-            ? <Map<String, dynamic>>[]
-            : await SQLiteService().queryCustom(
-                'whitelistedDevices',
-                'device_name = ?',
-                [senderName],
-                columns: ['device_id'],
-                limit: 2,
-              );
+        final ownDeviceName = (await forwardingDeviceName() ?? '').trim();
+        // Over LAN the sender must also be the authenticated paired device.
+        final authenticatedSenderMismatch = receivedOverLan &&
+            authenticatedSenderDeviceName!.trim() != senderName;
+        // Online, the sender must be a whitelisted (backend-paired) device.
+        // Over LAN, the local LAN pairing is the authorization instead: the
+        // sender's pinned key authenticated the session, and its pairing
+        // must still be trusted now. No Online account is involved.
+        final bool senderAuthorized;
+        if (senderName.isEmpty) {
+          senderAuthorized = false;
+        } else if (receivedOverLan) {
+          senderAuthorized =
+              (await LanPeerStore().lookupDevice(senderName)).state ==
+                  LanPeerLookupState.trusted;
+        } else {
+          final registeredSender = await SQLiteService().queryCustom(
+            'whitelistedDevices',
+            'device_name = ?',
+            [senderName],
+            columns: ['device_id'],
+            limit: 2,
+          );
+          senderAuthorized = registeredSender.length == 1 &&
+              registeredSender.single['device_id']
+                      ?.toString()
+                      .trim()
+                      .isNotEmpty ==
+                  true;
+        }
         if (body.isEmpty ||
+            authenticatedSenderMismatch ||
             forwardingJobId == null ||
             forwardingJobId.trim().isEmpty ||
             sourceTransactionId == null ||
@@ -281,12 +344,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
             forwardingRecipientDeviceName.isEmpty ||
             ownDeviceName.isEmpty ||
             forwardingRecipientDeviceName != ownDeviceName ||
-            registeredSender.length != 1 ||
-            registeredSender.single['device_id']
-                    ?.toString()
-                    .trim()
-                    .isNotEmpty !=
-                true) {
+            !senderAuthorized) {
           debugPrint(
             'FORWARDED SMS REJECTED before receipt ACK: '
             'missing or invalid job, transaction, sender, or recipient.',
@@ -309,6 +367,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
         forwardingJobClaim = await transactionController.claimForwardedSmsJob(
           forwardingJobId: forwardingJobId.trim(),
           sourceTransactionId: message.data['transactionId']?.toString(),
+          transport: receivedOverLan ? 'lan' : 'online',
         );
         final claimIdentifierMismatch =
             forwardingJobClaim['state'] == 'identifier_mismatch';
@@ -320,6 +379,7 @@ Future<void> handleRemoteMessage(RemoteMessage message) async {
             originalType: type,
             ackKind: 'received',
             status: 'received',
+            replySink: replySink,
           );
         }
         if (forwardingJobClaim['claimed'] != true) {
@@ -668,6 +728,7 @@ Future<void> _sendImmediateAck(
   String? originalType,
   String ackKind = 'received',
   String status = 'received',
+  ForwardingReplySink? replySink,
 }) async {
   // Build a safe acknowledgement payload and ensure required fields (title, body,
   // senderDeviceName, recipientDeviceName) are provided to the backend.
@@ -678,8 +739,7 @@ Future<void> _sendImmediateAck(
 
   // Prefer the locally configured device name for the sender; fall back to any
   // names included in the incoming message data.
-  String senderDeviceName =
-      (await SharedPreferencesService().getDeviceName()) ?? '';
+  String senderDeviceName = (await forwardingDeviceName()) ?? '';
   if (senderDeviceName.isEmpty) {
     senderDeviceName = message.data['recipientDeviceName']?.toString() ?? '';
   }
@@ -721,9 +781,16 @@ Future<void> _sendImmediateAck(
     }
   };
 
+  if (replySink != null) {
+    // A LAN message is acknowledged over its own authenticated session.
+    await replySink(postBody);
+    return;
+  }
+
   try {
-    final result = await BackendService().post(callbackUrl, body: postBody);
-    if (result['success'] == true) {
+    final result = await InternetForwardingTransport(endpoint: callbackUrl)
+        .submit(ForwardingSubmission(postBody));
+    if (result.accepted) {
       debugPrint(
         'MESSAGE ACK accepted by backend: '
         'type=${originalType ?? ''}, '
@@ -734,7 +801,7 @@ Future<void> _sendImmediateAck(
         'MESSAGE ACK POST failed: '
         'type=${originalType ?? ''}, '
         'job=${message.data['forwardingJobId'] ?? ''}, '
-        'status=${result['statusCode'] ?? 'unknown'}',
+        'status=${result.details['statusCode'] ?? 'unknown'}',
       );
     }
   } catch (e) {
@@ -749,10 +816,29 @@ Future<void> _sendImmediateAck(
 
 Future<bool> _processIncomingAcknowledgement(
   RemoteMessage message,
-  String? type,
-) async {
+  String? type, {
+  String? authenticatedSenderDeviceName,
+  ForwardingReplySink? replySink,
+}) async {
   if (!_isAckLikeMessage(message, type)) {
     return false;
+  }
+  if (replySink != null) {
+    // Over LAN only forwarded-SMS receipts, confirmations and confirmation
+    // receipts are acknowledgements; every other kind is refused.
+    final originalType =
+        message.data['originalType']?.toString().toUpperCase() ?? '';
+    final normalized = (type ?? '').toUpperCase();
+    final isForwardedSms = normalized == 'FORWARDED_SMS_ACK' ||
+        (normalized == 'MESSAGE_ACK' && originalType == 'FORWARDED_SMS');
+    if (isForwardedSms) {
+      await handleForwardedSmsAcknowledgement(
+        message,
+        authenticatedSenderDeviceName: authenticatedSenderDeviceName,
+        replySink: replySink,
+      );
+    }
+    return true;
   }
 
   var data = message.data;
@@ -1344,7 +1430,21 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
   }
 }
 
-Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
+Future<void> _handleForwardedSmsAck(RemoteMessage message) =>
+    handleForwardedSmsAcknowledgement(message);
+
+/// Handles forwarded-SMS acknowledgements (receipt, final confirmation and
+/// confirmation receipt).
+///
+/// [authenticatedSenderDeviceName] is the paired device a transport has
+/// authenticated as this message's sender. The Internet (FCM) path cannot
+/// establish that and leaves it null, so the device names in the message are
+/// only claims. It is checked for final confirmations.
+Future<void> handleForwardedSmsAcknowledgement(
+  RemoteMessage message, {
+  String? authenticatedSenderDeviceName,
+  ForwardingReplySink? replySink,
+}) async {
   final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
 
   final ackKind = message.data['ackKind']?.toString().toLowerCase() ?? '';
@@ -1403,7 +1503,7 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
     final transactionId = message.data['transactionId']?.toString() ?? '';
     final receivedBy = message.data['senderDeviceName']?.toString() ?? '';
     final receivedFor = message.data['recipientDeviceName']?.toString() ?? '';
-    final localSender = await SharedPreferencesService().getDeviceName() ?? '';
+    final localSender = await forwardingDeviceName() ?? '';
     final acknowledged =
         await SQLiteService().acknowledgeForwardingDeliveryIfMatches(
       forwardingJobId: forwardingJobId,
@@ -1452,7 +1552,7 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
     return;
   }
 
-  final beforeAckRows = await SQLiteService().queryCustom(
+  final jobRows = await SQLiteService().queryCustom(
     'transactions',
     'forwardingJobId = ?',
     [forwardingJobId],
@@ -1461,13 +1561,57 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
   debugPrint(
     'FORWARDED_SMS CONFIRMATION LOOKUP: '
     'forwardingJobId=$forwardingJobId, '
-    'rows=$beforeAckRows',
+    'rowIds=${jobRows.map((row) => row['id']).toList()}',
   );
 
-  if (beforeAckRows.isEmpty) {
+  if (jobRows.isEmpty) {
     debugPrint(
       'FORWARDED_SMS CONFIRMATION: '
       'No transaction found for forwardingJobId=$forwardingJobId',
+    );
+
+    await _persistAckState(
+      message,
+      ackScope: 'forwarded_sms',
+    );
+
+    return;
+  }
+
+  // Apply the confirmation only to rows it correlates with: the device the
+  // job was forwarded to, addressed to this device, for this job's receipt.
+  final localDeviceName = await forwardingDeviceName() ?? '';
+  final rejections = <ForwardingConfirmationRejection>{};
+  final beforeAckRows = <Map<String, dynamic>>[];
+  for (final row in jobRows) {
+    final rejection = forwardingConfirmationRejection(
+      expectedRecipientDeviceName:
+          row['forwardingRecipientDeviceName']?.toString() ?? '',
+      expectedSenderDeviceName:
+          row['forwardingSenderDeviceName']?.toString() ?? '',
+      localDeviceName: localDeviceName,
+      expectedReceiptCode: row['transactionId']?.toString() ?? '',
+      receivedSenderDeviceName:
+          message.data['senderDeviceName']?.toString() ?? '',
+      receivedRecipientDeviceName:
+          message.data['recipientDeviceName']?.toString() ?? '',
+      receivedTransactionId: message.data['transactionId']?.toString() ?? '',
+      authenticatedSenderDeviceName: authenticatedSenderDeviceName,
+    );
+    if (rejection == null) {
+      beforeAckRows.add(row);
+    } else {
+      rejections.add(rejection);
+    }
+  }
+
+  if (beforeAckRows.isEmpty) {
+    // Diagnostic only: identifiers and reason codes, no message contents.
+    debugPrint(
+      'FORWARDED_SMS CONFIRMATION REJECTED: '
+      'forwardingJobId=$forwardingJobId, '
+      'reasons=${rejections.map((reason) => reason.name).join(',')}, '
+      'authenticatedSender=${authenticatedSenderDeviceName != null}',
     );
 
     await _persistAckState(
@@ -1535,8 +1679,16 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
       'targetAmount': targetAmount,
       if (resolvedTargetOfferId != null) 'targetOfferId': resolvedTargetOfferId,
     },
-    'forwardingJobId = ?',
-    [forwardingJobId],
+    // Only correlated rows; a row already forwarded-confirmed is terminal and
+    // is not changed by a late or repeated confirmation.
+    'forwardingJobId = ? AND id IN '
+        '(${List.filled(beforeAckRows.length, '?').join(', ')}) '
+        'AND status != ?',
+    [
+      forwardingJobId,
+      ...beforeAckRows.map((row) => row['id']),
+      TransactionStatuses.forwardedConfirmed,
+    ],
     'transactions',
   );
 
@@ -1551,7 +1703,8 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
     ackScope: 'forwarded_sms',
   );
 
-  if (resultStatus == TransactionStatuses.unavailableOffer &&
+  if (updatedRows > 0 &&
+      resultStatus == TransactionStatuses.unavailableOffer &&
       unavailableNumber != null) {
     await TransactionController().processReply(
       unavailableNumber,
@@ -1564,28 +1717,30 @@ Future<void> _handleForwardedSmsAck(RemoteMessage message) async {
 
   // Send a receipt after the update (including idempotent duplicate delivery).
   // Phone B retries the final confirmation until this receipt arrives.
-  final senderDeviceName =
-      await SharedPreferencesService().getDeviceName() ?? '';
+  final senderDeviceName = await forwardingDeviceName() ?? '';
   final recipientDeviceName =
       message.data['senderDeviceName']?.toString() ?? '';
   if (senderDeviceName.isNotEmpty && recipientDeviceName.isNotEmpty) {
-    await BackendService().post(
-      '/api/fcm/send-secure',
-      body: {
-        'title': 'BSAT Online Forwarding',
-        'body': 'Forwarding confirmation received',
+    final receipt = {
+      'title': 'BSAT Online Forwarding',
+      'body': 'Forwarding confirmation received',
+      'senderDeviceName': senderDeviceName,
+      'recipientDeviceName': recipientDeviceName,
+      'data': {
+        'type': 'forwarded_sms_ack',
+        'ackKind': 'confirmation_received',
+        'status': 'received',
+        'forwardingJobId': forwardingJobId,
         'senderDeviceName': senderDeviceName,
         'recipientDeviceName': recipientDeviceName,
-        'data': {
-          'type': 'forwarded_sms_ack',
-          'ackKind': 'confirmation_received',
-          'status': 'received',
-          'forwardingJobId': forwardingJobId,
-          'senderDeviceName': senderDeviceName,
-          'recipientDeviceName': recipientDeviceName,
-        },
       },
-    );
+    };
+    if (replySink != null) {
+      // A confirmation that arrived over LAN is receipted over LAN.
+      await replySink(receipt);
+    } else {
+      await InternetForwardingTransport().submit(ForwardingSubmission(receipt));
+    }
   }
 }
 

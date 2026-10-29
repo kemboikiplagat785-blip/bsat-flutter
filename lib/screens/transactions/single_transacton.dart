@@ -4,6 +4,7 @@ import 'package:bsat/components/dialogs/show_confirm_dialog.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/models/client.dart';
 import 'package:bsat/screens/online_management/search_device.dart';
+import 'package:bsat/services/forwarding_transport_selection.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:flutter/cupertino.dart';
@@ -960,6 +961,21 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       return;
                                     }
 
+                                    // A job its destination already received
+                                    // is never forwarded again as a new job.
+                                    final refusal =
+                                        await TransactionController()
+                                            .manualReforwardRefusal(
+                                                _currentTransactionId);
+                                    if (refusal != null) {
+                                      if (!context.mounted) return;
+                                      await showSuccessDialog(context,
+                                          text: refusal);
+                                      if (!context.mounted) return;
+                                      Navigator.pop(context);
+                                      return;
+                                    }
+
                                     String recipientDeviceName =
                                         device['device_name'];
                                     final forwardingJobId =
@@ -974,6 +990,82 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                       'forwardingJobId=$forwardingJobId',
                                     );
 
+                                    // The destination's transport decides
+                                    // how this job is sent; a LAN
+                                    // destination is never sent online.
+                                    final manualTransport =
+                                        await resolveManualForwardingTransport(
+                                      sqliteService: _sqliteService,
+                                      deviceId:
+                                          device['device_id']?.toString() ?? '',
+                                      deviceName: recipientDeviceName,
+                                    );
+                                    if (manualTransport == null) {
+                                      if (!context.mounted) return;
+                                      await showSuccessDialog(
+                                        context,
+                                        text:
+                                            'Could not determine how to reach $recipientDeviceName. Nothing was sent.',
+                                      );
+                                      if (!context.mounted) return;
+                                      Navigator.pop(context);
+                                      return;
+                                    }
+                                    if (manualTransport ==
+                                        ForwardingTransportKind.lan) {
+                                      final controller =
+                                          TransactionController();
+                                      final lanSender = senderDeviceName ?? '';
+                                      final lanTxId =
+                                          await controller.dontProcess(
+                                        _details['initialMessage'],
+                                        (_details['transactionId']),
+                                        _details['number'],
+                                        _details['ussdDialed'],
+                                        _details['amount'],
+                                        _details['simSubId'],
+                                        status: TransactionStatuses
+                                            .forwardedPending,
+                                        source: _details['source'],
+                                        forwardingJobId: forwardingJobId,
+                                        forwardingSenderDeviceName: lanSender,
+                                        forwardingRecipientDeviceName:
+                                            recipientDeviceName,
+                                        forwardingTransport:
+                                            ForwardingTransportKind.lan.name,
+                                        canRetry: _details['canRetry'] == 1,
+                                        reply:
+                                            'Forwarding to $recipientDeviceName over LAN',
+                                      );
+                                      final delivered = lanTxId != null &&
+                                          lanSender.isNotEmpty &&
+                                          await controller
+                                              .submitManualLanForwardingJob(
+                                            transactionId: lanTxId,
+                                            forwardingJobId: forwardingJobId,
+                                            message:
+                                                _details['initialMessage'] ??
+                                                    '',
+                                            messageId:
+                                                (_details['transactionId'] ??
+                                                        '')
+                                                    .toString(),
+                                            senderDeviceName: lanSender,
+                                            recipientDeviceName:
+                                                recipientDeviceName,
+                                          );
+                                      if (!context.mounted) return;
+                                      await showSuccessDialog(
+                                        context,
+                                        text: delivered
+                                            ? '$recipientDeviceName received the transaction over LAN. Waiting for confirmation.'
+                                            : '$recipientDeviceName did not confirm receipt over LAN. The transaction was kept for retry.',
+                                      );
+                                      if (!context.mounted) return;
+                                      Navigator.pop(context);
+                                      return;
+                                    }
+
                                     int? txId = await TransactionController()
                                         .dontProcess(
                                       _details['initialMessage'],
@@ -986,6 +1078,8 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                           TransactionStatuses.forwardedPending,
                                       source: _details['source'],
                                       forwardingJobId: forwardingJobId,
+                                      forwardingTransport:
+                                          ForwardingTransportKind.online.name,
                                       canRetry: _details['canRetry'] == 1,
                                       reply:
                                           'Forwarding to ${device['device_name']}',

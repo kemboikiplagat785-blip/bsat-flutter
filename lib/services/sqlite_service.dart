@@ -96,6 +96,49 @@ class SQLiteService {
     }
   }
 
+  /// Adds `transactions.forwardingTransport`, the transport selected for an
+  /// individual forwarding job (`online` or `lan`).
+  ///
+  /// Only the run that adds the column backfills it: every forwarding job
+  /// that existed before (a row with a job ID or a recipient) was sent over
+  /// the Internet, so it is marked `online`. Ordinary transactions stay NULL.
+  /// Later opens never convert a missing value: after this migration NULL or
+  /// any other value means "no usable transport" and is never sent.
+  Future<void> _addForwardingJobTransportColumn(DatabaseExecutor db) async {
+    final tableRows = await db.rawQuery(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+      ['transactions'],
+    );
+    if (tableRows.isEmpty) return;
+    final columns = await db.rawQuery('PRAGMA table_info("transactions")');
+    if (columns.any((row) => row['name'] == 'forwardingTransport')) return;
+    await db.execute(
+      'ALTER TABLE "transactions" ADD COLUMN "forwardingTransport" TEXT',
+    );
+    await db.execute('''
+      UPDATE transactions
+      SET forwardingTransport = 'online'
+      WHERE (forwardingJobId IS NOT NULL AND forwardingJobId != '')
+         OR (forwardingRecipientDeviceName IS NOT NULL
+             AND forwardingRecipientDeviceName != '')
+    ''');
+  }
+
+  /// Adds `forwardedSmsJobs.transport`, the transport a received job arrived
+  /// over (the receiver's replies use the same one). Existing claims all
+  /// arrived over the Internet; only the run that adds the column marks them.
+  Future<void> _addInboundJobTransportColumn(DatabaseExecutor db) async {
+    final columns = await db.rawQuery('PRAGMA table_info("forwardedSmsJobs")');
+    if (columns.isEmpty ||
+        columns.any((row) => row['name'] == 'transport')) {
+      return;
+    }
+    await db.execute(
+      'ALTER TABLE "forwardedSmsJobs" ADD COLUMN "transport" TEXT',
+    );
+    await db.execute("UPDATE forwardedSmsJobs SET transport = 'online'");
+  }
+
   Future<void> ensureCriticalSchema(Database db) async {
     // SQLite's write transaction serializes this repair across connections and
     // isolates. Each column check therefore observes any preceding repair.
@@ -165,13 +208,18 @@ class SQLiteService {
         'token_count': 'INTEGER DEFAULT 0',
       },
       'forwarded': {'paused': 'INTEGER DEFAULT 0'},
-      'forwardingDevices': {'paused': 'INTEGER DEFAULT 0'},
+      'forwardingDevices': {
+        'paused': 'INTEGER DEFAULT 0',
+        // Per-destination forwarding transport; NULL (legacy) means online.
+        'forwarding_transport': 'TEXT',
+      },
       'clients': {'alternativePhoneNumber': 'TEXT'},
     }.entries) {
       for (final column in definition.value.entries) {
         await _addColumnIfMissing(db, definition.key, column.key, column.value);
       }
     }
+    await _addForwardingJobTransportColumn(db);
     await db.execute('''
       INSERT OR IGNORE INTO forwardingDeliveryRetries
         (forwardingJobId, attempt, nextAttemptAt, acknowledged)
@@ -306,6 +354,25 @@ class SQLiteService {
         state TEXT NOT NULL,
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL
+      )
+    ''');
+    await _addInboundJobTransportColumn(db);
+    // Devices paired for LAN forwarding. Identity is the pinned Ed25519
+    // public key (fingerprint); device_name/device_id bind it to one BSAT
+    // device. No secret is stored here: this device's private key is kept
+    // wrapped by the Android Keystore in a no-backup file.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS lanPeers (
+        fingerprint TEXT PRIMARY KEY,
+        public_key TEXT NOT NULL,
+        device_name TEXT NOT NULL,
+        device_id TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        paired_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        last_address TEXT,
+        last_port INTEGER,
+        last_connected_at INTEGER
       )
     ''');
     await db.execute('''
@@ -1213,6 +1280,173 @@ class SQLiteService {
     return db.insert(table, row);
   }
 
+  /// Raw `forwarding_transport` stored on the forwarding device row matching
+  /// both [deviceId] and [deviceName] (unique), or null when none is stored.
+  /// Throws when the row does not exist or cannot be read, so a failed read
+  /// is never mistaken for a missing (legacy) preference.
+  Future<Object?> getForwardingTransportPreference({
+    required String deviceId,
+    required String deviceName,
+  }) async {
+    final db = await database;
+    final rows = await db.query(
+      'forwardingDevices',
+      where: 'device_id = ? AND device_name = ?',
+      whereArgs: [deviceId, deviceName],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      throw StateError('Forwarding device not found');
+    }
+    return rows.single['forwarding_transport'];
+  }
+
+  /// Confirms that [deviceName] is a whitelisted device with no forwarding
+  /// device record: exactly one `whitelistedDevices` row has this name, its
+  /// ID is [deviceId], and no `forwardingDevices` row has this ID or name.
+  /// Throws otherwise, so a renamed, duplicated or unidentifiable destination
+  /// is never treated as whitelist-only.
+  Future<void> verifyWhitelistOnlyDestination({
+    required String deviceId,
+    required String deviceName,
+  }) async {
+    if (deviceId.trim().isEmpty || deviceName.trim().isEmpty) {
+      throw StateError('Whitelisted device identity is incomplete');
+    }
+    final db = await database;
+    await db.transaction((txn) async {
+      final forwarding = await txn.query(
+        'forwardingDevices',
+        columns: ['id'],
+        where: 'device_id = ? OR device_name = ?',
+        whereArgs: [deviceId, deviceName],
+        limit: 1,
+      );
+      if (forwarding.isNotEmpty) {
+        throw StateError('Device has a forwarding device record');
+      }
+      final whitelisted = await txn.query(
+        'whitelistedDevices',
+        columns: ['device_id'],
+        where: 'device_name = ?',
+        whereArgs: [deviceName],
+      );
+      if (whitelisted.length != 1 ||
+          whitelisted.single['device_id']?.toString() != deviceId) {
+        throw StateError('Whitelisted device is not uniquely identified');
+      }
+    });
+  }
+
+  /// Stores [transport] on the single forwarding device row matching both
+  /// [deviceId] and [deviceName]. Returns the number of rows updated.
+  Future<int> setForwardingTransportPreference({
+    required String deviceId,
+    required String deviceName,
+    required String transport,
+  }) async {
+    final db = await database;
+    return db.update(
+      'forwardingDevices',
+      {'forwarding_transport': transport},
+      where: 'device_id = ? AND device_name = ?',
+      whereArgs: [deviceId, deviceName],
+    );
+  }
+
+  /// All LAN pairing records (trusted and revoked).
+  Future<List<Map<String, dynamic>>> getLanPeers() async {
+    final db = await database;
+    return db.query('lanPeers', orderBy: 'device_name ASC');
+  }
+
+  Future<Map<String, dynamic>?> getLanPeer(String fingerprint) async {
+    final db = await database;
+    final rows = await db.query(
+      'lanPeers',
+      where: 'fingerprint = ?',
+      whereArgs: [fingerprint],
+      limit: 1,
+    );
+    return rows.firstOrNull;
+  }
+
+  /// Pairing records bound to [deviceName], any status.
+  Future<List<Map<String, dynamic>>> getLanPeersForDevice(
+    String deviceName,
+  ) async {
+    final db = await database;
+    return db.query(
+      'lanPeers',
+      where: 'device_name = ?',
+      whereArgs: [deviceName],
+    );
+  }
+
+  /// Stores a completed pairing. A BSAT device is bound to at most one key:
+  /// older records for the same device name (an earlier installation) are
+  /// removed in the same transaction.
+  Future<void> saveLanPeer(Map<String, dynamic> row) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'lanPeers',
+        where: 'device_name = ? AND fingerprint != ?',
+        whereArgs: [row['device_name'], row['fingerprint']],
+      );
+      await txn.insert(
+        'lanPeers',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
+  /// Marks a pairing revoked. Every later session with that key is refused.
+  Future<int> revokeLanPeer(String fingerprint, {required int revokedAt}) async {
+    final db = await database;
+    return db.update(
+      'lanPeers',
+      {'status': 'revoked', 'revoked_at': revokedAt},
+      where: 'fingerprint = ?',
+      whereArgs: [fingerprint],
+    );
+  }
+
+  Future<int> removeLanPeer(String fingerprint) async {
+    final db = await database;
+    return db.delete(
+      'lanPeers',
+      where: 'fingerprint = ?',
+      whereArgs: [fingerprint],
+    );
+  }
+
+  Future<int> clearLanPeers() async {
+    final db = await database;
+    return db.delete('lanPeers');
+  }
+
+  /// Records an authenticated connection. The address is a routing hint only.
+  Future<void> recordLanPeerConnection(
+    String fingerprint, {
+    required String address,
+    int? port,
+    required int connectedAt,
+  }) async {
+    final db = await database;
+    await db.update(
+      'lanPeers',
+      {
+        'last_address': address,
+        if (port != null) 'last_port': port,
+        'last_connected_at': connectedAt,
+      },
+      where: "fingerprint = ? AND status = 'trusted'",
+      whereArgs: [fingerprint],
+    );
+  }
+
   /// Validates and atomically replaces the local whitelist cache.
   ///
   /// The backend response contract is only known to require the fields that
@@ -1427,6 +1661,7 @@ class SQLiteService {
     required String candidateForwardingJobId,
     required String candidateRecipientDeviceName,
     required String candidateSenderDeviceName,
+    String? candidateForwardingTransport,
   }) async {
     final db = await database;
     return db.transaction((txn) async {
@@ -1437,6 +1672,7 @@ class SQLiteService {
           'forwardingJobId',
           'forwardingRecipientDeviceName',
           'forwardingSenderDeviceName',
+          'forwardingTransport',
         ],
         where: 'id = ?',
         whereArgs: [transactionId],
@@ -1457,6 +1693,11 @@ class SQLiteService {
           'forwardingRecipientDeviceName': candidateRecipientDeviceName,
         if (existingSender.isEmpty)
           'forwardingSenderDeviceName': candidateSenderDeviceName,
+        // The job's route is established together with its recipient. A row
+        // that already has a recipient keeps its persisted transport, so an
+        // existing job is never rerouted by a later preference change.
+        if (existingRecipient.isEmpty && candidateForwardingTransport != null)
+          'forwardingTransport': candidateForwardingTransport,
       };
       if (values.isNotEmpty) {
         await txn.update(
@@ -1472,6 +1713,7 @@ class SQLiteService {
           'forwardingJobId',
           'forwardingRecipientDeviceName',
           'forwardingSenderDeviceName',
+          'forwardingTransport',
         ],
         where: 'id = ?',
         whereArgs: [transactionId],
@@ -1481,9 +1723,13 @@ class SQLiteService {
     });
   }
 
+  /// [transport] is the transport the job arrived over (`online` for FCM,
+  /// `lan` for an authenticated LAN session). It is recorded with the first
+  /// claim only; a later delivery of the same job never changes it.
   Future<Map<String, dynamic>> claimForwardedSmsJob({
     required String forwardingJobId,
     String? sourceTransactionId,
+    String transport = 'online',
   }) async {
     final db = await database;
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -1539,6 +1785,7 @@ class SQLiteService {
             'sourceTransactionId': sourceTransactionId,
             'localTransactionId': existingTransactionId,
             'state': 'completed',
+            'transport': transport,
             'createdAt': now,
             'updatedAt': now,
           },
@@ -1557,6 +1804,7 @@ class SQLiteService {
           'forwardingJobId': forwardingJobId,
           'sourceTransactionId': sourceTransactionId,
           'state': 'executing',
+          'transport': transport,
           'createdAt': now,
           'updatedAt': now,
         },
@@ -1568,6 +1816,23 @@ class SQLiteService {
         'state': 'executing',
       };
     });
+  }
+
+  /// The transport a received job arrived over: the `transport` of its
+  /// `forwardedSmsJobs` claim. Null when no claim exists (a job received
+  /// before claims, or by a path without one; those arrived over the
+  /// Internet). Any other stored value is returned as is.
+  Future<String?> getInboundForwardingTransport(String forwardingJobId) async {
+    final db = await database;
+    final rows = await db.query(
+      'forwardedSmsJobs',
+      columns: ['transport'],
+      where: 'forwardingJobId = ?',
+      whereArgs: [forwardingJobId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.single['transport']?.toString() ?? '';
   }
 
   Future<void> completeForwardedSmsJob(
@@ -1850,7 +2115,8 @@ class SQLiteService {
     final db = await database;
     return db.rawQuery('''
       SELECT r.*, t.id AS transactionRowId, t.initialMessage, t.transactionId,
-             t.forwardingRecipientDeviceName, t.forwardingSenderDeviceName
+             t.forwardingRecipientDeviceName, t.forwardingSenderDeviceName,
+             t.forwardingTransport
       FROM forwardingDeliveryRetries r
       JOIN transactions t ON t.forwardingJobId = r.forwardingJobId
       WHERE r.acknowledged = 0 AND r.attempt < ?
@@ -1867,6 +2133,20 @@ class SQLiteService {
       now,
       TransactionStatuses.forwardedPending,
     ]);
+  }
+
+  /// True when the destination's receipt for [forwardingJobId] was accepted
+  /// (see [acknowledgeForwardingDeliveryIfMatches]).
+  Future<bool> isForwardingDeliveryAcknowledged(String forwardingJobId) async {
+    final db = await database;
+    final rows = await db.query(
+      'forwardingDeliveryRetries',
+      columns: ['acknowledged'],
+      where: 'forwardingJobId = ? AND acknowledged = 1',
+      whereArgs: [forwardingJobId],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
   }
 
   Future<void> acknowledgeForwardingDelivery(String forwardingJobId) async {

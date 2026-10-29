@@ -1,18 +1,37 @@
+import 'dart:math';
+
 import 'package:bsat/models/transaction.dart';
+import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/logger.dart';
+import 'package:bsat/utils/forwarding_identifiers.dart';
+import 'package:bsat/utils/forwarding_delivery_retry.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
 class SQLiteService {
   static Database? _database;
+  static Future<Database>? _databaseFuture;
+  static final String _retryClaimOwner =
+      '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
   static final BsatLogger _logger = BsatLogger(tag: 'SQLiteService');
+  final Database? _databaseOverride;
+
+  SQLiteService({Database? databaseOverride})
+      : _databaseOverride = databaseOverride;
 
   Future<Database> get database async {
+    if (_databaseOverride != null) return _databaseOverride;
     if (_database != null && _database!.isOpen) {
       return _database!;
     }
-    _database = await _initDatabase();
-    return _database!;
+    final pending = _databaseFuture ??= _initDatabase();
+    try {
+      _database = await pending;
+      return _database!;
+    } catch (_) {
+      if (identical(_databaseFuture, pending)) _databaseFuture = null;
+      rethrow;
+    }
   }
 
   Future<Database> _initDatabase() async {
@@ -20,7 +39,7 @@ class SQLiteService {
     final path = join(databasesPath, 'bsat_app.db');
     final db = await openDatabase(
       path,
-      version: 20,
+      version: 22,
       onCreate: onCreate,
       onUpgrade: onUpgrade,
       singleInstance: true,
@@ -30,12 +49,217 @@ class SQLiteService {
     // (e.g. installs that have been incrementally upgraded since long before
     // ussdCodeVariants/offerName existed). Ensure these are present on every
     // app start, independent of what version transition (if any) just ran.
-    await _ensureCriticalSchema(db);
+    await ensureCriticalSchema(db);
+    // A `claimed` retry has not crossed the durable dispatch boundary. It is
+    // therefore safe to release after a process restart. `dispatching` means
+    // the request may have reached the phone/Safaricom and must stay blocked.
+    await recoverAbandonedTransactionRetryClaims(db);
     await backfillOrphanedUssdCodeVariants(db);
     return db;
   }
 
-  Future<void> _ensureCriticalSchema(Database db) async {
+  Future<void> _addColumnIfMissing(
+    DatabaseExecutor db,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    _validateSchemaIdentifier(table);
+    _validateSchemaIdentifier(column);
+    final tableRows = await db.rawQuery(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [table],
+    );
+    if (tableRows.isEmpty) return;
+    final columns = await db.rawQuery('PRAGMA table_info("$table")');
+    if (!columns.any((row) => row['name'] == column)) {
+      try {
+        await db.execute(
+          'ALTER TABLE "$table" ADD COLUMN "$column" $definition',
+        );
+      } catch (error, stackTrace) {
+        _logger.error('Failed to add schema column $table.$column', {
+          'error': error,
+          'stackTrace': stackTrace,
+        });
+        rethrow;
+      }
+    }
+  }
+
+  static final RegExp _schemaIdentifier = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+  void _validateSchemaIdentifier(String value) {
+    if (!_schemaIdentifier.hasMatch(value)) {
+      throw ArgumentError.value(
+          value, 'identifier', 'Invalid SQLite identifier');
+    }
+  }
+
+  /// Adds `transactions.forwardingTransport`, the transport selected for an
+  /// individual forwarding job (`online` or `lan`).
+  ///
+  /// Only the run that adds the column backfills it: every forwarding job
+  /// that existed before (a row with a job ID or a recipient) was sent over
+  /// the Internet, so it is marked `online`. Ordinary transactions stay NULL.
+  /// Later opens never convert a missing value: after this migration NULL or
+  /// any other value means "no usable transport" and is never sent.
+  Future<void> _addForwardingJobTransportColumn(DatabaseExecutor db) async {
+    final tableRows = await db.rawQuery(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+      ['transactions'],
+    );
+    if (tableRows.isEmpty) return;
+    final columns = await db.rawQuery('PRAGMA table_info("transactions")');
+    if (columns.any((row) => row['name'] == 'forwardingTransport')) return;
+    await db.execute(
+      'ALTER TABLE "transactions" ADD COLUMN "forwardingTransport" TEXT',
+    );
+    await db.execute('''
+      UPDATE transactions
+      SET forwardingTransport = 'online'
+      WHERE (forwardingJobId IS NOT NULL AND forwardingJobId != '')
+         OR (forwardingRecipientDeviceName IS NOT NULL
+             AND forwardingRecipientDeviceName != '')
+    ''');
+  }
+
+  /// Adds `forwardedSmsJobs.transport`, the transport a received job arrived
+  /// over (the receiver's replies use the same one). Existing claims all
+  /// arrived over the Internet; only the run that adds the column marks them.
+  Future<void> _addInboundJobTransportColumn(DatabaseExecutor db) async {
+    final columns = await db.rawQuery('PRAGMA table_info("forwardedSmsJobs")');
+    if (columns.isEmpty ||
+        columns.any((row) => row['name'] == 'transport')) {
+      return;
+    }
+    await db.execute(
+      'ALTER TABLE "forwardedSmsJobs" ADD COLUMN "transport" TEXT',
+    );
+    await db.execute("UPDATE forwardedSmsJobs SET transport = 'online'");
+  }
+
+  Future<void> ensureCriticalSchema(Database db) async {
+    // SQLite's write transaction serializes this repair across connections and
+    // isolates. Each column check therefore observes any preceding repair.
+    await db.transaction(_ensureCriticalSchema);
+  }
+
+  Future<void> _ensureCriticalSchema(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS forwardingDeliveryRetries (
+        forwardingJobId TEXT PRIMARY KEY,
+        attempt INTEGER NOT NULL DEFAULT 0,
+        nextAttemptAt INTEGER NOT NULL,
+        acknowledged INTEGER NOT NULL DEFAULT 0,
+        lastFailure TEXT
+      )
+    ''');
+    await _addColumnIfMissing(
+        db, 'transactions', 'retryState', "TEXT NOT NULL DEFAULT 'ready'");
+    await _addColumnIfMissing(db, 'transactions', 'retryStartedAt', 'INTEGER');
+    await _addColumnIfMissing(db, 'transactions', 'retryClaimOwner', 'TEXT');
+    // Repair legacy schema gaps on each open using SQLite metadata. The
+    // transaction above serializes repair across database connections.
+    for (final definition in const <String, Map<String, String>>{
+      'transactions': {
+        'initialMessage': 'TEXT',
+        'runOn': 'TEXT',
+        'firstFailedTimeStamp': 'INTEGER',
+        'forwardingJobId': 'TEXT',
+        'forwardingSenderDeviceName': 'TEXT',
+        'forwardingRecipientDeviceName': 'TEXT',
+        'awaitingTopUp': 'INTEGER NOT NULL DEFAULT 0',
+        'requiredTopUp': 'INTEGER',
+        'targetAmount': 'INTEGER',
+        'targetOfferId': 'INTEGER',
+        'parentTransactionId': 'INTEGER',
+        'topUpTransactionId': 'TEXT',
+        'alternativeExecuteAt': 'INTEGER',
+        'alternativeRequestCode': 'TEXT',
+        'alternativeRequestIsAdvanced': 'INTEGER',
+        'alternativeDeliveryNextAttemptAt': 'INTEGER',
+      },
+      'ussdCodeVariants': {
+        'alternativeUssdCode': 'TEXT',
+        'runAltOn': 'TEXT',
+        'altIsAdvanced': 'INTEGER DEFAULT 0',
+        'altDelayMinutes': 'INTEGER DEFAULT 0',
+        'altDelaySeconds': 'INTEGER',
+      },
+      'ussdCodes': {
+        'offerName': 'TEXT',
+        'usesBongaPoints': 'INTEGER DEFAULT 0',
+        'fallbackCode': 'TEXT',
+        'balanceCheckCode': 'TEXT',
+        'bongaPointsPerTransaction': 'INTEGER DEFAULT 0',
+      },
+      'replies': {'targetOfferId': 'INTEGER'},
+      'codeSignature': {
+        'mightBeCompromised': 'INTEGER DEFAULT 0',
+        'autoSwitch': 'INTEGER DEFAULT 0',
+        'isActive': 'INTEGER DEFAULT 1',
+      },
+      'payments': {
+        'plan_id': 'INTEGER DEFAULT -1',
+        'amount': 'INTEGER DEFAULT 0',
+        'payment_date': 'INTEGER DEFAULT 0',
+        'type': "TEXT DEFAULT 'Offline'",
+        'token_count': 'INTEGER DEFAULT 0',
+      },
+      'forwarded': {'paused': 'INTEGER DEFAULT 0'},
+      'forwardingDevices': {
+        'paused': 'INTEGER DEFAULT 0',
+        // Per-destination forwarding transport; NULL (legacy) means online.
+        'forwarding_transport': 'TEXT',
+      },
+      'clients': {'alternativePhoneNumber': 'TEXT'},
+    }.entries) {
+      for (final column in definition.value.entries) {
+        await _addColumnIfMissing(db, definition.key, column.key, column.value);
+      }
+    }
+    await _addForwardingJobTransportColumn(db);
+    await db.execute('''
+      INSERT OR IGNORE INTO forwardingDeliveryRetries
+        (forwardingJobId, attempt, nextAttemptAt, acknowledged)
+      SELECT forwardingJobId, 0, COALESCE(timeStamp, 0) + 30000, 0
+      FROM transactions
+      WHERE status = '${TransactionStatuses.forwardedPending}'
+        AND forwardingJobId IS NOT NULL AND forwardingJobId != ''
+        AND forwardingRecipientDeviceName IS NOT NULL
+        AND forwardingRecipientDeviceName != ''
+        AND forwardingSenderDeviceName IS NOT NULL
+        AND forwardingSenderDeviceName != ''
+        AND initialMessage IS NOT NULL AND initialMessage != ''
+        AND COALESCE(awaitingTopUp, 0) = 0
+        AND alternativeRequestCode IS NULL
+        AND instr(COALESCE(ussdReply, ''), 'Receipt acknowledged by destination device') = 0
+    ''');
+    await db.execute('''
+      UPDATE forwardingDeliveryRetries
+      SET acknowledged = 1
+      WHERE acknowledged = 0
+        AND forwardingJobId IN (
+          SELECT forwardingJobId
+          FROM transactions
+          WHERE status = '${TransactionStatuses.forwardedPending}'
+            AND instr(
+              COALESCE(ussdReply, ''),
+              'Receipt acknowledged by destination device'
+            ) > 0
+        )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS safaricomTransactionMessages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        messageKey TEXT NOT NULL UNIQUE,
+        body TEXT NOT NULL,
+        smsTimestamp INTEGER NOT NULL,
+        receivedAt INTEGER NOT NULL,
+        resolvedAt INTEGER
+      )
+    ''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,6 +338,64 @@ class SQLiteService {
         targetAmount INTEGER
       )
     ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS incomingReceiptClaims (
+        receiptCode TEXT PRIMARY KEY,
+        localTransactionId INTEGER,
+        state TEXT NOT NULL,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS forwardedSmsJobs (
+        forwardingJobId TEXT PRIMARY KEY,
+        sourceTransactionId TEXT,
+        localTransactionId INTEGER,
+        state TEXT NOT NULL,
+        createdAt INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      )
+    ''');
+    await _addInboundJobTransportColumn(db);
+    // Devices paired for LAN forwarding. Identity is the pinned Ed25519
+    // public key (fingerprint); device_name/device_id bind it to one BSAT
+    // device. No secret is stored here: this device's private key is kept
+    // wrapped by the Android Keystore in a no-backup file.
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS lanPeers (
+        fingerprint TEXT PRIMARY KEY,
+        public_key TEXT NOT NULL,
+        device_name TEXT NOT NULL,
+        device_id TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        paired_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        last_address TEXT,
+        last_port INTEGER,
+        last_connected_at INTEGER
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS forwardingSubmissionClaims (
+        forwardingJobId TEXT PRIMARY KEY,
+        leaseExpiresAt INTEGER NOT NULL,
+        claimToken TEXT
+      )
+    ''');
+    await _addColumnIfMissing(
+      db,
+      'forwardingSubmissionClaims',
+      'claimToken',
+      'TEXT',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_transactions_transaction_id '
+      'ON transactions(transactionId)',
+    );
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_forwarding_devices_name '
+      'ON forwardingDevices(device_name)',
+    );
     await db.execute('''
       CREATE TABLE IF NOT EXISTS alternativeJobs (
         forwardingJobId TEXT PRIMARY KEY,
@@ -250,70 +532,6 @@ class SQLiteService {
           altDelaySeconds INTEGER
         )
       ''');
-    } catch (_) {}
-
-    try {
-      await db.execute('ALTER TABLE transactions ADD COLUMN runOn TEXT');
-    } catch (_) {}
-
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN firstFailedTimeStamp INTEGER',
-      );
-    } catch (_) {}
-
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN forwardingJobId TEXT',
-      );
-    } catch (_) {}
-
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN forwardingSenderDeviceName TEXT',
-      );
-    } catch (_) {}
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN forwardingRecipientDeviceName TEXT',
-      );
-    } catch (_) {}
-    for (final definition in const [
-      'awaitingTopUp INTEGER NOT NULL DEFAULT 0',
-      'requiredTopUp INTEGER',
-      'targetAmount INTEGER',
-      'targetOfferId INTEGER',
-      'parentTransactionId INTEGER',
-      'topUpTransactionId TEXT',
-    ]) {
-      try {
-        await db.execute('ALTER TABLE transactions ADD COLUMN $definition');
-      } catch (_) {}
-    }
-    try {
-      await db.query('replies', columns: ['targetOfferId'], limit: 1);
-    } catch (_) {
-      await db.execute('ALTER TABLE replies ADD COLUMN targetOfferId INTEGER');
-    }
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN alternativeExecuteAt INTEGER',
-      );
-    } catch (_) {}
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN alternativeRequestCode TEXT',
-      );
-    } catch (_) {}
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN alternativeRequestIsAdvanced INTEGER',
-      );
-    } catch (_) {}
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN alternativeDeliveryNextAttemptAt INTEGER',
-      );
     } catch (_) {}
   }
 
@@ -455,6 +673,9 @@ class SQLiteService {
         source TEXT,
         timeStamp INTEGER,
         canRetry INTEGER,
+        retryState TEXT NOT NULL DEFAULT 'ready',
+        retryStartedAt INTEGER,
+        retryClaimOwner TEXT,
         firstFailedTimeStamp INTEGER,
         forwardingJobId TEXT,
         forwardingSenderDeviceName TEXT,
@@ -470,6 +691,17 @@ class SQLiteService {
         targetOfferId INTEGER,
         parentTransactionId INTEGER,
         topUpTransactionId TEXT
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS safaricomTransactionMessages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        messageKey TEXT NOT NULL UNIQUE,
+        body TEXT NOT NULL,
+        smsTimestamp INTEGER NOT NULL,
+        receivedAt INTEGER NOT NULL,
+        resolvedAt INTEGER
       )
     ''');
 
@@ -844,60 +1076,30 @@ class SQLiteService {
     ''');
     } catch (_) {}
 
-    try {
-      await db.execute(
-        'ALTER TABLE ussdCodeVariants ADD COLUMN alternativeUssdCode TEXT',
-      );
-    } catch (_) {}
+    await _addColumnIfMissing(
+        db, 'ussdCodeVariants', 'alternativeUssdCode', 'TEXT');
 
-    try {
-      await db.execute('ALTER TABLE ussdCodeVariants ADD COLUMN runAltOn TEXT');
-    } catch (_) {}
+    await _addColumnIfMissing(db, 'ussdCodeVariants', 'runAltOn', 'TEXT');
 
-    try {
-      await db.execute(
-        'ALTER TABLE ussdCodeVariants ADD COLUMN altIsAdvanced INTEGER DEFAULT 0',
-      );
-    } catch (_) {}
+    await _addColumnIfMissing(
+        db, 'ussdCodeVariants', 'altIsAdvanced', 'INTEGER DEFAULT 0');
 
-    try {
-      await db.execute(
-        'ALTER TABLE ussdCodeVariants ADD COLUMN altDelayMinutes INTEGER DEFAULT 0',
-      );
-    } catch (_) {}
+    await _addColumnIfMissing(
+        db, 'ussdCodeVariants', 'altDelayMinutes', 'INTEGER DEFAULT 0');
 
-    try {
-      await db.execute(
-        'ALTER TABLE ussdCodeVariants ADD COLUMN altDelaySeconds INTEGER',
-      );
-    } catch (_) {}
+    await _addColumnIfMissing(
+        db, 'ussdCodeVariants', 'altDelaySeconds', 'INTEGER');
 
-    try {
-      await db.execute('ALTER TABLE ussdCodes ADD COLUMN offerName TEXT');
-    } catch (_) {}
+    await _addColumnIfMissing(db, 'ussdCodes', 'offerName', 'TEXT');
 
-    try {
-      await db.execute('ALTER TABLE transactions ADD COLUMN runOn TEXT');
-    } catch (_) {}
+    await _addColumnIfMissing(db, 'transactions', 'runOn', 'TEXT');
 
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN firstFailedTimeStamp INTEGER',
-      );
-    } catch (_) {}
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN alternativeExecuteAt INTEGER',
-      );
-    } catch (_) {}
-    try {
-      await db.execute(
-        'ALTER TABLE transactions ADD COLUMN targetOfferId INTEGER',
-      );
-    } catch (_) {}
-    try {
-      await db.execute('ALTER TABLE replies ADD COLUMN targetOfferId INTEGER');
-    } catch (_) {}
+    await _addColumnIfMissing(
+        db, 'transactions', 'firstFailedTimeStamp', 'INTEGER');
+    await _addColumnIfMissing(
+        db, 'transactions', 'alternativeExecuteAt', 'INTEGER');
+    await _addColumnIfMissing(db, 'transactions', 'targetOfferId', 'INTEGER');
+    await _addColumnIfMissing(db, 'replies', 'targetOfferId', 'INTEGER');
 
     // Legacy ussdCodes -> ussdCodeVariants data copy now lives in
     // backfillOrphanedUssdCodeVariants(), called unconditionally from
@@ -906,106 +1108,57 @@ class SQLiteService {
     // onUpgrade fires at all), so it's not duplicated in this callback.
 
     if (oldVersion < 9) {
-      try {
-        await db.execute(
-          'ALTER TABLE ussdCodes ADD COLUMN usesBongaPoints INTEGER DEFAULT 0',
-        );
-      } catch (_) {}
+      await _addColumnIfMissing(
+          db, 'ussdCodes', 'usesBongaPoints', 'INTEGER DEFAULT 0');
 
-      try {
-        await db.execute('ALTER TABLE ussdCodes ADD COLUMN fallbackCode TEXT');
-      } catch (_) {}
+      await _addColumnIfMissing(db, 'ussdCodes', 'fallbackCode', 'TEXT');
 
-      try {
-        await db.execute(
-          'ALTER TABLE ussdCodes ADD COLUMN balanceCheckCode TEXT',
-        );
-      } catch (_) {}
+      await _addColumnIfMissing(db, 'ussdCodes', 'balanceCheckCode', 'TEXT');
 
-      try {
-        await db.execute(
-          'ALTER TABLE ussdCodes ADD COLUMN bongaPointsPerTransaction INTEGER DEFAULT 0',
-        );
-      } catch (_) {}
+      await _addColumnIfMissing(
+          db, 'ussdCodes', 'bongaPointsPerTransaction', 'INTEGER DEFAULT 0');
 
-      try {
-        await db.execute(
-          'ALTER TABLE codeSignature ADD COLUMN mightBeCompromised INTEGER DEFAULT 0',
-        );
-      } catch (_) {}
+      await _addColumnIfMissing(
+          db, 'codeSignature', 'mightBeCompromised', 'INTEGER DEFAULT 0');
 
-      try {
-        await db.execute(
-          'ALTER TABLE codeSignature ADD COLUMN autoSwitch INTEGER DEFAULT 0',
-        );
-      } catch (_) {}
+      await _addColumnIfMissing(
+          db, 'codeSignature', 'autoSwitch', 'INTEGER DEFAULT 0');
 
-      try {
-        await db.execute(
-          'ALTER TABLE codeSignature ADD COLUMN isActive INTEGER DEFAULT 1',
-        );
-      } catch (_) {}
+      await _addColumnIfMissing(
+          db, 'codeSignature', 'isActive', 'INTEGER DEFAULT 1');
 
-      try {
-        await db.execute(
-          'ALTER TABLE payments ADD COLUMN plan_id INTEGER DEFAULT -1',
-        );
-      } catch (_) {}
+      await _addColumnIfMissing(
+          db, 'payments', 'plan_id', 'INTEGER DEFAULT -1');
+
+      await _addColumnIfMissing(db, 'payments', 'amount', 'INTEGER DEFAULT 0');
+
+      await _addColumnIfMissing(
+          db, 'payments', 'payment_date', 'INTEGER DEFAULT 0');
+
+      await _addColumnIfMissing(
+          db, 'payments', 'type', 'TEXT DEFAULT "Offline"');
+
+      await _addColumnIfMissing(
+          db, 'payments', 'token_count', 'INTEGER DEFAULT 0');
+
+      await _addColumnIfMissing(db, 'forwarded', 'paused', 'INTEGER DEFAULT 0');
+
+      await _addColumnIfMissing(
+          db, 'forwardingDevices', 'paused', 'INTEGER DEFAULT 0');
+
+      await _addColumnIfMissing(
+          db, 'clients', 'alternativePhoneNumber', 'TEXT');
 
       try {
         await db.execute(
-          'ALTER TABLE payments ADD COLUMN amount INTEGER DEFAULT 0',
-        );
-      } catch (_) {}
-
-      try {
-        await db.execute(
-          'ALTER TABLE payments ADD COLUMN payment_date INTEGER DEFAULT 0',
-        );
-      } catch (_) {}
-
-      try {
-        await db.execute(
-          'ALTER TABLE payments ADD COLUMN type TEXT DEFAULT "Offline"',
-        );
-      } catch (_) {}
-
-      try {
-        await db.execute(
-          'ALTER TABLE payments ADD COLUMN token_count INTEGER DEFAULT 0',
-        );
-      } catch (_) {}
-
-      try {
-        await db.execute(
-            'ALTER TABLE forwarded ADD COLUMN paused INTEGER DEFAULT 0');
-      } catch (_) {}
-
-      try {
-        await db.execute(
-          'ALTER TABLE forwardingDevices ADD COLUMN paused INTEGER DEFAULT 0',
-        );
-      } catch (_) {}
-
-      try {
-        await db.execute(
-          'ALTER TABLE clients ADD COLUMN alternativePhoneNumber TEXT',
-        );
-      } catch (_) {}
-
-      try {
-        await db.execute(
-          'CREATE UNIQUE INDEX idx_forwarding_devices_name ON forwardingDevices(device_name)',
+          'CREATE UNIQUE INDEX IF NOT EXISTS idx_forwarding_devices_name ON forwardingDevices(device_name)',
         );
       } catch (_) {}
     }
 
     if (oldVersion < 10) {
-      try {
-        await db.execute(
-          'ALTER TABLE clients ADD COLUMN alternativePhoneNumber TEXT',
-        );
-      } catch (_) {}
+      await _addColumnIfMissing(
+          db, 'clients', 'alternativePhoneNumber', 'TEXT');
     }
   }
 
@@ -1125,6 +1278,173 @@ class SQLiteService {
   Future<int> insertStuff(Map<String, dynamic> row, String table) async {
     final db = await database;
     return db.insert(table, row);
+  }
+
+  /// Raw `forwarding_transport` stored on the forwarding device row matching
+  /// both [deviceId] and [deviceName] (unique), or null when none is stored.
+  /// Throws when the row does not exist or cannot be read, so a failed read
+  /// is never mistaken for a missing (legacy) preference.
+  Future<Object?> getForwardingTransportPreference({
+    required String deviceId,
+    required String deviceName,
+  }) async {
+    final db = await database;
+    final rows = await db.query(
+      'forwardingDevices',
+      where: 'device_id = ? AND device_name = ?',
+      whereArgs: [deviceId, deviceName],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      throw StateError('Forwarding device not found');
+    }
+    return rows.single['forwarding_transport'];
+  }
+
+  /// Confirms that [deviceName] is a whitelisted device with no forwarding
+  /// device record: exactly one `whitelistedDevices` row has this name, its
+  /// ID is [deviceId], and no `forwardingDevices` row has this ID or name.
+  /// Throws otherwise, so a renamed, duplicated or unidentifiable destination
+  /// is never treated as whitelist-only.
+  Future<void> verifyWhitelistOnlyDestination({
+    required String deviceId,
+    required String deviceName,
+  }) async {
+    if (deviceId.trim().isEmpty || deviceName.trim().isEmpty) {
+      throw StateError('Whitelisted device identity is incomplete');
+    }
+    final db = await database;
+    await db.transaction((txn) async {
+      final forwarding = await txn.query(
+        'forwardingDevices',
+        columns: ['id'],
+        where: 'device_id = ? OR device_name = ?',
+        whereArgs: [deviceId, deviceName],
+        limit: 1,
+      );
+      if (forwarding.isNotEmpty) {
+        throw StateError('Device has a forwarding device record');
+      }
+      final whitelisted = await txn.query(
+        'whitelistedDevices',
+        columns: ['device_id'],
+        where: 'device_name = ?',
+        whereArgs: [deviceName],
+      );
+      if (whitelisted.length != 1 ||
+          whitelisted.single['device_id']?.toString() != deviceId) {
+        throw StateError('Whitelisted device is not uniquely identified');
+      }
+    });
+  }
+
+  /// Stores [transport] on the single forwarding device row matching both
+  /// [deviceId] and [deviceName]. Returns the number of rows updated.
+  Future<int> setForwardingTransportPreference({
+    required String deviceId,
+    required String deviceName,
+    required String transport,
+  }) async {
+    final db = await database;
+    return db.update(
+      'forwardingDevices',
+      {'forwarding_transport': transport},
+      where: 'device_id = ? AND device_name = ?',
+      whereArgs: [deviceId, deviceName],
+    );
+  }
+
+  /// All LAN pairing records (trusted and revoked).
+  Future<List<Map<String, dynamic>>> getLanPeers() async {
+    final db = await database;
+    return db.query('lanPeers', orderBy: 'device_name ASC');
+  }
+
+  Future<Map<String, dynamic>?> getLanPeer(String fingerprint) async {
+    final db = await database;
+    final rows = await db.query(
+      'lanPeers',
+      where: 'fingerprint = ?',
+      whereArgs: [fingerprint],
+      limit: 1,
+    );
+    return rows.firstOrNull;
+  }
+
+  /// Pairing records bound to [deviceName], any status.
+  Future<List<Map<String, dynamic>>> getLanPeersForDevice(
+    String deviceName,
+  ) async {
+    final db = await database;
+    return db.query(
+      'lanPeers',
+      where: 'device_name = ?',
+      whereArgs: [deviceName],
+    );
+  }
+
+  /// Stores a completed pairing. A BSAT device is bound to at most one key:
+  /// older records for the same device name (an earlier installation) are
+  /// removed in the same transaction.
+  Future<void> saveLanPeer(Map<String, dynamic> row) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'lanPeers',
+        where: 'device_name = ? AND fingerprint != ?',
+        whereArgs: [row['device_name'], row['fingerprint']],
+      );
+      await txn.insert(
+        'lanPeers',
+        row,
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
+  }
+
+  /// Marks a pairing revoked. Every later session with that key is refused.
+  Future<int> revokeLanPeer(String fingerprint, {required int revokedAt}) async {
+    final db = await database;
+    return db.update(
+      'lanPeers',
+      {'status': 'revoked', 'revoked_at': revokedAt},
+      where: 'fingerprint = ?',
+      whereArgs: [fingerprint],
+    );
+  }
+
+  Future<int> removeLanPeer(String fingerprint) async {
+    final db = await database;
+    return db.delete(
+      'lanPeers',
+      where: 'fingerprint = ?',
+      whereArgs: [fingerprint],
+    );
+  }
+
+  Future<int> clearLanPeers() async {
+    final db = await database;
+    return db.delete('lanPeers');
+  }
+
+  /// Records an authenticated connection. The address is a routing hint only.
+  Future<void> recordLanPeerConnection(
+    String fingerprint, {
+    required String address,
+    int? port,
+    required int connectedAt,
+  }) async {
+    final db = await database;
+    await db.update(
+      'lanPeers',
+      {
+        'last_address': address,
+        if (port != null) 'last_port': port,
+        'last_connected_at': connectedAt,
+      },
+      where: "fingerprint = ? AND status = 'trusted'",
+      whereArgs: [fingerprint],
+    );
   }
 
   /// Validates and atomically replaces the local whitelist cache.
@@ -1247,6 +1567,608 @@ class SQLiteService {
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
     return insertedId != -1;
+  }
+
+  Future<Map<String, dynamic>> claimIncomingMpesaReceipt(
+    String receiptCode,
+  ) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return db.transaction((txn) async {
+      final transactions = await txn.query(
+        'transactions',
+        columns: ['id'],
+        where: 'transactionId = ?',
+        whereArgs: [receiptCode],
+        orderBy: 'id ASC',
+        limit: 1,
+      );
+      if (transactions.isNotEmpty) {
+        final transactionId =
+            int.tryParse(transactions.first['id']?.toString() ?? '');
+        await txn.insert(
+          'incomingReceiptClaims',
+          {
+            'receiptCode': receiptCode,
+            'localTransactionId': transactionId,
+            'state': 'completed',
+            'updatedAt': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        return {
+          'claimed': false,
+          'localTransactionId': transactionId,
+          'state': 'completed',
+        };
+      }
+
+      final claims = await txn.query(
+        'incomingReceiptClaims',
+        where: 'receiptCode = ?',
+        whereArgs: [receiptCode],
+        limit: 1,
+      );
+      if (claims.isNotEmpty) {
+        return {
+          'claimed': false,
+          'localTransactionId': int.tryParse(
+            claims.first['localTransactionId']?.toString() ?? '',
+          ),
+          'state': claims.first['state'],
+        };
+      }
+
+      final insertedId = await txn.insert(
+        'incomingReceiptClaims',
+        {
+          'receiptCode': receiptCode,
+          'state': 'processing',
+          'updatedAt': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      return {
+        'claimed': insertedId != -1,
+        'localTransactionId': null,
+        'state': 'processing',
+      };
+    });
+  }
+
+  Future<void> completeIncomingMpesaReceipt(
+    String receiptCode, {
+    int? localTransactionId,
+  }) async {
+    final db = await database;
+    final updated = await db.update(
+      'incomingReceiptClaims',
+      {
+        'localTransactionId': localTransactionId,
+        'state': 'completed',
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'receiptCode = ?',
+      whereArgs: [receiptCode],
+    );
+    if (updated != 1) {
+      throw StateError('No receipt claim exists for $receiptCode');
+    }
+  }
+
+  Future<Map<String, dynamic>> ensureForwardingIdentity({
+    required int transactionId,
+    required String candidateForwardingJobId,
+    required String candidateRecipientDeviceName,
+    required String candidateSenderDeviceName,
+    String? candidateForwardingTransport,
+  }) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        columns: [
+          'id',
+          'forwardingJobId',
+          'forwardingRecipientDeviceName',
+          'forwardingSenderDeviceName',
+          'forwardingTransport',
+        ],
+        where: 'id = ?',
+        whereArgs: [transactionId],
+        limit: 1,
+      );
+      if (rows.isEmpty) {
+        throw StateError('Transaction $transactionId does not exist');
+      }
+      final current = rows.first;
+      final existingJobId = current['forwardingJobId']?.toString() ?? '';
+      final existingRecipient =
+          current['forwardingRecipientDeviceName']?.toString() ?? '';
+      final existingSender =
+          current['forwardingSenderDeviceName']?.toString() ?? '';
+      final values = <String, dynamic>{
+        if (existingJobId.isEmpty) 'forwardingJobId': candidateForwardingJobId,
+        if (existingRecipient.isEmpty)
+          'forwardingRecipientDeviceName': candidateRecipientDeviceName,
+        if (existingSender.isEmpty)
+          'forwardingSenderDeviceName': candidateSenderDeviceName,
+        // The job's route is established together with its recipient. A row
+        // that already has a recipient keeps its persisted transport, so an
+        // existing job is never rerouted by a later preference change.
+        if (existingRecipient.isEmpty && candidateForwardingTransport != null)
+          'forwardingTransport': candidateForwardingTransport,
+      };
+      if (values.isNotEmpty) {
+        await txn.update(
+          'transactions',
+          values,
+          where: 'id = ?',
+          whereArgs: [transactionId],
+        );
+      }
+      final updatedRows = await txn.query(
+        'transactions',
+        columns: [
+          'forwardingJobId',
+          'forwardingRecipientDeviceName',
+          'forwardingSenderDeviceName',
+          'forwardingTransport',
+        ],
+        where: 'id = ?',
+        whereArgs: [transactionId],
+        limit: 1,
+      );
+      return updatedRows.single;
+    });
+  }
+
+  /// [transport] is the transport the job arrived over (`online` for FCM,
+  /// `lan` for an authenticated LAN session). It is recorded with the first
+  /// claim only; a later delivery of the same job never changes it.
+  Future<Map<String, dynamic>> claimForwardedSmsJob({
+    required String forwardingJobId,
+    String? sourceTransactionId,
+    String transport = 'online',
+  }) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return db.transaction((txn) async {
+      final existingClaims = await txn.query(
+        'forwardedSmsJobs',
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+        limit: 1,
+      );
+      if (existingClaims.isNotEmpty) {
+        final existingSourceTransactionId =
+            existingClaims.first['sourceTransactionId']?.toString() ?? '';
+        if (sourceTransactionId != null &&
+            sourceTransactionId.isNotEmpty &&
+            existingSourceTransactionId.isNotEmpty &&
+            sourceTransactionId != existingSourceTransactionId) {
+          return {
+            'claimed': false,
+            'localTransactionId': int.tryParse(
+              existingClaims.first['localTransactionId']?.toString() ?? '',
+            ),
+            'sourceTransactionId': existingSourceTransactionId,
+            'state': 'identifier_mismatch',
+          };
+        }
+        return {
+          'claimed': false,
+          'localTransactionId': int.tryParse(
+            existingClaims.first['localTransactionId']?.toString() ?? '',
+          ),
+          'sourceTransactionId': existingSourceTransactionId,
+          'state': existingClaims.first['state'],
+        };
+      }
+
+      final existingTransactions = await txn.query(
+        'transactions',
+        columns: ['id'],
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+        orderBy: 'id ASC',
+        limit: 1,
+      );
+      final existingTransactionId = existingTransactions.isEmpty
+          ? null
+          : int.tryParse(existingTransactions.first['id']?.toString() ?? '');
+      if (existingTransactionId != null) {
+        await txn.insert(
+          'forwardedSmsJobs',
+          {
+            'forwardingJobId': forwardingJobId,
+            'sourceTransactionId': sourceTransactionId,
+            'localTransactionId': existingTransactionId,
+            'state': 'completed',
+            'transport': transport,
+            'createdAt': now,
+            'updatedAt': now,
+          },
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+        return {
+          'claimed': false,
+          'localTransactionId': existingTransactionId,
+          'state': 'completed',
+        };
+      }
+
+      final insertedId = await txn.insert(
+        'forwardedSmsJobs',
+        {
+          'forwardingJobId': forwardingJobId,
+          'sourceTransactionId': sourceTransactionId,
+          'state': 'executing',
+          'transport': transport,
+          'createdAt': now,
+          'updatedAt': now,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      return {
+        'claimed': insertedId != -1,
+        'localTransactionId': null,
+        'state': 'executing',
+      };
+    });
+  }
+
+  /// The transport a received job arrived over: the `transport` of its
+  /// `forwardedSmsJobs` claim. Null when no claim exists (a job received
+  /// before claims, or by a path without one; those arrived over the
+  /// Internet). Any other stored value is returned as is.
+  Future<String?> getInboundForwardingTransport(String forwardingJobId) async {
+    final db = await database;
+    final rows = await db.query(
+      'forwardedSmsJobs',
+      columns: ['transport'],
+      where: 'forwardingJobId = ?',
+      whereArgs: [forwardingJobId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.single['transport']?.toString() ?? '';
+  }
+
+  Future<void> completeForwardedSmsJob(
+    String forwardingJobId, {
+    int? localTransactionId,
+  }) async {
+    final db = await database;
+    final updated = await db.update(
+      'forwardedSmsJobs',
+      {
+        'localTransactionId': localTransactionId,
+        'state': 'completed',
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      where: 'forwardingJobId = ?',
+      whereArgs: [forwardingJobId],
+    );
+    if (updated != 1) {
+      throw StateError('No forwarding job claim exists for $forwardingJobId');
+    }
+  }
+
+  Future<int> recordForwardingReceiptAcknowledgement({
+    required int transactionId,
+    required String forwardingJobId,
+    required String note,
+  }) async {
+    final db = await database;
+    return db.rawUpdate(
+      '''
+      UPDATE transactions
+      SET ussdReply = CASE
+        WHEN instr(COALESCE(ussdReply, ''), ?) > 0 THEN ussdReply
+        WHEN COALESCE(ussdReply, '') = '' THEN ?
+        ELSE ussdReply || char(10) || '•' || char(10) || ?
+      END
+      WHERE id = ? AND forwardingJobId = ? AND status = ?
+      ''',
+      [
+        note,
+        note,
+        note,
+        transactionId,
+        forwardingJobId,
+        TransactionStatuses.forwardedPending,
+      ],
+    );
+  }
+
+  Future<bool> acknowledgeForwardingDeliveryIfMatches({
+    required String forwardingJobId,
+    required String transactionRowId,
+    required String receivedSenderDeviceName,
+    required String receivedRecipientDeviceName,
+    required String localDeviceName,
+  }) async {
+    final transactionId = int.tryParse(transactionRowId.trim());
+    if (forwardingJobId.trim().isEmpty ||
+        transactionId == null ||
+        transactionId <= 0) {
+      return false;
+    }
+
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        where: 'id = ? AND forwardingJobId = ?',
+        whereArgs: [transactionId, forwardingJobId.trim()],
+        limit: 1,
+      );
+      if (rows.length != 1) return false;
+
+      final transaction = rows.single;
+      final persistedSender =
+          transaction['forwardingSenderDeviceName']?.toString().trim() ?? '';
+      if (!isMatchingForwardingReceipt(
+        expectedJobId: transaction['forwardingJobId']?.toString() ?? '',
+        receivedJobId: forwardingJobId,
+        expectedTransactionId: transaction['id']?.toString() ?? '',
+        receivedTransactionId: transactionRowId,
+        expectedRecipientDeviceName:
+            transaction['forwardingRecipientDeviceName']?.toString() ?? '',
+        receivedSenderDeviceName: receivedSenderDeviceName,
+        expectedSenderDeviceName:
+            persistedSender.isEmpty ? localDeviceName : persistedSender,
+        receivedRecipientDeviceName: receivedRecipientDeviceName,
+      )) {
+        return false;
+      }
+
+      const receiptNote = 'Receipt acknowledged by destination device';
+      if (transaction['status'] == TransactionStatuses.forwardedPending ||
+          transaction['status'] == TransactionStatuses.error) {
+        await txn.rawUpdate(
+          '''
+          UPDATE transactions
+          SET status = ?, ussdReply = CASE
+            WHEN instr(COALESCE(ussdReply, ''), ?) > 0 THEN ussdReply
+            WHEN COALESCE(ussdReply, '') = '' THEN ?
+            ELSE ussdReply || char(10) || '•' || char(10) || ?
+          END
+          WHERE id = ? AND forwardingJobId = ? AND status IN (?, ?)
+          ''',
+          [
+            TransactionStatuses.forwardedPending,
+            receiptNote,
+            receiptNote,
+            receiptNote,
+            transactionId,
+            forwardingJobId.trim(),
+            TransactionStatuses.forwardedPending,
+            TransactionStatuses.error,
+          ],
+        );
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await txn.insert(
+        'forwardingDeliveryRetries',
+        {
+          'forwardingJobId': forwardingJobId.trim(),
+          'attempt': 0,
+          'nextAttemptAt': now,
+          'acknowledged': 1,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      await txn.update(
+        'forwardingDeliveryRetries',
+        {'acknowledged': 1},
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId.trim()],
+      );
+      return true;
+    });
+  }
+
+  Future<int> markForwardingSubmissionFailedIfUnacknowledged({
+    required int transactionId,
+    required String forwardingJobId,
+    required String reply,
+  }) async {
+    final db = await database;
+    return db.rawUpdate(
+      '''
+      UPDATE transactions
+      SET status = ?, ussdReply = ?
+      WHERE id = ? AND forwardingJobId = ? AND status = ?
+        AND instr(
+          COALESCE(ussdReply, ''),
+          'Receipt acknowledged by destination device'
+        ) = 0
+        AND NOT EXISTS (
+          SELECT 1 FROM forwardingDeliveryRetries
+          WHERE forwardingJobId = ? AND acknowledged = 1
+        )
+      ''',
+      [
+        TransactionStatuses.error,
+        reply,
+        transactionId,
+        forwardingJobId,
+        TransactionStatuses.forwardedPending,
+        forwardingJobId,
+      ],
+    );
+  }
+
+  Future<bool> claimForwardingSubmission(
+    String forwardingJobId, {
+    required int now,
+    required int leaseExpiresAt,
+    String? claimToken,
+  }) async {
+    final db = await database;
+    final token = claimToken ??
+        '${DateTime.now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+    return db.transaction((txn) async {
+      final existing = await txn.query(
+        'forwardingSubmissionClaims',
+        columns: ['leaseExpiresAt'],
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+        limit: 1,
+      );
+      if (existing.isNotEmpty) {
+        final expiresAt = int.tryParse(
+              existing.first['leaseExpiresAt']?.toString() ?? '',
+            ) ??
+            0;
+        if (expiresAt > now) return false;
+        return await txn.update(
+              'forwardingSubmissionClaims',
+              {'leaseExpiresAt': leaseExpiresAt, 'claimToken': token},
+              where: 'forwardingJobId = ? AND leaseExpiresAt <= ?',
+              whereArgs: [forwardingJobId, now],
+            ) ==
+            1;
+      }
+
+      final insertedId = await txn.insert(
+        'forwardingSubmissionClaims',
+        {
+          'forwardingJobId': forwardingJobId,
+          'leaseExpiresAt': leaseExpiresAt,
+          'claimToken': token,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      return insertedId != -1;
+    });
+  }
+
+  Future<void> releaseForwardingSubmission(
+    String forwardingJobId, {
+    String? claimToken,
+  }) async {
+    final db = await database;
+    await db.delete(
+      'forwardingSubmissionClaims',
+      where: claimToken == null
+          ? 'forwardingJobId = ?'
+          : 'forwardingJobId = ? AND claimToken = ?',
+      whereArgs: claimToken == null
+          ? [forwardingJobId]
+          : [forwardingJobId, claimToken],
+    );
+  }
+
+  Future<bool> renewForwardingSubmission(
+    String forwardingJobId, {
+    required String claimToken,
+    required int leaseExpiresAt,
+  }) async {
+    final db = await database;
+    return await db.update(
+          'forwardingSubmissionClaims',
+          {'leaseExpiresAt': leaseExpiresAt},
+          where: 'forwardingJobId = ? AND claimToken = ?',
+          whereArgs: [forwardingJobId, claimToken],
+        ) ==
+        1;
+  }
+
+  Future<void> scheduleForwardingDeliveryRetry(
+    String forwardingJobId, {
+    required int attempt,
+    required int nextAttemptAt,
+    String? lastFailure,
+  }) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.insert(
+        'forwardingDeliveryRetries',
+        {
+          'forwardingJobId': forwardingJobId,
+          'attempt': attempt,
+          'nextAttemptAt': nextAttemptAt,
+          'acknowledged': 0,
+          'lastFailure': lastFailure,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      await txn.update(
+        'forwardingDeliveryRetries',
+        {
+          'attempt': attempt,
+          'nextAttemptAt': nextAttemptAt,
+          'lastFailure': lastFailure,
+        },
+        where: 'forwardingJobId = ? AND acknowledged = 0',
+        whereArgs: [forwardingJobId],
+      );
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> dueForwardingDeliveryRetries(
+      int now) async {
+    final db = await database;
+    return db.rawQuery('''
+      SELECT r.*, t.id AS transactionRowId, t.initialMessage, t.transactionId,
+             t.forwardingRecipientDeviceName, t.forwardingSenderDeviceName,
+             t.forwardingTransport
+      FROM forwardingDeliveryRetries r
+      JOIN transactions t ON t.forwardingJobId = r.forwardingJobId
+      WHERE r.acknowledged = 0 AND r.attempt < ?
+        AND r.nextAttemptAt <= ?
+        AND t.status = ? AND COALESCE(t.awaitingTopUp, 0) = 0
+        AND t.alternativeRequestCode IS NULL
+        AND t.initialMessage IS NOT NULL AND t.initialMessage != ''
+        AND t.forwardingRecipientDeviceName IS NOT NULL
+        AND t.forwardingRecipientDeviceName != ''
+        AND t.forwardingSenderDeviceName IS NOT NULL
+        AND t.forwardingSenderDeviceName != ''
+    ''', [
+      maxForwardingDeliveryRetries,
+      now,
+      TransactionStatuses.forwardedPending,
+    ]);
+  }
+
+  /// True when the destination's receipt for [forwardingJobId] was accepted
+  /// (see [acknowledgeForwardingDeliveryIfMatches]).
+  Future<bool> isForwardingDeliveryAcknowledged(String forwardingJobId) async {
+    final db = await database;
+    final rows = await db.query(
+      'forwardingDeliveryRetries',
+      columns: ['acknowledged'],
+      where: 'forwardingJobId = ? AND acknowledged = 1',
+      whereArgs: [forwardingJobId],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
+  Future<void> acknowledgeForwardingDelivery(String forwardingJobId) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.insert(
+        'forwardingDeliveryRetries',
+        {
+          'forwardingJobId': forwardingJobId,
+          'attempt': 0,
+          'nextAttemptAt': DateTime.now().millisecondsSinceEpoch,
+          'acknowledged': 1,
+        },
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+      await txn.update(
+        'forwardingDeliveryRetries',
+        {'acknowledged': 1},
+        where: 'forwardingJobId = ?',
+        whereArgs: [forwardingJobId],
+      );
+    });
   }
 
   Future<int> deleteAlternativeJob(
@@ -1523,6 +2445,40 @@ class SQLiteService {
     );
   }
 
+  Future<List<Map<String, dynamic>>> getAutomaticRetryCandidates({
+    required bool isAutoRetrying,
+    required int retryLimit,
+    required String today,
+  }) async {
+    return queryCustom(
+      'transactions',
+      '''
+        (status = ?
+          AND COALESCE(retryState, 'ready') NOT IN ('claimed', 'dispatching'))
+        OR
+        (status = ? AND date = ? AND canRetry < ?
+          AND COALESCE(retryState, 'ready') = 'ready')
+      ''',
+      [
+        TransactionStatuses.error,
+        TransactionStatuses.timedOut,
+        today,
+        retryLimit,
+      ],
+      columns: [
+        'id',
+        'ussdDialed',
+        'simSubId',
+        'canRetry',
+        'ussdReply',
+        'amount',
+        'initialMessage',
+        'status',
+        'retryState',
+      ],
+    );
+  }
+
   Future<List<Map<String, dynamic>>> queryAll(
     String table, {
     int? limit,
@@ -1655,6 +2611,485 @@ class SQLiteService {
   ) async {
     final db = await database;
     return db.update(table, row, where: where, whereArgs: whereArgs);
+  }
+
+  Future<int> updateRetryTransactionIfEligible(
+    int transactionId,
+    Map<String, dynamic> values,
+  ) async {
+    final db = await database;
+    return db.update(
+      'transactions',
+      values,
+      where: '''
+        id = ?
+        AND status IN (?, ?, ?, ?, ?, ?, ?, ?)
+        AND COALESCE(retryState, 'ready') = 'ready'
+      ''',
+      whereArgs: [
+        transactionId,
+        TransactionStatuses.error,
+        TransactionStatuses.timedOut,
+        TransactionStatuses.secondAttempt,
+        TransactionStatuses.done,
+        TransactionStatuses.advancedUssd,
+        TransactionStatuses.advancedQueue,
+        TransactionStatuses.paused,
+        TransactionStatuses.hasOkoa,
+      ],
+    );
+  }
+
+  Future<int> updateTransactionUnlessSafaricomSuccess(
+    int transactionId,
+    Map<String, dynamic> values,
+  ) async {
+    final db = await database;
+    return db.update(
+      'transactions',
+      values,
+      where: '''
+        id = ?
+        AND status NOT IN (?, ?, ?, ?)
+        AND COALESCE(retryState, 'ready') != 'dispatching'
+      ''',
+      whereArgs: [
+        transactionId,
+        TransactionStatuses.successfulPending,
+        TransactionStatuses.doneConfirmed,
+        TransactionStatuses.forwardedPending,
+        TransactionStatuses.forwardedConfirmed,
+      ],
+    );
+  }
+
+  Future<bool> mergeTransactionUnlessSafaricomSuccess(
+    int replacedTransactionId,
+    int replacementTransactionId,
+    Map<String, dynamic> replacement,
+  ) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        columns: ['status', 'retryState'],
+        where: 'id = ?',
+        whereArgs: [replacedTransactionId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return false;
+      final status = rows.first['status']?.toString();
+      final retryState = rows.first['retryState']?.toString();
+      if (status == TransactionStatuses.successfulPending ||
+          status == TransactionStatuses.doneConfirmed ||
+          retryState == 'claimed' ||
+          retryState == 'dispatching') {
+        return false;
+      }
+      await txn.delete(
+        'transactions',
+        where: 'id IN (?, ?)',
+        whereArgs: [replacedTransactionId, replacementTransactionId],
+      );
+      await txn.insert('transactions', replacement);
+      return true;
+    });
+  }
+
+  Future<void> recoverAbandonedTransactionRetryClaims(Database db) async {
+    await db.update(
+      'transactions',
+      {'retryState': 'ready', 'retryClaimOwner': null},
+      where: "retryState = 'claimed'",
+    );
+  }
+
+  Future<int> releaseUndispatchedTransactionRetryClaim(
+      int transactionId) async {
+    final db = await database;
+    return db.update(
+      'transactions',
+      {'retryState': 'ready', 'retryClaimOwner': null},
+      where: 'id = ? AND retryState = ? AND retryClaimOwner = ?',
+      whereArgs: [transactionId, 'claimed', _retryClaimOwner],
+    );
+  }
+
+  Future<int> resetKnownUndispatchedTransactionRetry(int transactionId) async {
+    final db = await database;
+    return db.update(
+      'transactions',
+      {'retryState': 'claimed'},
+      where: '''
+        id = ? AND retryState = ? AND retryClaimOwner = ?
+        AND status NOT IN (?, ?)
+      ''',
+      whereArgs: [
+        transactionId,
+        'dispatching',
+        _retryClaimOwner,
+        TransactionStatuses.successfulPending,
+        TransactionStatuses.doneConfirmed,
+      ],
+    );
+  }
+
+  /// Atomically reserves a retry dispatch for one transaction. A stale queue
+  /// item cannot claim a transaction after success evidence has changed it to
+  /// pending or confirmed, and concurrent workers can claim only once.
+  Future<int> claimTransactionRetry(int transactionId) async {
+    final result = await claimTransactionRetryWithReason(transactionId);
+    return result['claimed'] as int;
+  }
+
+  Future<Map<String, Object?>> claimTransactionRetryWithReason(
+    int transactionId,
+  ) async {
+    final db = await database;
+    final result = await db.transaction<Map<String, Object?>>((txn) async {
+      final claimed = await txn.update(
+        'transactions',
+        {'retryState': 'claimed', 'retryClaimOwner': _retryClaimOwner},
+        where: '''
+          id = ?
+          AND (
+            (status = ?
+              AND COALESCE(retryState, 'ready') NOT IN ('claimed', 'dispatching'))
+            OR
+            (status IN (?, ?, ?, ?, ?, ?, ?)
+              AND COALESCE(retryState, 'ready') = 'ready')
+          )
+        ''',
+        whereArgs: [
+          transactionId,
+          TransactionStatuses.error,
+          TransactionStatuses.timedOut,
+          TransactionStatuses.secondAttempt,
+          TransactionStatuses.done,
+          TransactionStatuses.advancedUssd,
+          TransactionStatuses.advancedQueue,
+          TransactionStatuses.paused,
+          TransactionStatuses.hasOkoa,
+        ],
+      );
+      if (claimed != 1) {
+        final rows = await txn.query(
+          'transactions',
+          columns: ['status', 'retryState', 'retryClaimOwner'],
+          where: 'id = ?',
+          whereArgs: [transactionId],
+          limit: 1,
+        );
+        if (rows.isEmpty) {
+          return {'claimed': 0, 'reason': 'transaction missing'};
+        }
+        final row = rows.first;
+        final status = row['status']?.toString() ?? '';
+        final state = row['retryState']?.toString() ?? 'ready';
+        final reason = switch (status) {
+          TransactionStatuses.successfulPending => 'pending confirmation',
+          TransactionStatuses.doneConfirmed => 'confirmed',
+          _ when state == 'claimed' => 'another worker owns the claim',
+          _ when state == 'dispatching' => 'another worker is dispatching',
+          _ when state == 'ambiguous' =>
+            'previous dispatch has an ambiguous outcome',
+          _ when state == 'blocked' => 'retry is blocked',
+          _ when state != 'ready' => 'invalid retry state',
+          _ => 'invalid transaction status',
+        };
+        return {
+          'claimed': 0,
+          'reason': reason,
+          'status': status,
+          'retryState': state,
+        };
+      }
+
+      return {'claimed': 1};
+    });
+    if (result['claimed'] != 1) {
+      _logger.warn('Retry claim rejected', {
+        'transactionId': transactionId,
+        ...result,
+      });
+    }
+    return result;
+  }
+
+  /// Marks the point after which a phone request may have been dispatched.
+  /// The durable state remains non-retryable if the process dies from here on.
+  Future<int> beginTransactionRetryDispatch(int transactionId) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        columns: ['status', 'retryStartedAt', 'retryClaimOwner'],
+        where: 'id = ? AND retryState = ? AND retryClaimOwner = ?',
+        whereArgs: [transactionId, 'claimed', _retryClaimOwner],
+        limit: 1,
+      );
+      if (rows.isEmpty) return 0;
+      final row = rows.first;
+      final status = row['status']?.toString() ?? '';
+      final previousRetryStartedAt =
+          int.tryParse(row['retryStartedAt']?.toString() ?? '');
+      const eligibleStatuses = {
+        TransactionStatuses.error,
+        TransactionStatuses.timedOut,
+        TransactionStatuses.secondAttempt,
+        TransactionStatuses.done,
+        TransactionStatuses.advancedUssd,
+        TransactionStatuses.advancedQueue,
+        TransactionStatuses.paused,
+        TransactionStatuses.hasOkoa,
+      };
+      if (!eligibleStatuses.contains(status)) return 0;
+
+      return txn.update(
+        'transactions',
+        {
+          'retryState': 'dispatching',
+          'retryStartedAt':
+              previousRetryStartedAt != null && now <= previousRetryStartedAt
+                  ? previousRetryStartedAt + 1
+                  : now,
+        },
+        where:
+            'id = ? AND status = ? AND retryState = ? AND retryClaimOwner = ?',
+        whereArgs: [transactionId, status, 'claimed', _retryClaimOwner],
+      );
+    });
+  }
+
+  Future<int> finishTransactionRetryClaim(
+    int transactionId, {
+    bool ambiguousOutcome = false,
+    bool retryableOutcome = false,
+  }) async {
+    final db = await database;
+    return db.update(
+      'transactions',
+      {
+        'retryState': ambiguousOutcome
+            ? 'ambiguous'
+            : retryableOutcome
+                ? 'ready'
+                : 'blocked',
+        'retryClaimOwner': null,
+      },
+      where: 'id = ? AND retryState = ? AND retryClaimOwner = ?',
+      whereArgs: [transactionId, 'dispatching', _retryClaimOwner],
+    );
+  }
+
+  String _safaricomMessageKey(String body, int smsTimestamp) =>
+      '$smsTimestamp:${body.trim().toLowerCase()}';
+
+  Future<void> recordUnresolvedSafaricomMessage({
+    required String body,
+    required int smsTimestamp,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'safaricomTransactionMessages',
+      {
+        'messageKey': _safaricomMessageKey(body, smsTimestamp),
+        'body': body,
+        'smsTimestamp': smsTimestamp,
+        'receivedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> getUnresolvedSafaricomMessages() async {
+    final db = await database;
+    return db.query(
+      'safaricomTransactionMessages',
+      where: 'resolvedAt IS NULL',
+      orderBy: 'receivedAt ASC, id ASC',
+    );
+  }
+
+  Future<void> resolveSafaricomMessage({
+    required String body,
+    required int smsTimestamp,
+  }) async {
+    final db = await database;
+    await db.update(
+      'safaricomTransactionMessages',
+      {'resolvedAt': DateTime.now().millisecondsSinceEpoch},
+      where: 'messageKey = ?',
+      whereArgs: [_safaricomMessageKey(body, smsTimestamp)],
+    );
+  }
+
+  /// Reconciles Safaricom evidence without allowing a weaker submission event
+  /// to downgrade confirmed success. Retry invalidation is committed in the
+  /// same SQLite transaction as the status change.
+  Future<int> reconcileSafaricomTransaction({
+    required int transactionId,
+    required String targetStatus,
+    required String message,
+  }) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        columns: [
+          'status',
+          'ussdReply',
+          'firstFailedTimeStamp',
+          'retryClaimOwner',
+        ],
+        where: 'id = ?',
+        whereArgs: [transactionId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return 0;
+
+      final currentStatus = rows.first['status']?.toString() ?? '';
+      if (currentStatus == TransactionStatuses.doneConfirmed &&
+          targetStatus != TransactionStatuses.doneConfirmed) {
+        return 0;
+      }
+
+      final eligibleStatuses = <String>{
+        TransactionStatuses.error,
+        TransactionStatuses.secondAttempt,
+        TransactionStatuses.timedOut,
+        TransactionStatuses.done,
+        TransactionStatuses.advancedUssd,
+        TransactionStatuses.advancedQueue,
+        TransactionStatuses.successfulPending,
+        TransactionStatuses.alternativeExecuting,
+        TransactionStatuses.doneConfirmed,
+      };
+      if (!eligibleStatuses.contains(currentStatus)) return 0;
+
+      final previousReply = rows.first['ussdReply']?.toString() ?? '';
+      final alreadyRecorded =
+          message.isNotEmpty && previousReply.contains(message);
+      final updatedReply = message.isEmpty || alreadyRecorded
+          ? previousReply
+          : previousReply.isEmpty
+              ? message
+              : '$message\n•\n$previousReply';
+      final invalidatesRetry =
+          targetStatus == TransactionStatuses.successfulPending ||
+              targetStatus == TransactionStatuses.doneConfirmed;
+
+      return txn.update(
+        'transactions',
+        {
+          'status': targetStatus,
+          if (invalidatesRetry) 'canRetry': 0,
+          if (invalidatesRetry) 'retryState': 'blocked',
+          if (invalidatesRetry) 'retryClaimOwner': null,
+          if (targetStatus == TransactionStatuses.secondAttempt)
+            'firstFailedTimeStamp': rows.first['firstFailedTimeStamp'] ??
+                DateTime.now().millisecondsSinceEpoch,
+          'ussdReply': updatedReply,
+        },
+        where: 'id = ? AND status = ?',
+        whereArgs: [transactionId, currentStatus],
+      );
+    });
+  }
+
+  /// Persists the result of a retry while preserving stronger Safaricom
+  /// evidence that may have arrived during the external USSD call.
+  Future<Map<String, dynamic>?> completeTransactionRetry({
+    required int transactionId,
+    required String resultStatus,
+    required String reply,
+    required Map<String, dynamic> fields,
+    bool ambiguousOutcome = false,
+  }) async {
+    final db = await database;
+    final completion = await db.transaction<Map<String, dynamic>?>((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        columns: ['status', 'ussdReply', 'retryState', 'retryClaimOwner'],
+        where: 'id = ?',
+        whereArgs: [transactionId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return null;
+      final row = rows.first;
+      final currentStatus = row['status']?.toString() ?? '';
+      if (row['retryState'] != 'dispatching' ||
+          row['retryClaimOwner'] != _retryClaimOwner) {
+        return {'status': currentStatus, 'updated': false};
+      }
+
+      final isConfirmed = currentStatus == TransactionStatuses.doneConfirmed;
+      final isPending = currentStatus == TransactionStatuses.successfulPending;
+      final preserveStrongerEvidence = isConfirmed ||
+          (isPending && resultStatus != TransactionStatuses.doneConfirmed);
+      final effectiveStatus = isConfirmed
+          ? TransactionStatuses.doneConfirmed
+          : isPending && preserveStrongerEvidence
+              ? TransactionStatuses.successfulPending
+              : resultStatus;
+      final currentReply = row['ussdReply']?.toString() ?? '';
+      final replyAlreadyRecorded =
+          reply.isNotEmpty && currentReply.contains(reply);
+      final effectiveReply = isConfirmed || isPending
+          ? (reply.isEmpty || replyAlreadyRecorded
+              ? currentReply
+              : currentReply.isEmpty
+                  ? reply
+                  : '$currentReply\n•\n$reply')
+          : reply;
+      final isTerminal = preserveStrongerEvidence ||
+          effectiveStatus == TransactionStatuses.doneConfirmed ||
+          effectiveStatus == TransactionStatuses.successfulPending ||
+          effectiveStatus == TransactionStatuses.done;
+      final nextRetryState = isTerminal
+          ? 'blocked'
+          : effectiveStatus == TransactionStatuses.error || !ambiguousOutcome
+              ? 'ready'
+              : 'ambiguous';
+
+      final updated = await txn.update(
+        'transactions',
+        {
+          ...fields,
+          'status': effectiveStatus,
+          'ussdReply': effectiveReply,
+          if (effectiveStatus == TransactionStatuses.doneConfirmed ||
+              effectiveStatus == TransactionStatuses.successfulPending)
+            'canRetry': 0,
+          'retryState': nextRetryState,
+          'retryClaimOwner': null,
+        },
+        where:
+            'id = ? AND retryState = ? AND status = ? AND retryClaimOwner = ?',
+        whereArgs: [
+          transactionId,
+          'dispatching',
+          currentStatus,
+          _retryClaimOwner,
+        ],
+      );
+      return {
+        'status': effectiveStatus,
+        'updated': updated == 1,
+        'retryState': nextRetryState,
+      };
+    });
+    if (completion?['updated'] == true &&
+        completion?['retryState'] == 'ambiguous') {
+      _logger.warn('Retry remains blocked pending independent confirmation', {
+        'transactionId': transactionId,
+        'status': completion?['status'],
+        'retryState': 'ambiguous',
+        'reason': 'The phone request may have been dispatched.',
+      });
+    }
+    return completion;
   }
 
   Future<void> updateOnly(String query, List<dynamic> args) async {

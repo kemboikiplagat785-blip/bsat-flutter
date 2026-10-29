@@ -52,6 +52,8 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
 
         flutterEngine.plugins.add(UssdPlugin())
+        // LAN forwarding identity: Keystore-wrapped Ed25519 seed (main engine).
+        LanIdentityKeyWrapper.register(flutterEngine.dartExecutor.binaryMessenger, applicationContext)
 
         NativeLogger.loggerMethodChannel =
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOGGER_CHANNEL)

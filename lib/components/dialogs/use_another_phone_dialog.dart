@@ -1,10 +1,20 @@
 import 'package:bsat/screens/foward_sms.dart';
+import 'package:bsat/screens/online_management/lan/lan_management.dart';
 import 'package:bsat/screens/online_management/online_management.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-Future<void> showUseAnotherPhoneDialog(BuildContext context) {
+/// "Use Another Phone": Online, Offline (SMS) and LAN forwarding.
+///
+/// The page builders exist for tests only; by default each option opens its
+/// own management page.
+Future<void> showUseAnotherPhoneDialog(
+  BuildContext context, {
+  @visibleForTesting WidgetBuilder? onlinePageBuilder,
+  @visibleForTesting WidgetBuilder? offlinePageBuilder,
+  @visibleForTesting WidgetBuilder? lanPageBuilder,
+}) {
   return showDialog<void>(
     context: context,
     barrierDismissible: false, // User must tap button!
@@ -21,6 +31,7 @@ Future<void> showUseAnotherPhoneDialog(BuildContext context) {
                 Navigator.of(context).push(
                   PageRouteBuilder(
                     pageBuilder: (context, animation, secondaryAnimation) =>
+                        onlinePageBuilder?.call(context) ??
                         const OnlineManagementScreen(),
                     transitionsBuilder:
                         (context, animation, secondaryAnimation, child) {
@@ -69,6 +80,7 @@ Future<void> showUseAnotherPhoneDialog(BuildContext context) {
                 Navigator.of(context).push(
                   PageRouteBuilder(
                     pageBuilder: (context, animation, secondaryAnimation) =>
+                        offlinePageBuilder?.call(context) ??
                         const ForwardSmsPage(),
                     transitionsBuilder:
                         (context, animation, secondaryAnimation, child) {
@@ -101,6 +113,55 @@ Future<void> showUseAnotherPhoneDialog(BuildContext context) {
                         ),
                         Text(
                           "Carrier costs apply",
+                          style: TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
+                    Spacer(),
+                    Icon(CupertinoIcons.chevron_right),
+                  ],
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  PageRouteBuilder(
+                    pageBuilder: (context, animation, secondaryAnimation) =>
+                        lanPageBuilder?.call(context) ??
+                        const LanManagementScreen(),
+                    transitionsBuilder:
+                        (context, animation, secondaryAnimation, child) {
+                      return CupertinoPageTransition(
+                        primaryRouteAnimation: animation,
+                        secondaryRouteAnimation: secondaryAnimation,
+                        linearTransition: true,
+                        child: child,
+                      );
+                    },
+                  ),
+                );
+              },
+              child: Container(
+                padding: kPagePaddingInsets,
+                margin: kPagePaddingInsets / 2,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(kBorderRadius),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "LAN",
+                          style: TextStyle(fontSize: 18),
+                        ),
+                        Text(
+                          "Same Wi-Fi or hotspot, no account",
                           style: TextStyle(fontSize: 14),
                         ),
                       ],

@@ -98,6 +98,22 @@ class _EditForwarderState extends State<EditForwarder> {
         'user_id': deviceToReceive['user_id'],
         'amounts_to_forward': jsonEncode(amountsToForward),
       };
+      // A transport preference belongs to the device it was chosen for. When
+      // the rule now points at another device, that device starts from the
+      // default (Online) instead of inheriting it.
+      final previous = await SQLiteService().queryCustom(
+        'forwardingDevices',
+        'id = ?',
+        [widget.dbId!],
+        limit: 1,
+      );
+      if (previous.isNotEmpty &&
+          (previous.first['device_id']?.toString() !=
+                  deviceToReceive['device_id']?.toString() ||
+              previous.first['device_name']?.toString() !=
+                  deviceToReceive['device_name']?.toString())) {
+        updatedData['forwarding_transport'] = null;
+      }
 
       int updatedId = await SQLiteService().updateStuff(
         updatedData,

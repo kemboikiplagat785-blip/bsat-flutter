@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+// misc
+// const baseUrl = "$kBaseUrl";
+const kBaseAppUrl = "bsat2.xyz";
+
 // measurements
 const kPagePadding = 20.0;
 const kAdDividerHeight = 16.0;

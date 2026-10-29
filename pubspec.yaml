@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 4.2.3+7
+version: 4.2.10+12
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -79,6 +79,13 @@ dependencies:
   dio: ^5.9.2
   whatsapp_bot_flutter: ^2.1.2
   whatsapp_bot_flutter_mobile: ^2.1.2
+  # LAN forwarding (ported from the BSAT Local Lab prototype, same pinned
+  # versions it assessed): pure-Dart crypto, QR encoding, in-app QR scanning
+  # decoded on the phone (no ML Kit / network).
+  cryptography: 2.9.0
+  qr: 4.0.0
+  camera: 0.12.2
+  zxing2: 0.2.4
   # connectivity_plus: ^6.1.4
 
 dev_dependencies:

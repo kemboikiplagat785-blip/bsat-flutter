@@ -1,6 +1,7 @@
 // import 'dart:ui';
 
 import 'package:bsat/firebase_options.dart';
+import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/screens/home/home.dart';
 import 'package:bsat/screens/onboarding/main_page.dart';
 import 'package:bsat/services/firebase_messaging_service.dart';
@@ -19,6 +20,7 @@ import 'providers/theme_provider.dart';
 import 'screens/settings/kill_switch.dart';
 import 'services/admin_management_service.dart';
 import 'services/main_engine_ussd_bridge.dart';
+import 'services/lan/lan_forwarding_bootstrap.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
@@ -44,7 +46,16 @@ Future<void> main() async {
 
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  // Construct once at startup so persisted forwarding delivery retries are
+  // recovered even when no transaction screen has been opened yet.
+  TransactionController();
+
   registerMainEngineAlternativeUssdBridge();
+
+  // LAN forwarding (opt-in per destination) is owned by this isolate. It
+  // does nothing until a device is paired. Not awaited: startup never waits
+  // for the network.
+  startLanForwardingInMainIsolate();
 
   // Initialize Firebase Messaging (Don't await to prevent blocking startup)
   FirebaseMessagingService().initNotifications();

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:bsat/utils/constants.dart';
 
 class MyWebsitePage extends StatefulWidget {
   // Replace with your actual website URL
-  final String websiteUrl = "https://portal.bsat.co.ke";
+  final String websiteUrl = "https://portal.$kBaseAppUrl";
 
   const MyWebsitePage({super.key});
 

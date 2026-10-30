@@ -152,12 +152,110 @@ void main() {
           throwsA(isA<LanMessageException>()));
     });
 
+    test('alternative requests and results are accepted, including a long '
+        'multi-line SMS or USSD reply', () {
+      const sms = 'SJK1ABCD23 Confirmed.\nKsh100.00 received from JOHN DOE '
+          '0712345678 on 30/10/26 at 10:00 AM. New M-PESA balance is '
+          'Ksh1,000.00. Transaction cost, Ksh0.00. Amount you can transact '
+          'within the day is 499,900.00. SYNTHETIC TEST ONLY.';
+      final request = validate({
+        'type': 'process_alt_request',
+        'transactionId': '7',
+        'forwardingJobId': 'fwd_X_1',
+        'senderDeviceName': 'Phone A',
+        'recipientDeviceName': 'Phone B',
+        'ussdCode': '*180*5*2*0712345678*1*1#',
+        'isAdvanced': 'false',
+        'smsMessage': sms,
+        'body': 'Forwarded alternative USSD request',
+        'title': 'Forwarded Code',
+      });
+      expect(request.kind, LanMessageKind.alternativeRequest);
+      expect(request.data['smsMessage'], sms);
+      expect(lanReplyKindsFor(request.kind),
+          {LanMessageKind.alternativeRequestReceipt});
+
+      final result = validate({
+        'type': 'forwarded_alt_result',
+        'transactionId': '7',
+        'forwardingJobId': 'fwd_X_1',
+        'status': 'transaction-alternative-failed',
+        'ussdReply': 'Line one\n${'x' * 400}',
+        'senderDeviceName': 'Phone A',
+        'recipientDeviceName': 'Phone B',
+      });
+      expect(result.kind, LanMessageKind.alternativeResult);
+      expect(lanReplyKindsFor(result.kind),
+          {LanMessageKind.alternativeResultReceipt});
+    });
+
+    test('malformed alternative requests are refused', () {
+      final good = {
+        'type': 'process_alt_request',
+        'transactionId': '7',
+        'forwardingJobId': 'fwd_X_1',
+        'senderDeviceName': 'Phone A',
+        'recipientDeviceName': 'Phone B',
+        'ussdCode': '*180*1#',
+      };
+      expect(validate(good).kind, LanMessageKind.alternativeRequest);
+      for (final bad in <Object?>[
+        Map.of(good)..remove('ussdCode'),
+        {...good, 'ussdCode': ' '},
+        {...good, 'transactionId': '0'},
+        {...good, 'callbackUrl': 'https://example.test'},
+        {...good, 'ussdCode': '*180*1#\u0007'},
+        {...good, 'smsMessage': 'x' * (maxLanBodyChars + 1)},
+      ]) {
+        expect(() => validate(bad), throwsA(isA<LanMessageException>()),
+            reason: '$bad');
+      }
+    });
+
+    test('alternative receipts are replies, never requests', () {
+      for (final receipt in [
+        {
+          'type': 'MESSAGE_ACK',
+          'ackKind': 'alternative_received',
+          'originalType': 'process_alt_request',
+          'status': 'alternative-received',
+        },
+        {
+          'type': 'MESSAGE_ACK',
+          'ackKind': 'alternative_result_received',
+          'originalType': 'forwarded_alt_result',
+          'status': 'alternative-result-received',
+        },
+      ]) {
+        final data = {
+          ...receipt,
+          'forwardingJobId': 'fwd_X_1',
+          'senderDeviceName': 'Phone A',
+          'recipientDeviceName': 'Phone B',
+        };
+        expect(
+          () => validate(data),
+          throwsA(isA<LanMessageException>().having(
+              (e) => e.reason, 'reason', LanRejectReasons.unsupportedType)),
+        );
+        expect(
+          validateLanForwardingData(data,
+                  allowed: LanMessageKind.values.toSet(),
+                  authenticatedPeerDeviceName: 'Phone A',
+                  ownDeviceName: 'Phone B')
+              .kind,
+          isIn([
+            LanMessageKind.alternativeRequestReceipt,
+            LanMessageKind.alternativeResultReceipt,
+          ]),
+        );
+      }
+    });
+
     test('only forwarding kinds travel over LAN; a receipt is never a request',
         () {
       for (final type in [
-        {'type': 'process_alt_request'},
         {'type': 'DATA_REQUEST'},
-        {'type': 'forwarded_alt_result'},
         {'type': 'forwarded_sms_ack', 'ackKind': 'received'},
         _receipt('fwd_X_1')['data'],
       ]) {

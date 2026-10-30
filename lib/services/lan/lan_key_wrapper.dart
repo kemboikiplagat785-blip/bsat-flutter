@@ -101,12 +101,15 @@ class AndroidKeystoreKeyWrapper implements KeyWrapper {
     }
   }
 
+  // Byte arrays decoded from a platform message are read-only views of the
+  // message buffer; copy them so callers can zero the secret after use.
   @override
-  Future<Uint8List> wrap(Uint8List secret) => _call<Uint8List>('wrap', secret);
+  Future<Uint8List> wrap(Uint8List secret) async =>
+      Uint8List.fromList(await _call<Uint8List>('wrap', secret));
 
   @override
-  Future<Uint8List> unwrap(Uint8List wrapped) =>
-      _call<Uint8List>('unwrap', wrapped);
+  Future<Uint8List> unwrap(Uint8List wrapped) async =>
+      Uint8List.fromList(await _call<Uint8List>('unwrap', wrapped));
 
   @override
   Future<KeyProtection> protection() async {

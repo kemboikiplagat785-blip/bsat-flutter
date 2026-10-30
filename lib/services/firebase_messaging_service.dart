@@ -85,13 +85,23 @@ const Set<String> _lanDeliverableTypes = {
   'forwarded_sms',
   'forwarded_sms_ack',
   'MESSAGE_ACK',
+  'process_alt_request',
+  'forwarded_alt_result',
+};
+
+/// Requests (not acknowledgements) the LAN transport may deliver.
+const Set<String> _lanRequestTypes = {
+  'forwarded_sms',
+  'process_alt_request',
+  'forwarded_alt_result',
 };
 
 /// Handles one forwarding message.
 ///
 /// FCM calls this with the message only. The LAN transport also passes
-/// [replySink], which then carries every reply (receipt ACK, confirmation
-/// receipt) instead of the Internet, and [authenticatedSenderDeviceName], the
+/// [replySink], which then carries every reply (receipt ACKs, confirmation
+/// receipt, alternative request and result receipts) instead of the
+/// Internet, and [authenticatedSenderDeviceName], the
 /// paired device whose pinned key authenticated the session. Everything
 /// else (validation, durable claims, purchase, confirmation rules) is the
 /// same for both transports.
@@ -139,7 +149,7 @@ Future<void> handleRemoteMessage(
   )) {
     return;
   }
-  if (receivedOverLan && type != 'forwarded_sms') return;
+  if (receivedOverLan && !_lanRequestTypes.contains(type)) return;
 
   // return acknowledgement first
   developer.log(
@@ -179,6 +189,19 @@ Future<void> handleRemoteMessage(
         'recipient=${message.data['recipientDeviceName'] ?? ''}',
       );
 
+      // Over LAN the request must come from the authenticated paired device,
+      // and that pairing must still be trusted. No Online account is used.
+      if (receivedOverLan &&
+          (authenticatedSenderDeviceName!.trim() !=
+                  (forwardingSenderDeviceName ?? '').trim() ||
+              (await LanPeerStore()
+                          .lookupDevice(authenticatedSenderDeviceName))
+                      .state !=
+                  LanPeerLookupState.trusted)) {
+        debugPrint('ALT REQUEST REJECTED: LAN sender is not trusted.');
+        break;
+      }
+
       final controller = TransactionController();
       if (forwardingJobId == null ||
           forwardingJobId.isEmpty ||
@@ -186,6 +209,10 @@ Future<void> handleRemoteMessage(
           forwardingSenderDeviceName.isEmpty ||
           transactionId.isEmpty ||
           ussdCode.isEmpty) {
+        if (receivedOverLan) {
+          debugPrint('ALT REQUEST REJECTED: incomplete LAN request.');
+          break;
+        }
         debugPrint(
           'ALT DELIVERY: legacy/incomplete request; using direct execution',
         );
@@ -228,6 +255,7 @@ Future<void> handleRemoteMessage(
           originalType: type,
           ackKind: 'alternative_received',
           status: 'alternative-received',
+          replySink: replySink,
         );
         await controller.processReservedAlternativeRequest(forwardingJobId);
         break;
@@ -241,6 +269,7 @@ Future<void> handleRemoteMessage(
         smsMessage: smsMessage,
         senderDeviceName: forwardingSenderDeviceName,
         recipientDeviceName: forwardingRecipientDeviceName,
+        transport: receivedOverLan ? 'lan' : null,
       );
       if (!reserved) {
         existingJob = await controller.getAlternativeRequest(forwardingJobId);
@@ -256,6 +285,7 @@ Future<void> handleRemoteMessage(
           originalType: type,
           ackKind: 'alternative_received',
           status: 'alternative-received',
+          replySink: replySink,
         );
         await controller.processReservedAlternativeRequest(forwardingJobId);
         break;
@@ -281,12 +311,17 @@ Future<void> handleRemoteMessage(
         originalType: type,
         ackKind: 'alternative_received',
         status: 'alternative-received',
+        replySink: replySink,
       );
       await controller.processReservedAlternativeRequest(forwardingJobId);
       break;
 
     case 'forwarded_alt_result':
-      await _handleForwardedAltResult(message);
+      await _handleForwardedAltResult(
+        message,
+        replySink: replySink,
+        authenticatedSenderDeviceName: authenticatedSenderDeviceName,
+      );
       break;
 
     case 'forwarded_sms':
@@ -825,7 +860,8 @@ Future<bool> _processIncomingAcknowledgement(
   }
   if (replySink != null) {
     // Over LAN only forwarded-SMS receipts, confirmations and confirmation
-    // receipts are acknowledgements; every other kind is refused.
+    // receipts, and alternative request and result receipts, are
+    // acknowledgements; every other kind is refused.
     final originalType =
         message.data['originalType']?.toString().toUpperCase() ?? '';
     final normalized = (type ?? '').toUpperCase();
@@ -836,6 +872,20 @@ Future<bool> _processIncomingAcknowledgement(
         message,
         authenticatedSenderDeviceName: authenticatedSenderDeviceName,
         replySink: replySink,
+      );
+    } else if (normalized == 'MESSAGE_ACK' &&
+        originalType == 'PROCESS_ALT_REQUEST' &&
+        authenticatedSenderDeviceName != null) {
+      await _handleProcessAltRequestAck(
+        message,
+        lanSenderDeviceName: authenticatedSenderDeviceName,
+      );
+    } else if (normalized == 'MESSAGE_ACK' &&
+        originalType == 'FORWARDED_ALT_RESULT' &&
+        authenticatedSenderDeviceName != null) {
+      await _handleForwardedAltResultAck(
+        message,
+        lanSenderDeviceName: authenticatedSenderDeviceName,
       );
     }
     return true;
@@ -1007,7 +1057,12 @@ Future<void> _handlePingAck(RemoteMessage message) async {
   await _persistAckState(message, ackScope: 'ping');
 }
 
-Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
+/// [lanSenderDeviceName] is the authenticated peer when the receipt arrived
+/// over LAN; it must then be the device the alternative was sent to, over LAN.
+Future<void> _handleProcessAltRequestAck(
+  RemoteMessage message, {
+  String? lanSenderDeviceName,
+}) async {
   final transactionId = message.data['transactionId']?.toString() ?? '';
 
   final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
@@ -1030,6 +1085,7 @@ Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
     return;
   }
 
+  final overLan = lanSenderDeviceName != null;
   final updatedRows = await SQLiteService().updateStuff(
     {
       'status': TransactionStatuses.forwardedPending,
@@ -1037,11 +1093,16 @@ Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
       'ussdReply': 'Alternative request durably received by target. '
           'Waiting for execution result.',
     },
-    'forwardingJobId = ? AND id = ? AND status = ?',
+    overLan
+        ? 'forwardingJobId = ? AND id = ? AND status = ? AND '
+            'forwardingTransport = ? AND forwardingRecipientDeviceName = ?'
+        : 'forwardingJobId = ? AND id = ? AND status = ?',
     [
       forwardingJobId,
       int.tryParse(transactionId) ?? -1,
       TransactionStatuses.alternativeDeliveryPending,
+      if (overLan) 'lan',
+      if (overLan) lanSenderDeviceName,
     ],
     'transactions',
   );
@@ -1056,7 +1117,12 @@ Future<void> _handleProcessAltRequestAck(RemoteMessage message) async {
   );
 }
 
-Future<void> _handleForwardedAltResultAck(RemoteMessage message) async {
+/// [lanSenderDeviceName] is the authenticated peer when the receipt arrived
+/// over LAN; the job must then have arrived from that device over LAN.
+Future<void> _handleForwardedAltResultAck(
+  RemoteMessage message, {
+  String? lanSenderDeviceName,
+}) async {
   final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
   final ackKind = message.data['ackKind']?.toString().toLowerCase() ?? '';
   final status = message.data['status']?.toString().toLowerCase() ?? '';
@@ -1084,11 +1150,17 @@ Future<void> _handleForwardedAltResultAck(RemoteMessage message) async {
   final ackSender = message.data['senderDeviceName']?.toString() ?? '';
   final ackRecipient = message.data['recipientDeviceName']?.toString() ?? '';
   final transactionId = message.data['transactionId']?.toString() ?? '';
-  final localDeviceName =
-      await SharedPreferencesService().getDeviceName() ?? '';
+  final localDeviceName = await forwardingDeviceName() ?? '';
+  // The receipt comes from the device that requested the alternative and is
+  // addressed to this device, over the transport the request arrived on.
+  // Over LAN the sender is also the authenticated peer.
+  final devicesMismatch = (lanSenderDeviceName != null
+          ? job['transport'] != 'lan' || lanSenderDeviceName != expectedSender
+          : job['transport'] == 'lan') ||
+      (expectedSender.isNotEmpty && ackSender != expectedSender) ||
+      (expectedRecipient.isNotEmpty && ackRecipient != expectedRecipient);
   if (transactionId != job['transactionId']?.toString() ||
-      (expectedSender.isNotEmpty && ackRecipient != expectedSender) ||
-      (expectedRecipient.isNotEmpty && ackSender != expectedRecipient) ||
+      devicesMismatch ||
       (localDeviceName.isNotEmpty && expectedRecipient != localDeviceName)) {
     debugPrint(
       'ALT RESULT ACK ignored: job/device/transaction mismatch '
@@ -1113,7 +1185,14 @@ Future<void> _handleForwardedAltResultAck(RemoteMessage message) async {
   await _persistAckState(message, ackScope: 'forwarded_alt_result');
 }
 
-Future<void> _handleForwardedAltResult(RemoteMessage message) async {
+/// Over LAN, [replySink] carries the receipt and
+/// [authenticatedSenderDeviceName] must be the device the alternative was
+/// sent to over LAN.
+Future<void> _handleForwardedAltResult(
+  RemoteMessage message, {
+  ForwardingReplySink? replySink,
+  String? authenticatedSenderDeviceName,
+}) async {
   final forwardingJobId = message.data['forwardingJobId']?.toString() ?? '';
 
   final transactionId = message.data['transactionId']?.toString() ?? '';
@@ -1153,8 +1232,17 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
       matchedTransaction['forwardingRecipientDeviceName']?.toString() ?? '';
   final expectedRecipient =
       matchedTransaction['alternativeRequestSenderDeviceName']?.toString() ??
-          await SharedPreferencesService().getDeviceName() ??
+          await forwardingDeviceName() ??
           '';
+  if (replySink != null &&
+      (matchedTransaction['forwardingTransport'] != 'lan' ||
+          authenticatedSenderDeviceName != expectedSender)) {
+    debugPrint(
+      'FORWARDED_ALT_RESULT ignored: LAN result from an unexpected device '
+      'job=$forwardingJobId',
+    );
+    return;
+  }
   final resultSender = message.data['senderDeviceName']?.toString() ?? '';
   final resultRecipient = message.data['recipientDeviceName']?.toString() ?? '';
   if ((expectedSender.isNotEmpty && resultSender != expectedSender) ||
@@ -1172,6 +1260,7 @@ Future<void> _handleForwardedAltResult(RemoteMessage message) async {
       originalType: 'forwarded_alt_result',
       ackKind: 'alternative_result_received',
       status: 'alternative-result-received',
+      replySink: replySink,
     );
     await _persistAckState(
       message,

@@ -413,6 +413,7 @@ class SQLiteService {
         resultAttempt INTEGER NOT NULL DEFAULT 0,
         resultNextAttemptAt INTEGER NOT NULL DEFAULT 0,
         executionStartedAt INTEGER,
+        transport TEXT,
         createdAt INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL
       )
@@ -429,6 +430,9 @@ class SQLiteService {
       'resultAttempt': 'INTEGER NOT NULL DEFAULT 0',
       'resultNextAttemptAt': 'INTEGER NOT NULL DEFAULT 0',
       'executionStartedAt': 'INTEGER',
+      // Transport the request arrived on; its result goes back the same
+      // way. NULL (every job before LAN alternatives) is Online.
+      'transport': 'TEXT',
     }.entries) {
       if (!existingAlternativeJobColumns.contains(definition.key)) {
         await db.execute(

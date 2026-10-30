@@ -335,7 +335,7 @@ void main() {
         h.expectNoExternalEffects();
       });
 
-      test('a LAN target is not queued and nothing is sent', () async {
+      test('a LAN target is queued over LAN; nothing goes online', () async {
         final id = await seedAlternative('Phone C');
         await h.capture(() => TransactionController(
               sqliteService: SQLiteService(),
@@ -345,9 +345,9 @@ void main() {
         final row = (await (await h.db)
                 .query('transactions', where: 'id = ?', whereArgs: [id]))
             .single;
-        expect(row['status'], TransactionStatuses.secondAttempt);
-        expect(row['forwardingJobId'], isNull);
-        expect(row['alternativeQueueState'], isNull);
+        expect(row['status'], TransactionStatuses.alternativeDeliveryPending);
+        expect(row['forwardingTransport'], 'lan');
+        expect(row['forwardingJobId'], isNotNull);
         expect(h.backendPosts, isEmpty);
         expect(h.ussdCalls, isEmpty);
         h.expectNoExternalEffects();

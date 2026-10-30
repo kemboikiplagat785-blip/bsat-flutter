@@ -350,4 +350,75 @@ void main() {
       h.expectNoExternalEffects();
     });
   });
+  group('Phone C: receipt of a delivered result (Online)', () {
+    const jobId = 'JR';
+
+    Future<void> seedPendingResult() async {
+      await h.setUp(prefs: {
+        'user_device_name': _phoneC,
+        'jwt_token': 'stage0-test-jwt',
+      });
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await (await h.db).insert('alternativeJobs', {
+        'forwardingJobId': jobId,
+        'transactionId': '55',
+        'state': 'completed',
+        'ussdCode': '*180*5#',
+        'isAdvanced': 0,
+        'smsMessage': 'RCPT-JR Confirmed. Ksh50.00 received from SYNTHETIC '
+            'TEST 0712345678.',
+        'senderDeviceName': 'Phone B',
+        'recipientDeviceName': _phoneC,
+        'resultStatus': TransactionStatuses.alternativeFailed,
+        'ussdReply': 'SYNTHETIC FAILURE',
+        'resultDeliveryState': 'pending',
+        'resultAttempt': 1,
+        'resultNextAttemptAt': now + 20000,
+        'createdAt': now,
+        'updatedAt': now,
+      });
+    }
+
+    // The receipt Phone B's _sendImmediateAck builds: from Phone B (the
+    // requester) to Phone C (this phone).
+    RemoteMessage receipt({
+      String from = 'Phone B',
+      String to = _phoneC,
+    }) =>
+        RemoteMessage(messageId: 'fcm-alt-result-ack-$jobId', data: {
+          'type': 'MESSAGE_ACK',
+          'ackKind': 'alternative_result_received',
+          'status': 'alternative-result-received',
+          'originalType': 'forwarded_alt_result',
+          'resultStatus': TransactionStatuses.alternativeFailed,
+          'transactionId': '55',
+          'forwardingJobId': jobId,
+          'senderDeviceName': from,
+          'recipientDeviceName': to,
+        });
+
+    Future<Object?> deliveryState() async => (await (await h.db).query(
+          'alternativeJobs',
+          where: 'forwardingJobId = ?',
+          whereArgs: [jobId],
+        ))
+            .single['resultDeliveryState'];
+
+    test('a receipt from the requester to this phone marks the result '
+        'delivered, so it is not sent again', () async {
+      await seedPendingResult();
+      await h.capture(() => handleRemoteMessage(receipt()));
+      expect(await deliveryState(), 'delivered');
+      expect(postsOfType('forwarded_alt_result'), isEmpty);
+      h.expectNoExternalEffects();
+    });
+
+    test('a receipt with sender and recipient swapped is ignored', () async {
+      await seedPendingResult();
+      await h.capture(
+          () => handleRemoteMessage(receipt(from: _phoneC, to: 'Phone B')));
+      expect(await deliveryState(), 'pending');
+      h.expectNoExternalEffects();
+    });
+  });
 }

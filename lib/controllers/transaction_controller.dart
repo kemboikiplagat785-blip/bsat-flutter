@@ -12,6 +12,7 @@ import 'package:bsat/services/forwarding_transport_selection.dart';
 import 'package:bsat/services/internet_forwarding_transport.dart';
 import 'package:bsat/services/lan/lan_forwarding_service.dart';
 import 'package:bsat/services/lan/lan_local_identity.dart';
+import 'package:bsat/services/lan/lan_peer_store.dart';
 import 'package:bsat/services/lan_forwarding_transport.dart';
 import 'package:bsat/services/payments.dart';
 import 'package:bsat/services/sqlite_service.dart';
@@ -469,15 +470,18 @@ class TransactionController {
     );
   }
 
+  /// Sends the result of an alternative request back over the transport the
+  /// request arrived on ([transport] `lan`); every other value, including a
+  /// job from before LAN alternatives (NULL), is Online.
   Future<void> _sendForwardedAlternativeResult({
     required String forwardingJobId,
     required String recipientDeviceName,
     required String transactionId,
     required String status,
     required String ussdReply,
+    Object? transport,
   }) async {
-    final senderDeviceName =
-        await SharedPreferencesService().getDeviceName() ?? '';
+    final senderDeviceName = await forwardingDeviceName() ?? '';
     if (senderDeviceName.isEmpty || recipientDeviceName.isEmpty) {
       debugPrint(
         'ALT RESULT: cannot send jobId=$forwardingJobId; '
@@ -488,27 +492,31 @@ class TransactionController {
 
     debugPrint(
       'ALT RESULT: sending status=$status jobId=$forwardingJobId '
-      'transactionId=$transactionId to $recipientDeviceName',
+      'transactionId=$transactionId to $recipientDeviceName'
+      '${transport == 'lan' ? ' over LAN' : ''}',
     );
+    final body = {
+      'title': 'BSAT Online Forwarding',
+      'body': 'Alternative USSD result',
+      'senderDeviceName': senderDeviceName,
+      'recipientDeviceName': recipientDeviceName,
+      'data': {
+        'type': 'forwarded_alt_result',
+        'transactionId': transactionId,
+        'forwardingJobId': forwardingJobId,
+        'status': status,
+        'ussdReply': ussdReply,
+        'senderDeviceName': senderDeviceName,
+        'recipientDeviceName': recipientDeviceName,
+      },
+    };
     try {
-      final result = await BackendService().post(
-        '/api/fcm/send-secure',
-        body: {
-          'title': 'BSAT Online Forwarding',
-          'body': 'Alternative USSD result',
-          'senderDeviceName': senderDeviceName,
-          'recipientDeviceName': recipientDeviceName,
-          'data': {
-            'type': 'forwarded_alt_result',
-            'transactionId': transactionId,
-            'forwardingJobId': forwardingJobId,
-            'status': status,
-            'ussdReply': ussdReply,
-            'senderDeviceName': senderDeviceName,
-            'recipientDeviceName': recipientDeviceName,
-          },
-        },
-      );
+      // The result's receipt is processed by the existing handler; until
+      // then the job stays pending and is retried on its own schedule.
+      final result = transport == 'lan'
+          ? (await _lanForwardingTransport.submit(ForwardingSubmission(body)))
+              .details
+          : await BackendService().post('/api/fcm/send-secure', body: body);
       debugPrint(
         'ALT RESULT: sent jobId=$forwardingJobId '
         'transactionId=$transactionId result=$result',
@@ -583,6 +591,7 @@ class TransactionController {
         transactionId: job['transactionId']?.toString() ?? '',
         status: job['resultStatus']?.toString() ?? '',
         ussdReply: job['ussdReply']?.toString() ?? '',
+        transport: job['transport'],
       );
     }
   }
@@ -5208,39 +5217,22 @@ class TransactionController {
         continue;
       }
 
-      var devices = await _sqliteService.queryCustom(
-        'forwardingDevices',
-        'device_name = ?',
-        [target],
-      );
-      final isForwardingDevice = devices.isNotEmpty;
-      if (devices.isEmpty) {
-        devices = await _sqliteService.queryCustom(
-          'whitelistedDevices',
-          'device_name = ?',
-          [target],
-        );
-      }
-      if (devices.isEmpty) continue;
-      // Not queued for a destination whose transport is not implemented
-      // (LAN) or cannot be resolved; the row stays secondAttempt and is
-      // re-evaluated later.
-      final alternativeRoute = await _forwardingTransportResolver.resolve(
-        isForwardingDevice
-            ? ForwardingDestination.fromDeviceRow(devices.first)
-            : ForwardingDestination.fromWhitelistedDeviceRow(devices.first),
-      );
-      if (!alternativeRoute.deliverable) {
+      final alternativeTransport =
+          await _resolveAlternativeTargetTransport(target);
+      // Not queued for a destination that is unknown or whose transport
+      // cannot be resolved; the row stays secondAttempt and is re-evaluated
+      // later.
+      if (alternativeTransport == null) {
         debugPrint(
           'ALT FORWARD DISPATCH: target=$target '
-          'transport=${alternativeRoute.label} not available; not queued',
+          'transport not available; not queued',
         );
         continue;
       }
 
       var remoteForwardingJobId = tx['forwardingJobId']?.toString() ?? '';
       final alternativeRequestSenderDeviceName =
-          await SharedPreferencesService().getDeviceName() ?? 'Unknown Device';
+          await forwardingDeviceName() ?? 'Unknown Device';
       final previousSenderDeviceName =
           tx['forwardingSenderDeviceName']?.toString() ?? '';
 
@@ -5294,8 +5286,9 @@ class TransactionController {
           'status': TransactionStatuses.alternativeDeliveryPending,
           'forwardingJobId': remoteForwardingJobId,
           'forwardingRecipientDeviceName': target,
-          // Alternative requests are queued only for Online targets.
-          'forwardingTransport': ForwardingTransportKind.online.name,
+          // Retries use this transport; the target's preference is not
+          // consulted again for this request.
+          'forwardingTransport': alternativeTransport.name,
           'alternativeRequestSenderDeviceName':
               alternativeRequestSenderDeviceName,
           'alternativeQueueState': 'waiting',
@@ -5316,6 +5309,43 @@ class TransactionController {
         await dispatchNextAlternativeDelivery(target);
       }
     }
+  }
+
+  /// Transport for a new alternative request to [target]: its forwarding
+  /// rule's preference; Online for an Online paired device without a rule;
+  /// LAN for a trusted LAN pairing without either (no Online account
+  /// needed). Null when the target is unknown or cannot be resolved.
+  Future<ForwardingTransportKind?> _resolveAlternativeTargetTransport(
+    String target,
+  ) async {
+    final forwardingRows = await _sqliteService.queryCustom(
+      'forwardingDevices',
+      'device_name = ?',
+      [target],
+    );
+    if (forwardingRows.isNotEmpty) {
+      return (await _forwardingTransportResolver
+              .resolve(ForwardingDestination.fromDeviceRow(forwardingRows.first)))
+          .selected;
+    }
+    final whitelistedRows = await _sqliteService.queryCustom(
+      'whitelistedDevices',
+      'device_name = ?',
+      [target],
+    );
+    if (whitelistedRows.isNotEmpty) {
+      final route = await _forwardingTransportResolver.resolve(
+        ForwardingDestination.fromWhitelistedDeviceRow(whitelistedRows.first),
+      );
+      return route.selected;
+    }
+    try {
+      final lookup = await LanPeerStore(_sqliteService).lookupDevice(target);
+      if (lookup.state == LanPeerLookupState.trusted) {
+        return ForwardingTransportKind.lan;
+      }
+    } catch (_) {}
+    return null;
   }
 
   Future<void> dispatchNextAlternativeDelivery(
@@ -5382,45 +5412,51 @@ class TransactionController {
       return;
     }
 
-    // Only Online alternatives are queued; anything else is never sent.
-    if (tx['forwardingTransport'] != ForwardingTransportKind.online.name) {
+    // Sent only over the request's persisted transport (Online or LAN);
+    // anything else is never sent, and LAN never falls back to Online.
+    final jobTransport = tx['forwardingTransport'];
+    if (jobTransport != ForwardingTransportKind.online.name &&
+        jobTransport != ForwardingTransportKind.lan.name) {
       debugPrint(
-        'ALT DELIVERY PENDING: job=$jobId has no Online transport '
-        '(${tx['forwardingTransport'] ?? 'none'}); not sent',
+        'ALT DELIVERY PENDING: job=$jobId has no usable transport '
+        '(${jobTransport ?? 'none'}); not sent',
       );
       return;
     }
     final sender = tx['alternativeRequestSenderDeviceName']?.toString() ??
-        await SharedPreferencesService().getDeviceName() ??
+        await forwardingDeviceName() ??
         'Unknown Device';
     debugPrint(
       'ALT DELIVERY SEND: job=$jobId, target=$target, '
-      'transaction=$transactionId',
+      'transaction=$transactionId, transport=$jobTransport',
     );
-    final result = await BackendService().post(
-      '/api/fcm/send-secure',
-      body: {
-        'title': 'BSAT Online Forwarding',
-        'body': 'Forwarded alternative USSD request',
+    final body = {
+      'title': 'BSAT Online Forwarding',
+      'body': 'Forwarded alternative USSD request',
+      'senderDeviceName': sender,
+      'recipientDeviceName': target,
+      'data': {
+        'type': 'process_alt_request',
+        'transactionId': transactionId.toString(),
+        'forwardingJobId': jobId,
         'senderDeviceName': sender,
         'recipientDeviceName': target,
-        'data': {
-          'type': 'process_alt_request',
-          'transactionId': transactionId.toString(),
-          'forwardingJobId': jobId,
-          'senderDeviceName': sender,
-          'recipientDeviceName': target,
-          'ussdCode': code,
-          'isAdvanced':
-              tx['alternativeRequestIsAdvanced'] == 1 ? 'true' : 'false',
-          'smsMessage': tx['initialMessage']?.toString() ?? '',
-          'body': 'Forwarded alternative USSD request',
-          'title': 'Forwarded Code',
-        },
+        'ussdCode': code,
+        'isAdvanced':
+            tx['alternativeRequestIsAdvanced'] == 1 ? 'true' : 'false',
+        'smsMessage': tx['initialMessage']?.toString() ?? '',
+        'body': 'Forwarded alternative USSD request',
+        'title': 'Forwarded Code',
       },
-    );
+    };
+    // Over LAN, acceptance means the target's durable receipt arrived and
+    // was processed; otherwise the claim's next attempt retries it.
+    final result = jobTransport == ForwardingTransportKind.lan.name
+        ? (await _lanForwardingTransport.submit(ForwardingSubmission(body)))
+            .details
+        : await BackendService().post('/api/fcm/send-secure', body: body);
     debugPrint(
-      'ALT DELIVERY ${result['success'] == true ? 'BACKEND ACCEPTED' : 'RETRY'}: '
+      'ALT DELIVERY ${result['success'] == true ? 'ACCEPTED' : 'RETRY'}: '
       'job=$jobId, target=$target, '
       'awaiting C receipt; result=$result',
     );
@@ -5648,6 +5684,7 @@ class TransactionController {
     required String smsMessage,
     required String senderDeviceName,
     required String recipientDeviceName,
+    String? transport,
   }) async {
     if (forwardingJobId.isEmpty || transactionId.isEmpty || ussdCode.isEmpty) {
       return false;
@@ -5662,6 +5699,7 @@ class TransactionController {
       'smsMessage': smsMessage,
       'senderDeviceName': senderDeviceName,
       'recipientDeviceName': recipientDeviceName,
+      if (transport != null) 'transport': transport,
       'createdAt': now,
       'updatedAt': now,
     });
@@ -5804,6 +5842,9 @@ class TransactionController {
       forwardingTransactionId: getMpesaCode(smsMessage),
       forwardingSenderDeviceName: job['senderDeviceName']?.toString(),
       forwardingRecipientDeviceName: job['recipientDeviceName']?.toString(),
+      forwardingTransport: job['transport'] == 'lan'
+          ? ForwardingTransportKind.lan.name
+          : ForwardingTransportKind.online.name,
     );
 
     final transactionRows = insertedId == null
@@ -6250,6 +6291,7 @@ class TransactionController {
     String? forwardingTransactionId,
     String? forwardingSenderDeviceName,
     String? forwardingRecipientDeviceName,
+    String? forwardingTransport,
     int? retryTransactionId,
   }) async {
     bool hasPaid = await _paymentOps.hasActiveSubscription();
@@ -6353,10 +6395,12 @@ class TransactionController {
         'forwardingJobId': forwardingJobId ?? '',
         'forwardingSenderDeviceName': forwardingSenderDeviceName ?? '',
         'forwardingRecipientDeviceName': forwardingRecipientDeviceName ?? '',
-        // Alternative requests arrive only over the Internet. Ordinary
-        // transactions (no job) are not marked as forwarding jobs.
+        // The transport the alternative request arrived on (Online unless
+        // the caller says LAN). Ordinary transactions (no job) are not
+        // marked as forwarding jobs.
         if ((forwardingJobId ?? '').isNotEmpty)
-          'forwardingTransport': ForwardingTransportKind.online.name,
+          'forwardingTransport':
+              forwardingTransport ?? ForwardingTransportKind.online.name,
         'source': 'manual',
       },
       'transactions',

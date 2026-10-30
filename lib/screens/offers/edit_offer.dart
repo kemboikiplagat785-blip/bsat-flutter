@@ -11,6 +11,7 @@ import '../../components/device_card.dart';
 import '../../components/dialogs/accessibility_permission.dart';
 import '../../controllers/transaction_controller.dart';
 import '../../models/code_signature.dart';
+import '../../services/lan/lan_peer_store.dart';
 import '../../services/phone_service.dart';
 import '../../services/sqlite_service.dart';
 import '../../utils/constants.dart';
@@ -167,12 +168,38 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
   void getDevices() async {
     final devices = await _sqliteService.queryAll('forwardingDevices');
+    // LAN-paired devices can run the alternative code too, without an Online
+    // account or a forwarding rule. A device that is also an Online paired
+    // device keeps running it Online, as it did before.
+    final names = {for (final device in devices) device['device_name']};
+    final whitelisted = {
+      for (final row in await _sqliteService.queryAll('whitelistedDevices'))
+        row['device_name']: row,
+    };
+    List<LanPeer> lanPeers = const [];
+    try {
+      lanPeers = await LanPeerStore().all();
+    } catch (_) {}
+    final lanDevices = [
+      for (final peer in lanPeers)
+        if (peer.isTrusted && names.add(peer.deviceName))
+          whitelisted[peer.deviceName] ??
+              {'device_name': peer.deviceName, 'forwarding_transport': 'lan'},
+    ];
     if (mounted) {
       setState(() {
-        forwardingDevices = devices;
+        forwardingDevices = [...devices, ...lanDevices];
       });
     }
   }
+
+  static bool _isLanDevice(Map<String, dynamic> device) =>
+      device['forwarding_transport'] == 'lan';
+
+  static String _deviceSubtitle(Map<String, dynamic> device) =>
+      _isLanDevice(device)
+          ? 'LAN paired device'
+          : device['owner_email']?.toString() ?? '';
 
   Map<String, dynamic> _createCodeEntry({
     String code = '',
@@ -1697,9 +1724,10 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 ...forwardingDevices.map(
                   (device) {
                     return ListTile(
-                      leading: const Icon(Icons.devices),
+                      leading: Icon(
+                          _isLanDevice(device) ? Icons.wifi : Icons.devices),
                       title: Text(device['device_name'] ?? 'Unknown'),
-                      subtitle: Text(device['owner_email'] ?? ''),
+                      subtitle: Text(_deviceSubtitle(device)),
                       onTap: () {
                         setState(() {
                           controller.text = device['device_name'];
@@ -1769,8 +1797,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
               deviceCard(
                 context: context,
                 deviceName: selectedDevice['device_name'] ?? 'Unknown',
-                deviceDetails: selectedDevice['owner_email'],
-                iconData: Icons.devices,
+                deviceDetails: _deviceSubtitle(selectedDevice),
+                iconData:
+                    _isLanDevice(selectedDevice) ? Icons.wifi : Icons.devices,
               ),
               const SizedBox(height: 8),
             ] else if (controller.text.isNotEmpty) ...[

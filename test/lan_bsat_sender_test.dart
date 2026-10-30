@@ -320,7 +320,7 @@ void main() {
       final result = await LanForwardingTransport(client: client).submit(
         const ForwardingSubmission({
           'recipientDeviceName': 'Phone B',
-          'data': {'type': 'process_alt_request', 'forwardingJobId': _jobId},
+          'data': {'type': 'DATA_REQUEST', 'forwardingJobId': _jobId},
         }),
       );
       expect(result.accepted, isFalse);
@@ -658,29 +658,58 @@ void main() {
     });
   });
 
-  group('alternatives stay Online-only', () {
-    test('a queued alternative row that is not Online is never dispatched',
+  group('alternatives over LAN', () {
+    Future<void> queuedAlternative(Object? transport) async =>
+        (await h.db).insert('transactions', {
+          'transactionId': 'RCPT-ALT',
+          'initialMessage': _sms,
+          'amount': 100,
+          'number': 712345678,
+          'status': TransactionStatuses.alternativeDeliveryPending,
+          'forwardingJobId': 'fwd_ALT_1',
+          'forwardingSenderDeviceName': 'Phone A',
+          'forwardingRecipientDeviceName': 'Phone C',
+          'forwardingTransport': transport,
+          'alternativeRequestCode': '*180*1#',
+          'alternativeRequestIsAdvanced': 0,
+          'alternativeRequestSenderDeviceName': 'Phone A',
+          'alternativeQueueState': 'waiting',
+          'timeStamp': DateTime.now().millisecondsSinceEpoch,
+        });
+
+    test('a queued LAN alternative is sent over LAN only, never online',
         () async {
       await phoneA();
-      final db = await h.db;
-      await db.insert('transactions', {
-        'transactionId': 'RCPT-ALT',
-        'initialMessage': _sms,
-        'amount': 100,
-        'number': 712345678,
-        'status': TransactionStatuses.alternativeDeliveryPending,
-        'forwardingJobId': 'fwd_ALT_1',
-        'forwardingSenderDeviceName': 'Phone A',
-        'forwardingRecipientDeviceName': 'Phone C',
-        'forwardingTransport': 'lan',
-        'alternativeRequestCode': '*180*1#',
-        'alternativeRequestIsAdvanced': 0,
-        'alternativeRequestSenderDeviceName': 'Phone A',
-        'alternativeQueueState': 'waiting',
-        'timeStamp': DateTime.now().millisecondsSinceEpoch,
-      });
-      await h.capture(() => TransactionController(sqliteService: SQLiteService())
-          .dispatchNextAlternativeDelivery('Phone C'));
+      await queuedAlternative('lan');
+      final lan = _FakeLanClient(LanExchangeOutcome.completed);
+      await h.capture(() => TransactionController(
+            sqliteService: SQLiteService(),
+            lanForwardingTransport: LanForwardingTransport(client: lan),
+            startConfirmationTimer: false,
+          ).dispatchNextAlternativeDelivery('Phone C'));
+      expect(lan.recipients, ['Phone C']);
+      final sent = lan.sent.single;
+      expect(sent['type'], 'process_alt_request');
+      expect(sent['forwardingJobId'], 'fwd_ALT_1');
+      expect(sent['senderDeviceName'], 'Phone A');
+      expect(sent['recipientDeviceName'], 'Phone C');
+      expect(sent['ussdCode'], '*180*1#');
+      expect(sent['smsMessage'], _sms);
+      expect(h.backendPosts, isEmpty);
+      h.expectNoExternalEffects();
+    });
+
+    test('a queued alternative without a known transport is never sent',
+        () async {
+      await phoneA();
+      await queuedAlternative('bogus');
+      final lan = _FakeLanClient(LanExchangeOutcome.completed);
+      await h.capture(() => TransactionController(
+            sqliteService: SQLiteService(),
+            lanForwardingTransport: LanForwardingTransport(client: lan),
+            startConfirmationTimer: false,
+          ).dispatchNextAlternativeDelivery('Phone C'));
+      expect(lan.sent, isEmpty);
       expect(h.backendPosts, isEmpty);
       h.expectNoExternalEffects();
     });

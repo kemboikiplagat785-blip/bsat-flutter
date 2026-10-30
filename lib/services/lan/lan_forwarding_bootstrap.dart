@@ -25,8 +25,9 @@ Future<void> handleLanForwardingRequest(
       authenticatedSenderDeviceName: peer.deviceName,
     );
 
-/// Runs a validated LAN reply (a receipt ACK or a confirmation receipt)
-/// through the existing acknowledgement handlers. Such replies need no reply
+/// Runs a validated LAN reply (a receipt ACK, a confirmation receipt, or an
+/// alternative request or result receipt) through the existing
+/// acknowledgement handlers. Such replies need no reply
 /// of their own; nothing is sent anywhere else.
 Future<void> handleLanForwardingReply(LanForwardingData reply, LanPeer peer) =>
     handleRemoteMessage(

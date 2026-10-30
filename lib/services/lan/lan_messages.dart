@@ -36,9 +36,9 @@ class LanRejectReasons {
   static const handlerFailed = 'handler_failed';
 }
 
-/// Message kinds that may travel over LAN. Everything else (alternative
-/// requests and results, data requests, settings, offers...) is refused: it
-/// stays on its existing Internet path, or is not available over LAN.
+/// Message kinds that may travel over LAN. Everything else (data requests,
+/// settings, offers...) is refused: it stays on its existing Internet path,
+/// or is not available over LAN.
 enum LanMessageKind {
   /// Phone A to Phone B: a forwarding job (`forwarded_sms`).
   forwardedSms,
@@ -51,6 +51,20 @@ enum LanMessageKind {
 
   /// Phone B to Phone A (reply only): durable receipt of a job.
   receiptAck,
+
+  /// Phone A to Phone C: run an offer's alternative code
+  /// (`process_alt_request`).
+  alternativeRequest,
+
+  /// Phone C to Phone A (reply only): durable receipt of that request.
+  alternativeRequestReceipt,
+
+  /// Phone C to Phone A: the alternative code's result
+  /// (`forwarded_alt_result`).
+  alternativeResult,
+
+  /// Phone A to Phone C (reply only): receipt of that result.
+  alternativeResultReceipt,
 }
 
 final RegExp _jobIdPattern = RegExp(r'^[A-Za-z0-9_\-]{4,128}$');
@@ -86,15 +100,45 @@ const Map<LanMessageKind, Set<String>> _requiredKeys = {
     'senderDeviceName',
     'recipientDeviceName',
   },
-  LanMessageKind.receiptAck: {
+  LanMessageKind.receiptAck: _messageAckRequiredKeys,
+  LanMessageKind.alternativeRequest: {
     'type',
-    'ackKind',
-    'status',
-    'originalType',
+    'transactionId',
     'forwardingJobId',
     'senderDeviceName',
     'recipientDeviceName',
+    'ussdCode',
   },
+  LanMessageKind.alternativeRequestReceipt: _messageAckRequiredKeys,
+  LanMessageKind.alternativeResult: {
+    'type',
+    'transactionId',
+    'forwardingJobId',
+    'status',
+    'senderDeviceName',
+    'recipientDeviceName',
+  },
+  LanMessageKind.alternativeResultReceipt: _messageAckRequiredKeys,
+};
+
+const Set<String> _messageAckRequiredKeys = {
+  'type',
+  'ackKind',
+  'status',
+  'originalType',
+  'forwardingJobId',
+  'senderDeviceName',
+  'recipientDeviceName',
+};
+
+const Set<String> _messageAckOptionalKeys = {
+  'messageId',
+  'requestId',
+  'transactionId',
+  'receivedAt',
+  'resultStatus',
+  'body',
+  'title',
 };
 
 const Map<LanMessageKind, Set<String>> _optionalKeys = {
@@ -106,16 +150,20 @@ const Map<LanMessageKind, Set<String>> _optionalKeys = {
     'transactionId',
   },
   LanMessageKind.confirmationReceipt: {},
-  LanMessageKind.receiptAck: {
-    'messageId',
-    'requestId',
-    'transactionId',
-    'receivedAt',
-    'resultStatus',
+  LanMessageKind.receiptAck: _messageAckOptionalKeys,
+  LanMessageKind.alternativeRequest: {
+    'isAdvanced',
+    'smsMessage',
     'body',
     'title',
   },
+  LanMessageKind.alternativeRequestReceipt: _messageAckOptionalKeys,
+  LanMessageKind.alternativeResult: {'ussdReply'},
+  LanMessageKind.alternativeResultReceipt: _messageAckOptionalKeys,
 };
+
+/// Free-text fields: as long as a body, and may contain line breaks.
+const Set<String> _textKeys = {'body', 'smsMessage', 'ussdReply'};
 
 /// The kind of a forwarding `data` map, or null when it is not a LAN kind.
 LanMessageKind? lanMessageKindOf(Map<String, Object?> data) {
@@ -133,6 +181,18 @@ LanMessageKind? lanMessageKindOf(Map<String, Object?> data) {
       data['originalType'] == 'forwarded_sms') {
     return LanMessageKind.receiptAck;
   }
+  if (type == 'process_alt_request') return LanMessageKind.alternativeRequest;
+  if (type == 'MESSAGE_ACK' &&
+      ackKind == 'alternative_received' &&
+      data['originalType'] == 'process_alt_request') {
+    return LanMessageKind.alternativeRequestReceipt;
+  }
+  if (type == 'forwarded_alt_result') return LanMessageKind.alternativeResult;
+  if (type == 'MESSAGE_ACK' &&
+      ackKind == 'alternative_result_received' &&
+      data['originalType'] == 'forwarded_alt_result') {
+    return LanMessageKind.alternativeResultReceipt;
+  }
   return null;
 }
 
@@ -141,6 +201,8 @@ const Set<LanMessageKind> lanRequestKinds = {
   LanMessageKind.forwardedSms,
   LanMessageKind.forwardingConfirmation,
   LanMessageKind.confirmationReceipt,
+  LanMessageKind.alternativeRequest,
+  LanMessageKind.alternativeResult,
 };
 
 /// Kinds a server may send as a reply to [request].
@@ -149,6 +211,12 @@ Set<LanMessageKind> lanReplyKindsFor(LanMessageKind request) =>
       LanMessageKind.forwardedSms => {LanMessageKind.receiptAck},
       LanMessageKind.forwardingConfirmation => {
           LanMessageKind.confirmationReceipt,
+        },
+      LanMessageKind.alternativeRequest => {
+          LanMessageKind.alternativeRequestReceipt,
+        },
+      LanMessageKind.alternativeResult => {
+          LanMessageKind.alternativeResultReceipt,
         },
       _ => const {},
     };
@@ -233,7 +301,7 @@ LanForwardingData validateLanForwardingData(
     if (entry.value == null) continue;
     final value = _scalarString(entry.value);
     final limit = switch (entry.key) {
-      'body' => maxLanBodyChars,
+      _ when _textKeys.contains(entry.key) => maxLanBodyChars,
       'senderDeviceName' || 'recipientDeviceName' => maxLanNameChars,
       _ => maxLanFieldChars,
     };
@@ -241,7 +309,7 @@ LanForwardingData validateLanForwardingData(
       throw LanMessageException(
           LanRejectReasons.invalidMessage, 'invalid field ${entry.key}');
     }
-    if (entry.key != 'body' && _controlCharacters.hasMatch(value)) {
+    if (!_textKeys.contains(entry.key) && _controlCharacters.hasMatch(value)) {
       throw LanMessageException(
           LanRejectReasons.invalidMessage, 'invalid field ${entry.key}');
     }
@@ -251,6 +319,19 @@ LanForwardingData validateLanForwardingData(
   if (!_jobIdPattern.hasMatch(jobId)) {
     throw const LanMessageException(
         LanRejectReasons.invalidMessage, 'invalid forwarding job ID');
+  }
+  if (kind == LanMessageKind.alternativeRequest ||
+      kind == LanMessageKind.alternativeResult) {
+    final transactionId = int.tryParse(data['transactionId'] ?? '');
+    if (transactionId == null || transactionId <= 0) {
+      throw const LanMessageException(
+          LanRejectReasons.invalidMessage, 'invalid transaction ID');
+    }
+  }
+  if (kind == LanMessageKind.alternativeRequest &&
+      (data['ussdCode'] ?? '').trim().isEmpty) {
+    throw const LanMessageException(
+        LanRejectReasons.invalidMessage, 'empty alternative code');
   }
   if (kind == LanMessageKind.forwardedSms) {
     final transactionId = int.tryParse(data['transactionId'] ?? '');

@@ -6,6 +6,7 @@
 // harness: offline, USSD/SMS refused and recorded, HTTP answered locally.
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/services/forwarding_transport_selection.dart';
+import 'package:bsat/services/lan/lan_peer_store.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -178,14 +179,51 @@ void main() {
       }
     });
 
-    test('3: a forwarding device with a LAN preference is not requested, even '
-        'when it is also whitelisted', () async {
+    void expectQueuedOverLan(Map<String, Object?> row) {
+      expect(row['status'], TransactionStatuses.alternativeDeliveryPending);
+      expect(row['forwardingTransport'], 'lan');
+      expect(row['forwardingRecipientDeviceName'], 'Phone C');
+      expect(row['alternativeRequestSenderDeviceName'], 'Phone B');
+      expect(row['forwardingJobId'], isNotNull);
+      // No LAN service in this isolate: the request is not delivered and
+      // waits for the next attempt; it never falls back to the Internet.
+      expect(h.requests, isEmpty, reason: 'no Internet fallback');
+      expect(h.ussdCalls, isEmpty, reason: 'no local USSD fallback');
+    }
+
+    test('3: a forwarding device with a LAN preference is queued over LAN '
+        'only, even when it is also whitelisted', () async {
       final id = await seed(
         whitelisted: [_device('Phone C', 'device-c')],
         forwarding: [
           {..._device('Phone C', 'device-c'), 'forwarding_transport': 'lan'},
         ],
       );
+      expectQueuedOverLan(await runAlternative(id));
+      h.expectNoExternalEffects();
+    });
+
+    test('3b: a trusted LAN pairing with no Online record is queued over LAN '
+        'only; no Online account is needed', () async {
+      final id = await seed();
+      await LanPeerStore().trust(
+        publicKey: List<int>.generate(32, (i) => i + 1),
+        deviceName: 'Phone C',
+        deviceId: '',
+      );
+      expectQueuedOverLan(await runAlternative(id));
+      h.expectNoExternalEffects();
+    });
+
+    test('3c: a revoked LAN pairing with no Online record is not queued',
+        () async {
+      final id = await seed();
+      final peer = await LanPeerStore().trust(
+        publicKey: List<int>.generate(32, (i) => i + 1),
+        deviceName: 'Phone C',
+        deviceId: '',
+      );
+      await LanPeerStore().revoke(peer.fingerprint);
       expectNotQueued(await runAlternative(id));
       h.expectNoExternalEffects();
     });

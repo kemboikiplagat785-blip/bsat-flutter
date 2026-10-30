@@ -40,6 +40,19 @@ Map<String, dynamic> _job({
       'recipientDeviceName': recipient,
     };
 
+Map<String, dynamic> _alternative({String sender = 'Phone A'}) => {
+      'type': 'process_alt_request',
+      'transactionId': '41',
+      'forwardingJobId': _jobId,
+      'senderDeviceName': sender,
+      'recipientDeviceName': 'Phone B',
+      'ussdCode': '*180*5*2*0712345678*1*1#',
+      'isAdvanced': 'false',
+      'smsMessage': _sms,
+      'body': 'Forwarded alternative USSD request',
+      'title': 'Forwarded Code',
+    };
+
 bool _isReceipt(LanForwardingData reply) =>
     reply.kind == LanMessageKind.receiptAck;
 
@@ -85,6 +98,21 @@ void main() {
       // handler does (covered on Phone A's side in lan_bsat_sender_test).
       inboundHandler: (message, peer, reply) async {
         requestsOnA.add(message);
+        if (message.kind == LanMessageKind.alternativeResult) {
+          await reply({
+            'data': {
+              'type': 'MESSAGE_ACK',
+              'ackKind': 'alternative_result_received',
+              'status': 'alternative-result-received',
+              'originalType': 'forwarded_alt_result',
+              'resultStatus': message.data['status'],
+              'transactionId': message.data['transactionId'],
+              'forwardingJobId': message.forwardingJobId,
+              'senderDeviceName': 'Phone A',
+              'recipientDeviceName': 'Phone B',
+            },
+          });
+        }
         if (message.kind == LanMessageKind.forwardingConfirmation) {
           await reply({
             'data': {
@@ -233,30 +261,90 @@ void main() {
     h.expectNoExternalEffects();
   });
 
-  test('alternative requests and other kinds never run over LAN', () async {
+  test('a paired phone\'s alternative request is receipted over LAN, and '
+      'its result goes back over LAN; nothing goes online', () async {
     await phoneB();
-    final alternative = {
-      'type': 'process_alt_request',
-      'transactionId': '41',
+    LanForwardingService.instance = b.service;
+    final db = await h.db;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // Already executed on B, so nothing is dialled: a repeated request is
+    // still receipted and answered with the stored result.
+    await db.insert('alternativeJobs', {
       'forwardingJobId': _jobId,
+      'transactionId': '41',
+      'state': 'completed',
+      'ussdCode': '*180*5*2*0712345678*1*1#',
+      'smsMessage': _sms,
       'senderDeviceName': 'Phone A',
       'recipientDeviceName': 'Phone B',
-      'ussdCode': '*180*5*2*0712345678*1*1#',
-      'isAdvanced': 'false',
-      'smsMessage': _sms,
-    };
-    final result = await a.service.exchange(
+      'resultStatus': TransactionStatuses.alternativeFailed,
+      'ussdReply': 'SYNTHETIC ALTERNATIVE FAILURE',
+      'transport': 'lan',
+      'createdAt': now,
+      'updatedAt': now,
+    });
+    final result = await h.capture(() => a.service.exchange(
+          recipientDeviceName: 'Phone B',
+          data: _alternative(),
+          isFinalReply: (reply) =>
+              reply.kind == LanMessageKind.alternativeRequestReceipt,
+        ));
+    expect(result.outcome, LanExchangeOutcome.completed);
+    final receipt = repliesOnA.single;
+    expect(receipt.data['ackKind'], 'alternative_received');
+    expect(receipt.data['status'], 'alternative-received');
+    expect(receipt.data['transactionId'], '41');
+    expect(receipt.senderDeviceName, 'Phone B');
+
+    await waitForAsync(
+      () async => (await db.query('alternativeJobs')).single['resultDeliveryState'] ==
+          'delivered',
+      reason: "A's result receipt was processed by B's handler",
+    );
+    final resultOnA = requestsOnA.single;
+    expect(resultOnA.kind, LanMessageKind.alternativeResult);
+    expect(resultOnA.data['status'], TransactionStatuses.alternativeFailed);
+    expect(resultOnA.data['transactionId'], '41');
+    expect(resultOnA.data['ussdReply'], 'SYNTHETIC ALTERNATIVE FAILURE');
+    expect(resultOnA.senderDeviceName, 'Phone B');
+    expect(h.requests, isEmpty, reason: 'never sent over the Internet');
+    h.expectNoExternalEffects();
+  });
+
+  test('an alternative request that is not from the authenticated paired '
+      'phone is refused before anything is stored', () async {
+    await phoneB();
+    final named = await a.service.exchange(
         recipientDeviceName: 'Phone B',
-        data: alternative,
-        isFinalReply: _isReceipt);
-    expect(result.outcome, LanExchangeOutcome.refused);
-    // Defence in depth: the handler itself refuses such a LAN delivery.
+        data: _alternative(sender: 'Phone C'),
+        isFinalReply: (_) => false);
+    expect(named.outcome, LanExchangeOutcome.refused);
+    expect(named.reason, LanRejectReasons.unexpectedSender);
+    // Defence in depth: the handler itself refuses a sender that is not the
+    // authenticated, still-trusted LAN peer.
     await h.capture(() => handleRemoteMessage(
-          RemoteMessage(data: alternative),
+          RemoteMessage(data: _alternative()),
           replySink: (_) async => fail('no reply may be sent'),
-          authenticatedSenderDeviceName: 'Phone A',
+          authenticatedSenderDeviceName: 'Phone C',
         ));
     expect(await (await h.db).query('alternativeJobs'), isEmpty);
+    expect(h.requests, isEmpty);
+    h.expectNoExternalEffects();
+  });
+
+  test('other kinds never run over LAN', () async {
+    await phoneB();
+    final result = await a.service.exchange(
+        recipientDeviceName: 'Phone B',
+        data: {
+          'type': 'DATA_REQUEST',
+          'forwardingJobId': _jobId,
+          'senderDeviceName': 'Phone A',
+          'recipientDeviceName': 'Phone B',
+        },
+        isFinalReply: (_) => false);
+    expect(result.outcome, LanExchangeOutcome.refused);
+    expect(result.reason, LanRejectReasons.unsupportedType);
     expect(h.requests, isEmpty);
     h.expectNoExternalEffects();
   });

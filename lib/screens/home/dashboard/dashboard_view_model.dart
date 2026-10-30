@@ -8,6 +8,7 @@ import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/date_ops.dart';
+import 'package:bsat/utils/transaction_categories.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -118,93 +119,32 @@ class DashboardViewModel extends ChangeNotifier {
       PaymentOps.start1DayOnlinePlusFreeTrial();
     }
 
-    successfulCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery: "WHERE status = '${TransactionStatuses.successfulPending}' "
-          "AND date = '${getNormalDate(DateTime.now())}'",
-    );
+    final today = getNormalDate(DateTime.now());
+    // The same categories History counts and lists.
+    Future<int> count(TransactionCategory category) => _sqliteService
+        .getCount('transactions', appendQuery: 'WHERE ${category.onDate(today)}');
 
-    successfulConfirmedCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery: "WHERE status = '${TransactionStatuses.doneConfirmed}' "
-          "AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    errorCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.error}' AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    failedCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE ( status = '${TransactionStatuses.secondAttempt}' ) AND date = '${getNormalDate(DateTime.now())}'",
-    );
+    successfulCount = await count(TransactionCategory.successfulPending);
+    successfulConfirmedCount = await count(TransactionCategory.confirmed);
+    errorCount = await count(TransactionCategory.error);
+    failedCount = await count(TransactionCategory.secondAttempt);
 
     timedOutCount = await _sqliteService.getCount(
       'transactions',
       appendQuery:
-          "WHERE status = '${TransactionStatuses.timedOut}' AND date = '${getNormalDate(DateTime.now())}'",
+          "WHERE status = '${TransactionStatuses.timedOut}' AND date = '$today'",
     );
 
-    unavailableCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.unavailableOffer}' AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    forwardedCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.forwarded}' "
-          "AND forwardingJobId IS NULL "
-          "AND COALESCE(forwardingRecipientDeviceName, '') = '' "
-          "AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    forwardedPendingCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.forwardedPending}' "
-          "AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    forwardedConfirmedCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery: "WHERE status = '${TransactionStatuses.forwardedConfirmed}' "
-          "AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    pausedCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.paused}' AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    advancedCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE (status = '${TransactionStatuses.advancedUssd}' OR status = '${TransactionStatuses.advancedQueue}')  AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    okoaCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.hasOkoa}' AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    blacklistedCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.blacklisted}' AND date = '${getNormalDate(DateTime.now())}'",
-    );
-
-    maskedCount = await _sqliteService.getCount(
-      'transactions',
-      appendQuery:
-          "WHERE status = '${TransactionStatuses.masked}' AND date = '${getNormalDate(DateTime.now())}'",
-    );
+    unavailableCount = await count(TransactionCategory.unavailableOffer);
+    forwardedCount = await count(TransactionCategory.forwarded);
+    forwardedPendingCount = await count(TransactionCategory.forwardedPending);
+    forwardedConfirmedCount =
+        await count(TransactionCategory.forwardedConfirmed);
+    pausedCount = await count(TransactionCategory.paused);
+    advancedCount = await count(TransactionCategory.advanced);
+    okoaCount = await count(TransactionCategory.okoa);
+    blacklistedCount = await count(TransactionCategory.blacklisted);
+    maskedCount = await count(TransactionCategory.masked);
 
     final todays = await _sqliteService.queryDay(
       'transactions',

@@ -6,6 +6,8 @@ import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/screens/online_management/search_device.dart';
 import 'package:bsat/services/backend_service.dart';
 import 'package:bsat/services/forwarding_transport_selection.dart';
+import 'package:bsat/services/lan/lan_local_identity.dart';
+import 'package:bsat/services/lan/lan_peer_store.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sms_sevice.dart';
 import 'package:bsat/services/sqlite_service.dart';
@@ -21,6 +23,7 @@ import '../../components/dialogs/till_done_dialogue.dart';
 import '../../utils/constants.dart';
 import '../../utils/forwarding_job_id.dart';
 import '../../utils/forwarding_mode.dart';
+import '../../utils/transaction_categories.dart';
 
 enum _SelectionMenuAction {
   retry,
@@ -31,6 +34,7 @@ enum _SelectionMenuAction {
   toggleSelectAll,
   forwardAllOnline,
   forwardAllOffline,
+  forwardAllLan,
 }
 
 class TransactionHistoryPage extends StatefulWidget {
@@ -83,8 +87,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   void initState() {
     super.initState();
     query = widget.query ?? "";
-    if (TransactionStatuses.statuses.values.contains(query)) {
-      _statusFilter = query;
+    final category = TransactionCategory.forQuery(query);
+    if (category != null) {
+      query = category.key;
+      _statusFilter = category.key;
     }
     _searchBarController.text = query;
     _pagingController.addPageRequestListener((pageKey) => _fetchPage(pageKey));
@@ -103,49 +109,23 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   // rather than one-after-another. This is much faster on low-end devices.
   Future<void> _getCounts() async {
     final dateStr = getNormalDate(selectedDate);
+    Future<int> count(TransactionCategory category) =>
+        databaseHelper.getCount('transactions',
+            appendQuery: 'WHERE ${category.onDate(dateStr)}');
     final results = await Future.wait([
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.doneConfirmed}' AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.done}' AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.error}' AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.secondAttempt}' AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE date = '$dateStr' AND ussdReply LIKE '%blacklisted%'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.forwarded}' "
-              "AND forwardingJobId IS NULL "
-              "AND COALESCE(forwardingRecipientDeviceName, '') = '' "
-              "AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.forwardedPending}' AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.forwardedConfirmed}' AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.unavailableOffer}' AND date= '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.paused}' AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.hasOkoa}' AND date = '$dateStr'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE (status = '${TransactionStatuses.advancedUssd}' OR status = '${TransactionStatuses.advancedQueue}') AND date = '${getNormalDate(DateTime.now())}'"),
-      databaseHelper.getCount('transactions',
-          appendQuery:
-              "WHERE status = '${TransactionStatuses.masked}' AND date = '$dateStr'"),
+      count(TransactionCategory.confirmed),
+      count(TransactionCategory.successfulPending),
+      count(TransactionCategory.error),
+      count(TransactionCategory.secondAttempt),
+      count(TransactionCategory.blacklisted),
+      count(TransactionCategory.forwarded),
+      count(TransactionCategory.forwardedPending),
+      count(TransactionCategory.forwardedConfirmed),
+      count(TransactionCategory.unavailableOffer),
+      count(TransactionCategory.paused),
+      count(TransactionCategory.okoa),
+      count(TransactionCategory.advanced),
+      count(TransactionCategory.masked),
     ]);
 
     if (!mounted) return;
@@ -169,15 +149,14 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   Future<void> _fetchPage(int pageKey) async {
     try {
       List<dynamic> newItems;
-      if (_statusFilter != null) {
-        final where = _statusFilter == TransactionStatuses.forwarded
-            ? "status = ? AND forwardingJobId IS NULL AND "
-                "COALESCE(forwardingRecipientDeviceName, '') = ''"
-            : 'status = ?';
+      final category = TransactionCategory.forQuery(_statusFilter);
+      if (category != null) {
+        // The transactions the category's count covers: its statuses, on
+        // the selected date.
         newItems = await databaseHelper.queryCustom(
           'transactions',
-          where,
-          [_statusFilter!],
+          '(${category.where}) AND date = ?',
+          [getNormalDate(selectedDate)],
           limit: _pageSize,
           offset: pageKey,
           orderBy: 'timeStamp DESC',
@@ -528,6 +507,9 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           case _SelectionMenuAction.forwardAllOffline:
             await _handleForwardAllOfflineSelected();
             break;
+          case _SelectionMenuAction.forwardAllLan:
+            await _handleForwardAllLanSelected();
+            break;
           case _SelectionMenuAction.range:
             setState(() {
               _isRangeSelectMode = true;
@@ -571,6 +553,10 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         const PopupMenuItem(
           value: _SelectionMenuAction.forwardAllOffline,
           child: Text('Forward all offline'),
+        ),
+        const PopupMenuItem(
+          value: _SelectionMenuAction.forwardAllLan,
+          child: Text('Forward all LAN'),
         ),
         PopupMenuItem(
           value: _SelectionMenuAction.toggleSelectAll,
@@ -625,15 +611,26 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       context,
       'Forward ${_selectedTransactionIds.length} selected transaction(s) offline?',
     );
-    if (confirm != true) return;
+    if (confirm != true || !mounted) return;
+
+    // Ask for the number before anything is sent; cancelling sends nothing.
+    final entered = await showForwardTextDialog(context, 0);
+    if (entered == null || !mounted) return;
+    final number = normalizeKenyanMobileNumber(entered);
+    if (number == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('"$entered" is not a valid phone number. '
+                'Nothing was sent.')),
+      );
+      return;
+    }
 
     showLoadingDialog(context, text: 'Forwarding offline...');
 
     int forwarded = 0;
     int skipped = 0;
     int failed = 0;
-
-    String? number = await showForwardTextDialog(context, 0);
 
     try {
       final transactions = await _getSelectedTransactions();
@@ -646,19 +643,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         }
 
         final amount = _toInt(transaction['amount']) ?? 0;
-        final recipientNumber = number;
-        if (recipientNumber == null) {
-          skipped++;
-          continue;
-        }
-
         final trimmedMessage = message.substring(
           0,
           message.length > 160 ? 160 : message.length,
         );
 
         final handoffResult = await sendEvenInBackground(
-          '254$recipientNumber',
+          '254$number',
           trimmedMessage,
         );
         final status = offlineForwardingStatusForHandoff(handoffResult);
@@ -678,7 +669,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
           source: (transaction['source'] ?? 'bingwa').toString(),
           canRetry: (transaction['canRetry'] ?? 0) == 1,
           id: _toInt(transaction['id']),
-          reply: 'Forwarded to $recipientNumber',
+          reply: 'Forwarded to 0$number',
         );
 
         forwarded++;
@@ -856,6 +847,73 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     );
   }
 
+  /// Bulk forward to a trusted LAN device the user picks. Needs no Online
+  /// account: the sender is this phone's forwarding name (its Online name,
+  /// else its local LAN name), and the jobs go over LAN only.
+  Future<void> _handleForwardAllLanSelected() async {
+    if (_selectedTransactionIds.isEmpty) return;
+
+    List<LanPeer> peers = const [];
+    try {
+      peers = await LanPeerStore().all();
+    } catch (_) {}
+    final names = <String>{
+      for (final peer in peers)
+        if (peer.isTrusted && peer.deviceName.trim().isNotEmpty)
+          peer.deviceName.trim(),
+    }.toList()
+      ..sort();
+    if (!mounted) return;
+    if (names.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('No paired LAN device. Pair one in Forward SMS → '
+                'LAN first. Nothing was sent.')),
+      );
+      return;
+    }
+
+    final recipientDeviceName = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Forward over LAN to'),
+        children: [
+          for (final name in names)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(name),
+              child: Row(
+                children: [
+                  const Icon(Icons.wifi, size: 18),
+                  const SizedBox(width: kPagePadding / 2),
+                  Expanded(child: Text(name)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (recipientDeviceName == null || !mounted) return;
+
+    final confirmed = await confirmationDialog(
+      context,
+      'Forward ${_selectedTransactionIds.length} selected transaction(s) to '
+      '$recipientDeviceName over LAN?',
+    );
+    if (confirmed != true || !mounted) return;
+
+    final senderDeviceName = (await forwardingDeviceName() ?? '').trim();
+    if (!mounted) return;
+    if (senderDeviceName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Name this phone in Forward SMS → LAN first. '
+                'Nothing was sent.')),
+      );
+      return;
+    }
+    await _forwardSelectedOverLan(recipientDeviceName, senderDeviceName);
+  }
+
   /// Bulk forward to a LAN destination: the same jobs as the Online bulk
   /// forward, sent only over LAN. A job counts as forwarded only when the
   /// destination durably acknowledged receipt.
@@ -974,14 +1032,14 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               'Successful(Confirmed)'),
           const SizedBox(width: 8),
           _tool(
-              'advanced',
+              TransactionStatuses.advancedUssd,
               const Icon(CupertinoIcons.phone, color: kPrimaryColor, size: 14),
               _advancedCount,
               kPrimaryColor,
               'Advanced'),
           const SizedBox(width: 8),
           _tool(
-              TransactionStatuses.done,
+              TransactionStatuses.successfulPending,
               const Icon(CupertinoIcons.checkmark,
                   color: kWarningColor, size: 14),
               _successfulPendingCount,
@@ -1154,10 +1212,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         SnackBar(
           content: Text('Execution retries dispatched: ${result.dispatched}; '
               'ambiguous outcomes: ${result.ambiguous}; forwarding requests '
-              'dispatched: ${result.forwarded}; rejected/failed: '
-              '${result.failed}; existing retry flow invoked for '
-              '${result.existingFlowInvoked} other selected transactions '
-              'of $selectedCount.'),
+              'dispatched: ${result.forwarded}; not started/failed: '
+              '${result.failed}; of $selectedCount selected.'),
         ),
       );
     }
@@ -1710,51 +1766,49 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
 
 // 1. Use a Set instead of a List to prevent duplicate statuses
 // (e.g. if both Successful and SuccessfulPending map to 'done')
-                              final Set<String> selectedStatuses = {};
+                              final Set<TransactionCategory>
+                                  selectedStatuses = {};
 
                               if (deleteErrors) {
-                                selectedStatuses.add(TransactionStatuses.error);
+                                selectedStatuses.add(TransactionCategory.error);
                                 numberOfItems += failedCount;
                               }
                               if (deleteSuccessful) {
-                                selectedStatuses.add(TransactionStatuses.done);
+                                selectedStatuses
+                                    .add(TransactionCategory.confirmed);
                                 numberOfItems += successfulCount;
                               }
                               if (deleteFailed) {
                                 selectedStatuses
-                                    .add(TransactionStatuses.secondAttempt);
+                                    .add(TransactionCategory.secondAttempt);
                                 numberOfItems += secondAttemptCount;
                               }
                               if (deleteSuccessfulPending) {
-                                selectedStatuses.add(TransactionStatuses
-                                    .done); // Matches deleteSuccessful
+                                selectedStatuses
+                                    .add(TransactionCategory.successfulPending);
                                 numberOfItems += successfulPendingCount;
                               }
                               if (deleteUnavailable) {
                                 selectedStatuses
-                                    .add(TransactionStatuses.unavailableOffer);
+                                    .add(TransactionCategory.unavailableOffer);
                                 numberOfItems += unavailableOfferCount;
                               }
                               if (deleteBlacklist) {
                                 selectedStatuses
-                                    .add(TransactionStatuses.blacklisted);
+                                    .add(TransactionCategory.blacklisted);
                                 numberOfItems += blacklistedCount;
                               }
                               if (deletePaused) {
-                                selectedStatuses
-                                    .add(TransactionStatuses.paused);
+                                selectedStatuses.add(TransactionCategory.paused);
                                 numberOfItems += pausedCount;
                               }
                               if (deleteOkoa) {
-                                selectedStatuses
-                                    .add(TransactionStatuses.hasOkoa);
+                                selectedStatuses.add(TransactionCategory.okoa);
                                 numberOfItems += okoaCount;
                               }
                               if (deleteAdvanced) {
                                 selectedStatuses
-                                    .add(TransactionStatuses.advancedUssd);
-                                selectedStatuses
-                                    .add(TransactionStatuses.advancedQueue);
+                                    .add(TransactionCategory.advanced);
                                 numberOfItems += advancedCount;
                               }
 
@@ -1784,12 +1838,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               whereParts.add('timeStamp <= ?');
                               whereArgs.add(endDate.millisecondsSinceEpoch);
 
-// 3. SQL OPTIMIZATION: Use the IN clause instead of multiple ORs
-                              final String placeholders =
-                                  List.filled(selectedStatuses.length, '?')
-                                      .join(', ');
-                              whereParts.add('status IN ($placeholders)');
-                              whereArgs.addAll(selectedStatuses);
+// 3. The selected categories, as History lists them.
+                              final categories = selectedStatuses
+                                  .map((category) => '(${category.where})')
+                                  .join(' OR ');
+                              whereParts.add('($categories)');
 
                               final String whereClause =
                                   whereParts.join(' AND ');

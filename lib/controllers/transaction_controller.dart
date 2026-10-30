@@ -33,7 +33,10 @@ import '../utils/forwarding_job_id.dart';
 import '../utils/forwarding_delivery_retry.dart';
 import '../utils/logger.dart';
 import '../utils/top_up.dart';
+import '../utils/inactive_line_failure.dart';
+import '../utils/transaction_categories.dart';
 import '../utils/transaction_execution_safety.dart';
+import '../utils/transaction_reply.dart';
 
 // import '../services/skills.dart';
 import '../services/skills.dart';
@@ -73,6 +76,7 @@ class TransactionController {
   static final Set<String> _activeTopUpTransactionCodes = <String>{};
   static final Set<int> _activePausedOfferResumes = <int>{};
   static final Set<int> _activePausedForwardingResumes = <int>{};
+  static final Set<int> _activeManualRetries = <int>{};
   static const String _pausedOfferResumeClaimPrefix =
       '__BSAT_PAUSED_OFFER_RESUME__:';
   static const String _pausedOfferLocalExecutionClaim =
@@ -133,6 +137,7 @@ class TransactionController {
         (_) async {
           await _retryPendingForwardingConfirmations();
           await _retryPendingForwardingDeliveries();
+          await resolveInactiveLineFailures();
         },
       );
       _retryPendingForwardingDeliveries();
@@ -3448,7 +3453,7 @@ class TransactionController {
         amounts LIKE ? OR
         amounts LIKE ? OR
         amounts LIKE ? OR
-        amounts = '[]' OR amounts = ""
+        amounts = '[]' OR amounts = ''
       )''',
       [
         condition,
@@ -3458,7 +3463,7 @@ class TransactionController {
         '[$amount]',
       ],
       orderBy:
-          'CASE WHEN amounts IS NULL OR amounts = "" THEN 1 ELSE 0 END, CAST(amounts AS INTEGER) ASC',
+          "CASE WHEN amounts IS NULL OR amounts = '' THEN 1 ELSE 0 END, CAST(amounts AS INTEGER) ASC",
     );
     if (replies.isEmpty) return null;
 
@@ -4348,7 +4353,7 @@ class TransactionController {
     final retryCompletion = await _sqliteService.completeTransactionRetry(
       transactionId: id,
       resultStatus: retryStatus,
-      reply: retryReply.isEmpty ? 'No reply' : retryReply,
+      reply: transactionReplyOrFallback(retryReply, retryStatus),
       ambiguousOutcome: isAmbiguousTransactionOutcome(
         status: retryStatus,
         reply: retryReply,
@@ -5550,7 +5555,6 @@ class TransactionController {
         int ambiguous,
         int forwarded,
         int failed,
-        int existingFlowInvoked,
       })> retryTransactionsGivenIds(
     List<int> ids,
   ) async {
@@ -5560,40 +5564,20 @@ class TransactionController {
         ambiguous: 0,
         forwarded: 0,
         failed: 0,
-        existingFlowInvoked: 0,
       );
     }
     final rows = await _sqliteService.queryCustom(
       'transactions',
       'id IN (${ids.toSet().join(',')})',
       [],
-      columns: [
-        'id',
-        'status',
-        'ussdDialed',
-        'simSubId',
-        'canRetry',
-        'ussdReply'
-      ],
+      columns: ['id'],
+      orderBy: 'id ASC',
     );
     var dispatched = 0;
     var ambiguous = 0;
     var forwarded = 0;
     var failed = 0;
-    var existingFlowInvoked = 0;
     for (final row in rows) {
-      if (row['status'] != TransactionStatuses.error) {
-        await redoTransaction(
-          row['id'],
-          row['ussdDialed']?.toString() ?? '',
-          int.tryParse(row['simSubId']?.toString() ?? '') ?? -1,
-          int.tryParse(row['canRetry']?.toString() ?? '') ?? 0,
-          row['ussdReply']?.toString() ?? '',
-        );
-        existingFlowInvoked++;
-        continue;
-      }
-
       final result = await manuallyRetryTransaction(row['id'] as int);
       if (result == ManualRetryResult.executionDispatched) {
         dispatched++;
@@ -5610,23 +5594,41 @@ class TransactionController {
       ambiguous: ambiguous,
       forwarded: forwarded,
       failed: failed,
-      existingFlowInvoked: existingFlowInvoked,
     );
   }
 
   /// Runs an explicit retry through the same durable claim and dispatch path
-  /// used by automatic retries.
+  /// used by automatic retries. The user decides: any transaction can be
+  /// retried manually, including one already successful, confirmed,
+  /// forwarded or with an unknown outcome, and the user is responsible for a
+  /// second purchase. Only a retry of the same transaction already running
+  /// on this phone is refused.
   Future<ManualRetryResult> manuallyRetryTransaction(int id) async {
+    if (!_activeManualRetries.add(id)) {
+      debugPrint('Manual retry rejected: transaction $id is already retrying.');
+      return ManualRetryResult.rejected;
+    }
+    try {
+      return await _manuallyRetryTransaction(id);
+    } finally {
+      _activeManualRetries.remove(id);
+    }
+  }
+
+  Future<ManualRetryResult> _manuallyRetryTransaction(int id) async {
+    if (!await _sqliteService.unlockTransactionForManualRetry(id)) {
+      debugPrint('Manual retry rejected: transaction $id not found or being '
+          'dialed now.');
+      return ManualRetryResult.rejected;
+    }
     final before = await _sqliteService.queryCustom(
       'transactions',
       'id = ?',
       [id],
       limit: 1,
     );
-    if (before.isEmpty || before.first['status'] != TransactionStatuses.error) {
-      debugPrint(
-        'Manual retry rejected: transaction $id not found or not in error state.',
-      );
+    if (before.isEmpty) {
+      debugPrint('Manual retry rejected: transaction $id not found.');
       return ManualRetryResult.rejected;
     }
     final row = before.first;
@@ -5671,8 +5673,8 @@ class TransactionController {
       debugPrint("Manual retry failed: transaction $id forwarding failed.");
       return ManualRetryResult.forwardingFailed;
     }
-    debugPrint(
-        "Manual retry rejected: transaction $id not found or not in error state.");
+    debugPrint('Manual retry not started: transaction $id '
+        '(status ${after.first['status']}).');
     return ManualRetryResult.rejected;
   }
 
@@ -6038,6 +6040,8 @@ class TransactionController {
     }
   }
 
+  /// Retry options: manually retries every transaction in the chosen
+  /// History categories between [startTime] and [endTime].
   Future<void> retrySpecific(
     bool errors,
     bool successful,
@@ -6049,82 +6053,29 @@ class TransactionController {
     int startTime,
     int endTime,
   ) async {
-    String query = 'status = ? OR status = ? OR status = ?';
-    List args = [];
+    final categories = [
+      if (errors) TransactionCategory.error,
+      if (successful) TransactionCategory.confirmed,
+      if (retrySuccPending) TransactionCategory.successfulPending,
+      if (failed) TransactionCategory.secondAttempt,
+      if (paused) TransactionCategory.paused,
+      if (okoa) TransactionCategory.okoa,
+      if (advanced) TransactionCategory.advanced,
+    ];
+    if (categories.isEmpty) return;
 
-    int checkCount = 0;
-
-    if (errors) {
-      checkCount++;
-      query = 'status = ?';
-      args.add(TransactionStatuses.error);
-    }
-    if (successful) {
-      if (checkCount > 0) {
-        query += ' OR status = ?';
-      } else {
-        query = 'status LIKE ?';
-      }
-      checkCount++;
-      args.add(TransactionStatuses.done);
-    }
-    if (failed) {
-      if (checkCount > 0) {
-        query += ' OR status = ?';
-      } else {
-        query = 'status = ?';
-      }
-      checkCount++;
-      args.add(TransactionStatuses.secondAttempt);
-    }
-    if (paused) {
-      if (checkCount > 0) {
-        query += ' OR status = ?';
-      } else {
-        query = 'status = ?';
-      }
-      checkCount++;
-      args.add(TransactionStatuses.paused);
-    }
-    if (okoa) {
-      if (checkCount > 0) {
-        query += ' OR status = ?';
-      } else {
-        query = 'status = ?';
-      }
-      checkCount++;
-      args.add(TransactionStatuses.hasOkoa);
-    }
-    if (advanced) {
-      if (checkCount > 0) {
-        query += ' OR (status = ? OR status = ?)';
-      } else {
-        query = '(status = ? OR status = ?)';
-      }
-      checkCount++;
-      args.add(TransactionStatuses.advancedUssd);
-      args.add(TransactionStatuses.advancedQueue);
-    }
-    if (retrySuccPending) {
-      if (checkCount > 0) {
-        query += ' OR (status = ? AND canRetry < ?)';
-      } else {
-        query = '(status = ? AND canRetry < ?)';
-      }
-      checkCount++;
-      args.add(TransactionStatuses.done);
-    }
-
-    List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
+    final rows = await _sqliteService.queryCustom(
       'transactions',
-      '($query) AND timeStamp >= ? AND timeStamp <= ?',
-      [...args, startTime, endTime],
-      columns: ['id', 'ussdDialed', 'simSubId', 'canRetry', 'ussdReply'],
+      '(${categories.map((category) => '(${category.where})').join(' OR ')}) '
+          'AND timeStamp >= ? AND timeStamp <= ?',
+      [startTime, endTime],
+      columns: ['id'],
+      orderBy: 'timeStamp ASC',
     );
 
-    for (var stuff in rawStuff) {
-      await redoTransaction(stuff['id'], stuff['ussdDialed'], stuff['simSubId'],
-          stuff['canRetry'] ?? 0, stuff["ussdReply"]);
+    for (final row in rows) {
+      final id = int.tryParse(row['id']?.toString() ?? '');
+      if (id != null) await manuallyRetryTransaction(id);
     }
   }
 
@@ -6541,6 +6492,20 @@ class TransactionController {
     bool notifyReplies = true,
   }) async {
     final confirmationBody = smsMessage.body ?? '';
+    if (isInactiveLineFailureMessage(confirmationBody)) {
+      final smsTimestamp = smsMessage.date;
+      if (smsTimestamp == null || smsTimestamp <= 0) {
+        debugPrint('INACTIVE LINE FAILURE: missing SMS timestamp; ignored');
+        return;
+      }
+      await _sqliteService.recordInactiveLineFailure(
+        body: confirmationBody.trim(),
+        smsTimestamp: smsTimestamp,
+        simSubId: smsMessage.subscriptionId,
+      );
+      await resolveInactiveLineFailures();
+      return;
+    }
     final isGiftConfirmation = RegExp(
       r'you\s+have\s+gifted',
       caseSensitive: false,
@@ -6636,7 +6601,8 @@ class TransactionController {
                 timestampCorrelationWindowMs;
         final statusMatched =
             transactionStatus == TransactionStatuses.advancedUssd ||
-                transactionStatus == TransactionStatuses.successfulPending;
+                transactionStatus == TransactionStatuses.successfulPending ||
+                transactionStatus == TransactionStatuses.hasOkoa;
 
         if (!amountMatched ||
             !recipientPrefixMatched ||
@@ -6660,10 +6626,11 @@ class TransactionController {
 
       final amountAndStatusMatches = await _sqliteService.queryCustom(
         'transactions',
-        'status IN (?, ?)',
+        'status IN (?, ?, ?)',
         [
           TransactionStatuses.advancedUssd,
           TransactionStatuses.successfulPending,
+          TransactionStatuses.hasOkoa,
         ],
         orderBy: 'timeStamp DESC',
       );
@@ -6739,11 +6706,12 @@ class TransactionController {
           'timeStamp': DateTime.now().millisecondsSinceEpoch,
           'canRetry': 0,
         },
-        'id = ? AND status IN (?, ?)',
+        'id = ? AND status IN (?, ?, ?)',
         [
           transactionId,
           TransactionStatuses.advancedUssd,
           TransactionStatuses.successfulPending,
+          TransactionStatuses.hasOkoa,
         ],
         'transactions',
       );
@@ -6765,6 +6733,7 @@ class TransactionController {
         debugPrint(
           'SAFARICOM CONFIRMATION: confirmed transaction=$transactionId',
         );
+        await _releaseInactiveLineFailureOf(transactionId);
         final forwardingJobId = candidate['forwardingJobId']?.toString() ?? '';
         final forwardingSender =
             candidate['forwardingSenderDeviceName']?.toString() ?? '';
@@ -6883,23 +6852,29 @@ class TransactionController {
     }
 
     const confirmationWindowMs = 20 * 60 * 1000;
+    final eligibleStatuses = [
+      TransactionStatuses.successfulPending,
+      TransactionStatuses.advancedUssd,
+      TransactionStatuses.alternativeExecuting,
+      TransactionStatuses.error,
+      TransactionStatuses.secondAttempt,
+      TransactionStatuses.timedOut,
+      TransactionStatuses.done,
+      TransactionStatuses.advancedQueue,
+      TransactionStatuses.doneConfirmed,
+      // A confirmation proves the purchase went through, even after Okoa.
+      if (targetStatus == TransactionStatuses.doneConfirmed)
+        TransactionStatuses.hasOkoa,
+    ];
     final eligibleTransactions = await _sqliteService.queryCustom(
       'transactions',
-      'status IN (?, ?, ?, ?, ?, ?, ?, ?, ?) AND '
-          '(timeStamp BETWEEN ? AND ? OR retryStartedAt BETWEEN ? AND ?)',
+      'status IN (${List.filled(eligibleStatuses.length, '?').join(', ')}) '
+          'AND (timeStamp BETWEEN ? AND ? OR retryStartedAt BETWEEN ? AND ?)',
       // Include the latest retry's durable dispatch time while retaining the
       // original execution timestamp. Both timestamps are correlation evidence;
       // the window itself remains unchanged.
       [
-        TransactionStatuses.successfulPending,
-        TransactionStatuses.advancedUssd,
-        TransactionStatuses.alternativeExecuting,
-        TransactionStatuses.error,
-        TransactionStatuses.secondAttempt,
-        TransactionStatuses.timedOut,
-        TransactionStatuses.done,
-        TransactionStatuses.advancedQueue,
-        TransactionStatuses.doneConfirmed,
+        ...eligibleStatuses,
         smsTimestamp - confirmationWindowMs,
         smsTimestamp + confirmationWindowMs,
         smsTimestamp - confirmationWindowMs,
@@ -7029,6 +7004,9 @@ class TransactionController {
       'SAFARICOM CONFIRMATION: updated transaction=$transactionId '
       'from=$currentStatus to=$status',
     );
+    if (status == TransactionStatuses.doneConfirmed) {
+      await _releaseInactiveLineFailureOf(transactionId);
+    }
 
     if (status == TransactionStatuses.successfulPending &&
         candidate['source']?.toString() == 'manual') {
@@ -7078,6 +7056,106 @@ class TransactionController {
         amount,
       );
     }
+  }
+
+  /// Gives held inactive-line failures (see [isInactiveLineFailureMessage])
+  /// to the Successful(Pending) transactions they belong to, by
+  /// [matchInactiveLineFailures], and moves those to Okoa. The customer gets
+  /// no SMS. For a job forwarded from another phone, that phone is told, so
+  /// its copy moves from Forwarded (Pending) to Okoa too.
+  Future<void> resolveInactiveLineFailures() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final failureRows = await _sqliteService.unassignedInactiveLineFailures(
+      since: now - inactiveLineFailureExpiry.inMilliseconds,
+    );
+    if (failureRows.isEmpty) return;
+    final failures = [
+      for (final row in failureRows)
+        InactiveLineFailure(
+          id: row['id'] as int,
+          smsTimestamp: int.tryParse(row['smsTimestamp']?.toString() ?? '') ?? 0,
+          simSubId: int.tryParse(row['simSubId']?.toString() ?? ''),
+        ),
+    ];
+    final earliest = failures.first.smsTimestamp -
+        inactiveLineFailureWindow.inMilliseconds;
+    final pendingRows = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ? AND (timeStamp >= ? OR retryStartedAt >= ?)',
+      [TransactionStatuses.successfulPending, earliest, earliest],
+      columns: [
+        'id',
+        'timeStamp',
+        'retryStartedAt',
+        'simSubId',
+        'source',
+        'forwardingJobId',
+        'forwardingSenderDeviceName',
+      ],
+    );
+    final rowsById = {for (final row in pendingRows) row['id'] as int: row};
+    final pending = [
+      for (final row in pendingRows)
+        PendingPurchase(
+          id: row['id'] as int,
+          // The latest dial: a retry dials again after the first attempt.
+          dialedAt: [
+            int.tryParse(row['timeStamp']?.toString() ?? '') ?? 0,
+            int.tryParse(row['retryStartedAt']?.toString() ?? '') ?? 0,
+          ].reduce((a, b) => a > b ? a : b),
+          simSubId: switch (int.tryParse(row['simSubId']?.toString() ?? '')) {
+            final sim? when sim >= 0 => sim,
+            _ => null,
+          },
+        ),
+    ];
+
+    for (final (failureId, transactionId)
+        in matchInactiveLineFailures(
+            failures: failures, pending: pending, now: now)) {
+      final assigned = await _sqliteService.assignInactiveLineFailure(
+        failureId: failureId,
+        transactionId: transactionId,
+      );
+      debugPrint(
+        'INACTIVE LINE FAILURE: failure=$failureId '
+        '${assigned ? 'moved' : 'could not move'} transaction=$transactionId '
+        'to Okoa',
+      );
+      if (!assigned) continue;
+      final row = rowsById[transactionId]!;
+      final forwardingJobId = row['forwardingJobId']?.toString() ?? '';
+      final forwardingSender =
+          row['forwardingSenderDeviceName']?.toString() ?? '';
+      // An alternative run for another phone reports through its own result
+      // channel; only a forwarded SMS job is reported here.
+      final isAlternative = row['source']?.toString() == 'manual';
+      if (forwardingJobId.isNotEmpty &&
+          forwardingSender.isNotEmpty &&
+          !isAlternative) {
+        await _sendForwardingConfirmation(
+          forwardingJobId: forwardingJobId,
+          recipientDeviceName: forwardingSender,
+          transactionId: transactionId.toString(),
+          resultStatus: TransactionStatuses.hasOkoa,
+        );
+      }
+    }
+  }
+
+  /// After [transactionId] was confirmed: it was not the purchase that
+  /// failed, so a failure given to it is freed, and held failures are
+  /// matched again with one purchase fewer to choose from.
+  Future<void> _releaseInactiveLineFailureOf(Object? transactionId) async {
+    final id = int.tryParse(transactionId?.toString() ?? '');
+    if (id == null) return;
+    if (await _sqliteService.releaseInactiveLineFailureOf(id) > 0) {
+      debugPrint(
+        'INACTIVE LINE FAILURE: transaction=$id was confirmed; its failure '
+        'is matched again',
+      );
+    }
+    await resolveInactiveLineFailures();
   }
 
   Future<void> _retryUnresolvedSafaricomMessages() async {

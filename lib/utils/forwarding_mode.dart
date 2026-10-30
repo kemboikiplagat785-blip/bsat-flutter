@@ -47,6 +47,19 @@ String? offlineForwardingStatusForHandoff(String result) {
       : null;
 }
 
+/// The 9-digit Kenyan mobile number in [input] (`0712345678`,
+/// `254712345678`, `+254 712 345 678` or `712345678`), or null when it is
+/// not one. SMS go to `254` followed by this number.
+String? normalizeKenyanMobileNumber(String? input) {
+  final digits = (input ?? '').replaceAll(RegExp(r'\D'), '');
+  final local = digits.length == 12 && digits.startsWith('254')
+      ? digits.substring(3)
+      : digits.length == 10 && digits.startsWith('0')
+          ? digits.substring(1)
+          : digits;
+  return RegExp(r'^[17]\d{8}$').hasMatch(local) ? local : null;
+}
+
 bool isValidSmsForwardingRequest(String address, String message) {
   return address.trim().isNotEmpty && message.trim().isNotEmpty;
 }

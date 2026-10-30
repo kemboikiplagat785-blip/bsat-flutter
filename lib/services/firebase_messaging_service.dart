@@ -1759,9 +1759,13 @@ Future<void> handleForwardedSmsAcknowledgement(
 
   final updatedRows = await SQLiteService().updateStuff(
     {
-      'status': awaitingTopUp
-          ? TransactionStatuses.forwardedPending
-          : TransactionStatuses.forwardedConfirmed,
+      // Okoa: Phone B's purchase failed because the customer's line is
+      // inactive. A later confirmation from Phone B still upgrades it.
+      'status': resultStatus == TransactionStatuses.hasOkoa
+          ? TransactionStatuses.hasOkoa
+          : awaitingTopUp
+              ? TransactionStatuses.forwardedPending
+              : TransactionStatuses.forwardedConfirmed,
       'canRetry': 0,
       'awaitingTopUp': awaitingTopUp ? 1 : 0,
       'requiredTopUp': requiredTopUp,

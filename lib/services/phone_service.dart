@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/utils/constants.dart';
+import 'package:bsat/utils/transaction_reply.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:another_telephony/telephony.dart';
@@ -60,13 +61,21 @@ class PhoneService {
     } on PlatformException catch (e) {
       debugPrint(
           "error! code: ${e.code} - message: ${e.message} ${e.details}, ussd code: $code, subscriptionId: $subscriptionId");
+      message = (e.message ?? '').trim().isNotEmpty
+          ? e.message!.trim()
+          : e.code;
     } catch (e) {
       // debugPrint("unkwown error!");
-      String message = e.toString();
+      message = e.toString();
 
       debugPrint("error! $e");
     }
-    return ["Error sending code: $message", TransactionStatuses.error];
+    return [
+      message.trim().isEmpty
+          ? failedUssdNoReply
+          : "Error sending code: $message",
+      TransactionStatuses.error,
+    ];
   }
 
   Future<List> makeAdvancedRequest(
@@ -151,8 +160,9 @@ class PhoneService {
 
       String status = TransactionStatuses.advancedUssd;
 
-      if (res.isEmpty) {
+      if (res.trim().isEmpty) {
         status = TransactionStatuses.error;
+        res = failedUssdNoReply;
       }
 
       return [

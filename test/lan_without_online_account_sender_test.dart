@@ -12,6 +12,7 @@ import 'package:bsat/services/lan/lan_forwarding_service.dart';
 import 'package:bsat/services/lan/lan_local_identity.dart';
 import 'package:bsat/services/lan/lan_peer_store.dart';
 import 'package:bsat/services/sqlite_service.dart';
+import 'package:bsat/utils/constants.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/stage0_harness.dart';
@@ -74,4 +75,50 @@ void main() {
       h.expectNoExternalEffects();
     });
 
+    test('a payment held while the LAN rule was disabled is sent over LAN '
+        'when the rule is enabled again', () async {
+      await lanRuleForPhoneB();
+      // As _persistUnavailableForwardingTransaction stores it while the
+      // rule is disabled.
+      final id = await (await h.db).insert('transactions', {
+        'initialMessage': _sms,
+        'transactionId': _receipt,
+        'number': 712345678,
+        'amount': 100,
+        'date': 'today',
+        'time': '12:00',
+        'smsDate': 'today',
+        'smsTime': '12:00',
+        'ussdDialed': '',
+        'simSubId': -1,
+        'source': 'JOHN DOE',
+        'status': TransactionStatuses.paused,
+        'ussdReply': 'Paired device forwarding is configured but currently '
+            'on pause. Will retry after initiation play',
+        'canRetry': 0,
+        'timeStamp': DateTime.now().millisecondsSinceEpoch,
+      });
+      final online = RecordingForwardingTransport();
+      final lan = RecordingForwardingTransport();
+
+      await h.capture(() => TransactionController(
+            sqliteService: SQLiteService(),
+            forwardingTransport: online,
+            lanForwardingTransport: lan,
+            lanReachability: (_) async => LanReachability.reachable,
+          ).resumePausedForwardingTransactions('Phone B'));
+
+      final submission = lan.submissions.single.request;
+      expect(submission['recipientDeviceName'], 'Phone B');
+      expect(submission['senderDeviceName'], 'Phone A');
+      final row = (await (await h.db)
+              .query('transactions', where: 'id = ?', whereArgs: [id]))
+          .single;
+      expect(row['status'], isNot(TransactionStatuses.paused));
+      expect(row['forwardingTransport'], 'lan');
+      expect(row['forwardingRecipientDeviceName'], 'Phone B');
+      expect(online.submissions, isEmpty, reason: 'no fallback to Online');
+      expect(h.requests, isEmpty);
+      h.expectNoExternalEffects();
+    });
 }

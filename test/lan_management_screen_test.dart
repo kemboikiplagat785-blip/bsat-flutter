@@ -111,6 +111,7 @@ class _Env {
   final probes = <String>[];
   final unpaired = <(String, bool)>[];
   final pairingOpened = <String?>[];
+  final resumed = <String>[];
   LanReachability reachability = LanReachability.reachable;
 
   _Env({
@@ -141,6 +142,7 @@ class _Env {
         unconfirmedJobs: () async => const {},
         openPairing: (context, deviceName) async =>
             pairingOpened.add(deviceName),
+        resumePausedJobs: (deviceName) async => resumed.add(deviceName),
       );
 }
 
@@ -268,9 +270,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(env.rules.rules.single.enabled, isFalse);
     expect(find.text('Disabled'), findsOneWidget);
+    expect(env.resumed, isEmpty, reason: 'disabling sends nothing');
     await tester.tap(find.byKey(const Key('lanRuleEnabled_Shop Phone')));
     await tester.pumpAndSettle();
     expect(env.rules.rules.single.enabled, isTrue);
+    // Enabling sends the payments held while the rule was disabled.
+    expect(env.resumed, ['Shop Phone']);
 
     // Remove.
     await tester.tap(find.text('Remove').last);

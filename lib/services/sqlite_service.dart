@@ -5,6 +5,7 @@ import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/logger.dart';
 import 'package:bsat/utils/forwarding_identifiers.dart';
 import 'package:bsat/utils/forwarding_delivery_retry.dart';
+import 'package:bsat/utils/transaction_reply.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -146,6 +147,19 @@ class SQLiteService {
   }
 
   Future<void> _ensureCriticalSchema(DatabaseExecutor db) async {
+    // Safaricom inactive-line failures held until a transaction is found for
+    // them (see lib/utils/inactive_line_failure.dart).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS inactiveLineFailures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        body TEXT NOT NULL,
+        smsTimestamp INTEGER NOT NULL,
+        simSubId INTEGER,
+        transactionRowId INTEGER,
+        resolvedAt INTEGER,
+        UNIQUE(smsTimestamp, body)
+      )
+    ''');
     await db.execute('''
       CREATE TABLE IF NOT EXISTS forwardingDeliveryRetries (
         forwardingJobId TEXT PRIMARY KEY,
@@ -1281,7 +1295,24 @@ class SQLiteService {
 
   Future<int> insertStuff(Map<String, dynamic> row, String table) async {
     final db = await database;
-    return db.insert(table, row);
+    return db.insert(table, _withTransactionReply(row, table, inserting: true));
+  }
+
+  /// Every transaction keeps a reply: a missing or blank `ussdReply` written
+  /// to `transactions` is replaced by a readable fallback for its status.
+  static Map<String, dynamic> _withTransactionReply(
+    Map<String, dynamic> row,
+    String table, {
+    required bool inserting,
+  }) {
+    if (table != 'transactions') return row;
+    if (!inserting && !row.containsKey('ussdReply')) return row;
+    final reply = row['ussdReply'];
+    if (reply != null && reply.toString().trim().isNotEmpty) return row;
+    return {
+      ...row,
+      'ussdReply': transactionReplyOrFallback(reply, row['status']),
+    };
   }
 
   /// Raw `forwarding_transport` stored on the forwarding device row matching
@@ -2614,7 +2645,12 @@ class SQLiteService {
     String table,
   ) async {
     final db = await database;
-    return db.update(table, row, where: where, whereArgs: whereArgs);
+    return db.update(
+      table,
+      _withTransactionReply(row, table, inserting: false),
+      where: where,
+      whereArgs: whereArgs,
+    );
   }
 
   Future<int> updateRetryTransactionIfEligible(
@@ -2737,6 +2773,64 @@ class SQLiteService {
       ],
     );
   }
+
+  /// Makes [transactionId] retryable because the user asked to retry it
+  /// manually, whatever its status or earlier outcome (the user accepts the
+  /// risk of a second purchase). The row is put in the error state with a
+  /// ready retry claim; its reply is kept. A forwarding job sent from this
+  /// phone gets a new job on retry: its job ID is cleared, so its old
+  /// delivery retries stop and the destination does not ignore the retry as
+  /// a duplicate.
+  ///
+  /// A transaction being dialed right now (claimed, or dispatched less than
+  /// [manualRetryDispatchLease] ago) is not unlocked, so one dial never
+  /// overlaps another; a dispatch older than that is treated as stuck.
+  /// Returns false when the row is missing or being dialed.
+  Future<bool> unlockTransactionForManualRetry(int transactionId) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        columns: ['status', 'retryState', 'retryStartedAt'],
+        where: 'id = ?',
+        whereArgs: [transactionId],
+        limit: 1,
+      );
+      if (rows.isEmpty) return false;
+      final retryState = rows.first['retryState']?.toString() ?? 'ready';
+      final retryStartedAt =
+          int.tryParse(rows.first['retryStartedAt']?.toString() ?? '') ?? 0;
+      final dialingNow = retryState == 'claimed' ||
+          (retryState == 'dispatching' &&
+              DateTime.now().millisecondsSinceEpoch - retryStartedAt <
+                  manualRetryDispatchLease.inMilliseconds);
+      if (dialingNow) return false;
+      final status = rows.first['status']?.toString() ?? '';
+      const outgoingForwardStatuses = {
+        TransactionStatuses.forwarded,
+        TransactionStatuses.forwardedPending,
+        TransactionStatuses.forwardedConfirmed,
+        TransactionStatuses.forwardedOnline,
+      };
+      return await txn.update(
+            'transactions',
+            {
+              'status': TransactionStatuses.error,
+              'retryState': 'ready',
+              'retryClaimOwner': null,
+              if (outgoingForwardStatuses.contains(status))
+                'forwardingJobId': null,
+            },
+            where: 'id = ?',
+            whereArgs: [transactionId],
+          ) ==
+          1;
+    });
+  }
+
+  /// How long a dispatched retry counts as still dialing; see
+  /// [unlockTransactionForManualRetry].
+  static const Duration manualRetryDispatchLease = Duration(minutes: 3);
 
   /// Atomically reserves a retry dispatch for one transaction. A stale queue
   /// item cannot claim a transaction after success evidence has changed it to
@@ -2932,6 +3026,103 @@ class SQLiteService {
   /// Reconciles Safaricom evidence without allowing a weaker submission event
   /// to downgrade confirmed success. Retry invalidation is committed in the
   /// same SQLite transaction as the status change.
+  /// Holds an inactive-line failure SMS; the same SMS seen twice is kept
+  /// once.
+  Future<void> recordInactiveLineFailure({
+    required String body,
+    required int smsTimestamp,
+    int? simSubId,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'inactiveLineFailures',
+      {
+        'body': body,
+        'smsTimestamp': smsTimestamp,
+        'simSubId': simSubId,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  /// Failures not yet given to a transaction, received after [since],
+  /// oldest first.
+  Future<List<Map<String, dynamic>>> unassignedInactiveLineFailures({
+    required int since,
+  }) async {
+    final db = await database;
+    return db.query(
+      'inactiveLineFailures',
+      where: 'transactionRowId IS NULL AND smsTimestamp >= ?',
+      whereArgs: [since],
+      orderBy: 'smsTimestamp ASC',
+    );
+  }
+
+  /// Gives failure [failureId] to transaction [transactionId] and moves that
+  /// transaction from Successful(Pending) to Okoa, with the SMS added to its
+  /// reply. Both happen or neither (false: the failure was taken, or the
+  /// transaction is no longer pending).
+  Future<bool> assignInactiveLineFailure({
+    required int failureId,
+    required int transactionId,
+  }) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final failures = await txn.query(
+        'inactiveLineFailures',
+        columns: ['body'],
+        where: 'id = ? AND transactionRowId IS NULL',
+        whereArgs: [failureId],
+        limit: 1,
+      );
+      final rows = await txn.query(
+        'transactions',
+        columns: ['ussdReply'],
+        where: 'id = ? AND status = ?',
+        whereArgs: [transactionId, TransactionStatuses.successfulPending],
+        limit: 1,
+      );
+      if (failures.isEmpty || rows.isEmpty) return false;
+      final body = failures.single['body']?.toString().trim() ?? '';
+      final previousReply = rows.single['ussdReply']?.toString() ?? '';
+      await txn.update(
+        'transactions',
+        {
+          'status': TransactionStatuses.hasOkoa,
+          'ussdReply':
+              previousReply.isEmpty ? body : '$body\n•\n$previousReply',
+          'canRetry': 0,
+        },
+        where: 'id = ? AND status = ?',
+        whereArgs: [transactionId, TransactionStatuses.successfulPending],
+      );
+      await txn.update(
+        'inactiveLineFailures',
+        {
+          'transactionRowId': transactionId,
+          'resolvedAt': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'id = ?',
+        whereArgs: [failureId],
+      );
+      return true;
+    });
+  }
+
+  /// Frees the failure given to [transactionId] (its purchase was confirmed
+  /// after all), so it can be matched to another transaction. Returns the
+  /// number of failures freed.
+  Future<int> releaseInactiveLineFailureOf(int transactionId) async {
+    final db = await database;
+    return db.update(
+      'inactiveLineFailures',
+      {'transactionRowId': null, 'resolvedAt': null},
+      where: 'transactionRowId = ?',
+      whereArgs: [transactionId],
+    );
+  }
+
   Future<int> reconcileSafaricomTransaction({
     required int transactionId,
     required String targetStatus,
@@ -2969,6 +3160,10 @@ class SQLiteService {
         TransactionStatuses.successfulPending,
         TransactionStatuses.alternativeExecuting,
         TransactionStatuses.doneConfirmed,
+        // A confirmation proves the purchase went through, even after an
+        // Okoa result (such as a misattributed inactive-line failure).
+        if (targetStatus == TransactionStatuses.doneConfirmed)
+          TransactionStatuses.hasOkoa,
       };
       if (!eligibleStatuses.contains(currentStatus)) return 0;
 
@@ -2994,7 +3189,7 @@ class SQLiteService {
           if (targetStatus == TransactionStatuses.secondAttempt)
             'firstFailedTimeStamp': rows.first['firstFailedTimeStamp'] ??
                 DateTime.now().millisecondsSinceEpoch,
-          'ussdReply': updatedReply,
+          'ussdReply': transactionReplyOrFallback(updatedReply, targetStatus),
         },
         where: 'id = ? AND status = ?',
         whereArgs: [transactionId, currentStatus],
@@ -3062,7 +3257,8 @@ class SQLiteService {
         {
           ...fields,
           'status': effectiveStatus,
-          'ussdReply': effectiveReply,
+          'ussdReply':
+              transactionReplyOrFallback(effectiveReply, effectiveStatus),
           if (effectiveStatus == TransactionStatuses.doneConfirmed ||
               effectiveStatus == TransactionStatuses.successfulPending)
             'canRetry': 0,

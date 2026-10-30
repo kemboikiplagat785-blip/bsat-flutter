@@ -610,7 +610,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
                                           ManualRetryResult.forwardingFailed =>
                                             'Forwarding retry failed; transaction remains in error.',
                                           ManualRetryResult.rejected =>
-                                            'Retry was not started. The transaction may be confirmed, in progress, or unsafe to retry.',
+                                            'Retry was not started: it is already retrying, or it could not be run now (see the reply).',
                                         };
                                         scaffoldMessenger.showSnackBar(SnackBar(
                                           content: Text(message),

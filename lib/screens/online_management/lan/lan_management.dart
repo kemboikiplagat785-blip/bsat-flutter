@@ -1,5 +1,6 @@
 import 'package:bsat/components/dialogs/show_confirm_dialog.dart';
 import 'package:bsat/components/dialogs/show_error_dialog.dart';
+import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:bsat/services/lan/lan_forwarding_rules.dart';
 import 'package:bsat/services/lan/lan_forwarding_service.dart';
 import 'package:bsat/services/lan/lan_local_identity.dart';
@@ -42,6 +43,9 @@ class LanManagementDependencies {
   final Future<void> Function(BuildContext context, String? deviceName)
       openPairing;
 
+  /// Sends the jobs held while the rule for [deviceName] was disabled.
+  final Future<void> Function(String deviceName) resumePausedJobs;
+
   const LanManagementDependencies({
     required this.peers,
     required this.rules,
@@ -53,7 +57,10 @@ class LanManagementDependencies {
     required this.unpair,
     required this.unconfirmedJobs,
     required this.openPairing,
+    this.resumePausedJobs = _noPausedJobs,
   });
+
+  static Future<void> _noPausedJobs(String deviceName) async {}
 
   factory LanManagementDependencies.production() {
     final peers = LanPeerStore();
@@ -83,6 +90,8 @@ class LanManagementDependencies {
           builder: (_) => LanPairDevicePage(initialDeviceName: deviceName),
         ),
       ),
+      resumePausedJobs: (deviceName) => TransactionController()
+          .resumePausedForwardingTransactions(deviceName),
     );
   }
 
@@ -274,8 +283,20 @@ class _LanManagementScreenState extends State<LanManagementScreen> {
       await _deps.rules.setEnabled(rule.id, enabled);
     } catch (error) {
       if (mounted) showErrorDialog(context, 'Error', '$error');
+      await _load();
+      return;
     }
     await _load();
+    // Payments that arrived while the rule was disabled were held as paused;
+    // enabling it sends them now, over LAN only.
+    if (enabled) {
+      try {
+        await _deps.resumePausedJobs(rule.deviceName);
+      } catch (error) {
+        debugPrint('LAN RULE: resuming paused jobs failed ($error)');
+      }
+      await _load();
+    }
   }
 
   Future<void> _removeRule(LanForwardingRule rule) async {

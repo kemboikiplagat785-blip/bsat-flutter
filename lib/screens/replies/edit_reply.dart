@@ -37,6 +37,12 @@ class _EditReplyPageState extends State<EditReplyPage> {
   int _selectedOption = 0;
   String _errorReply = '';
 
+  /// Unavailable Offer and Second Attempt replies can name the offer the
+  /// customer should top up to.
+  bool get _selectedOptionHasTopUpTarget =>
+      _selectedOption == TransactionStatuses.unavailableOfferMap.keys.first ||
+      _selectedOption == TransactionStatuses.secondAttemptMap.keys.first;
+
   void _populateFields() async {
     if (widget.replyId >= 0) {
       // Assuming you have a service to query the database
@@ -114,10 +120,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
       'dialSim': _dialSim,
       'conditionAmount': 1,
       'amounts': jsonEncode(_amountsForReply),
-      'targetOfferId':
-          _selectedOption == TransactionStatuses.unavailableOfferMap.keys.first
-              ? _targetOfferId
-              : null,
+      'targetOfferId': _selectedOptionHasTopUpTarget ? _targetOfferId : null,
     };
 
     if (widget.replyId >= 0) {
@@ -332,10 +335,7 @@ class _EditReplyPageState extends State<EditReplyPage> {
 
                     const SizedBox(height: kPagePadding),
 
-                    if (_selectedOption ==
-                            TransactionStatuses
-                                .unavailableOfferMap.keys.first &&
-                        _targetOffersLoaded)
+                    if (_selectedOptionHasTopUpTarget && _targetOffersLoaded)
                       Container(
                         padding: kPagePaddingInsets,
                         decoration: BoxDecoration(

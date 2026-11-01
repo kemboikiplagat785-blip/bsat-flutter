@@ -97,6 +97,14 @@ class TransactionCategory {
     ]),
   );
 
+  /// A forwarded Second Attempt the customer topped up; the combined amount
+  /// was completed by another paired device.
+  static final pataMore = TransactionCategory(
+    TransactionStatuses.pataMore,
+    'Pata More',
+    _statusIn(const [TransactionStatuses.pataMore]),
+  );
+
   static final paused = TransactionCategory(
     TransactionStatuses.paused,
     'Paused',
@@ -139,6 +147,7 @@ class TransactionCategory {
     okoa,
     unavailableOffer,
     secondAttempt,
+    pataMore,
     paused,
     blacklisted,
     error,

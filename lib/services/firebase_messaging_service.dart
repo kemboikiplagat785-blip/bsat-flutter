@@ -87,6 +87,7 @@ const Set<String> _lanDeliverableTypes = {
   'MESSAGE_ACK',
   'process_alt_request',
   'forwarded_alt_result',
+  'forwarded_sms_pata_more',
 };
 
 /// Requests (not acknowledgements) the LAN transport may deliver.
@@ -94,6 +95,7 @@ const Set<String> _lanRequestTypes = {
   'forwarded_sms',
   'process_alt_request',
   'forwarded_alt_result',
+  'forwarded_sms_pata_more',
 };
 
 /// Handles one forwarding message.
@@ -161,6 +163,7 @@ Future<void> handleRemoteMessage(
   if ((type ?? '').toUpperCase() != 'CHECK_UPDATE' &&
       (type ?? '').toUpperCase() != 'PROCESS_ALT_REQUEST' &&
       (type ?? '').toUpperCase() != 'FORWARDED_ALT_RESULT' &&
+      (type ?? '').toUpperCase() != 'FORWARDED_SMS_PATA_MORE' &&
       (type ?? '').toLowerCase() != 'forwarded_sms') {
     await _sendImmediateAck(message, originalType: type);
   }
@@ -194,8 +197,7 @@ Future<void> handleRemoteMessage(
       if (receivedOverLan &&
           (authenticatedSenderDeviceName!.trim() !=
                   (forwardingSenderDeviceName ?? '').trim() ||
-              (await LanPeerStore()
-                          .lookupDevice(authenticatedSenderDeviceName))
+              (await LanPeerStore().lookupDevice(authenticatedSenderDeviceName))
                       .state !=
                   LanPeerLookupState.trusted)) {
         debugPrint('ALT REQUEST REJECTED: LAN sender is not trusted.');
@@ -322,6 +324,36 @@ Future<void> handleRemoteMessage(
         replySink: replySink,
         authenticatedSenderDeviceName: authenticatedSenderDeviceName,
       );
+      break;
+
+    case 'forwarded_sms_pata_more':
+      // Phone B: Phone A completed this Second Attempt after a top-up.
+      final pataMoreSender = message.data['senderDeviceName']?.toString() ?? '';
+      if (receivedOverLan &&
+          (await LanPeerStore().lookupDevice(authenticatedSenderDeviceName!))
+                  .state !=
+              LanPeerLookupState.trusted) {
+        debugPrint('PATA MORE REJECTED: LAN sender is not trusted.');
+        break;
+      }
+      final applied = await TransactionController().applyPataMoreNotice(
+        forwardingJobId: message.data['forwardingJobId']?.toString() ?? '',
+        senderDeviceName: pataMoreSender,
+        recipientDeviceName:
+            message.data['recipientDeviceName']?.toString() ?? '',
+        transactionId: message.data['transactionId']?.toString() ?? '',
+        lanSenderDeviceName:
+            receivedOverLan ? authenticatedSenderDeviceName : null,
+      );
+      if (applied) {
+        await _sendImmediateAck(
+          message,
+          originalType: 'forwarded_sms_pata_more',
+          ackKind: 'pata_more_received',
+          status: 'pata-more-received',
+          replySink: replySink,
+        );
+      }
       break;
 
     case 'forwarded_sms':
@@ -887,6 +919,13 @@ Future<bool> _processIncomingAcknowledgement(
         message,
         lanSenderDeviceName: authenticatedSenderDeviceName,
       );
+    } else if (normalized == 'MESSAGE_ACK' &&
+        originalType == 'FORWARDED_SMS_PATA_MORE' &&
+        authenticatedSenderDeviceName != null) {
+      await _handlePataMoreAck(
+        message,
+        lanSenderDeviceName: authenticatedSenderDeviceName,
+      );
     }
     return true;
   }
@@ -929,6 +968,9 @@ Future<bool> _processIncomingAcknowledgement(
         break;
       case 'FORWARDED_ALT_RESULT':
         await _handleForwardedAltResultAck(message);
+        break;
+      case 'FORWARDED_SMS_PATA_MORE':
+        await _handlePataMoreAck(message);
         break;
 
       case 'FORWARDED_SMS':
@@ -1047,6 +1089,25 @@ Future<void> _persistAckState(
   }
 
   await SharedPreferencesService().setAll(settings);
+}
+
+/// Phone A: Phone B received a Pata More notice. [lanSenderDeviceName] is
+/// the authenticated peer when the receipt arrived over LAN.
+Future<void> _handlePataMoreAck(
+  RemoteMessage message, {
+  String? lanSenderDeviceName,
+}) async {
+  if (message.data['ackKind']?.toString().toLowerCase() !=
+      'pata_more_received') {
+    return;
+  }
+  await TransactionController().markPataMoreDelivered(
+    forwardingJobId: message.data['forwardingJobId']?.toString() ?? '',
+    ackSenderDeviceName: message.data['senderDeviceName']?.toString() ?? '',
+    ackRecipientDeviceName:
+        message.data['recipientDeviceName']?.toString() ?? '',
+    lanSenderDeviceName: lanSenderDeviceName,
+  );
 }
 
 Future<void> _handleGenericMessageAck(RemoteMessage message) async {
@@ -1254,6 +1315,13 @@ Future<void> _handleForwardedAltResult(
     return;
   }
 
+  // Every alternative is the Second Attempt of this transaction, so its
+  // final success is Pata More; rows finished before that was the case stay
+  // Successful(Confirmed).
+  bool isFinal(Object? status) =>
+      status == TransactionStatuses.doneConfirmed ||
+      status == TransactionStatuses.pataMore;
+
   Future<void> acknowledgeResult() async {
     await _sendImmediateAck(
       message,
@@ -1276,11 +1344,12 @@ Future<void> _handleForwardedAltResult(
         'ussdReply': ussdReply,
         'timeStamp': DateTime.now().millisecondsSinceEpoch,
       },
-      'forwardingJobId = ? AND id = ? AND status != ?',
+      'forwardingJobId = ? AND id = ? AND status NOT IN (?, ?)',
       [
         forwardingJobId,
         matchedTransaction['id'],
         TransactionStatuses.doneConfirmed,
+        TransactionStatuses.pataMore,
       ],
       'transactions',
     );
@@ -1293,7 +1362,7 @@ Future<void> _handleForwardedAltResult(
     final durablyHandled = rows.any(
       (row) =>
           row['status'] == TransactionStatuses.alternativeAmbiguous ||
-          row['status'] == TransactionStatuses.doneConfirmed,
+          isFinal(row['status']),
     );
     debugPrint(
       'ALT RESULT AMBIGUOUS: job=$forwardingJobId, '
@@ -1358,7 +1427,7 @@ Future<void> _handleForwardedAltResult(
     }
     if (currentRows.any((row) =>
         row['status'] == TransactionStatuses.successfulPending ||
-        row['status'] == TransactionStatuses.doneConfirmed)) {
+        isFinal(row['status']))) {
       await acknowledgeResult();
     }
     return;
@@ -1378,12 +1447,13 @@ Future<void> _handleForwardedAltResult(
         'timeStamp': DateTime.now().millisecondsSinceEpoch,
       },
       'forwardingJobId = ? AND id = ? AND alternativeQueueState = ? '
-          'AND status != ?',
+          'AND status NOT IN (?, ?)',
       [
         forwardingJobId,
         matchedTransaction['id'],
         'active',
         TransactionStatuses.doneConfirmed,
+        TransactionStatuses.pataMore,
       ],
       'transactions',
     );
@@ -1406,18 +1476,19 @@ Future<void> _handleForwardedAltResult(
 
   final updatedRows = await SQLiteService().updateStuff(
     {
-      'status': TransactionStatuses.doneConfirmed,
+      'status': TransactionStatuses.pataMore,
       if (matchedTransaction['alternativeQueueState'] == 'active')
         'alternativeQueueState': 'released',
       'canRetry': 0,
       'ussdReply': ussdReply,
       'timeStamp': DateTime.now().millisecondsSinceEpoch,
     },
-    'forwardingJobId = ? AND id = ? AND status != ?',
+    'forwardingJobId = ? AND id = ? AND status NOT IN (?, ?)',
     [
       forwardingJobId,
       matchedTransaction['id'],
       TransactionStatuses.doneConfirmed,
+      TransactionStatuses.pataMore,
     ],
     'transactions',
   );
@@ -1448,9 +1519,7 @@ Future<void> _handleForwardedAltResult(
       columns: ['status'],
     );
     if (existingRows.isNotEmpty &&
-        existingRows.every(
-          (row) => row['status'] == TransactionStatuses.doneConfirmed,
-        )) {
+        existingRows.every((row) => isFinal(row['status']))) {
       debugPrint('ALT RESULT: duplicate final result ignored');
     } else {
       debugPrint(
@@ -1461,11 +1530,12 @@ Future<void> _handleForwardedAltResult(
 
   final tx = await SQLiteService().queryCustom(
     'transactions',
-    'forwardingJobId = ? AND id = ? AND status = ?',
+    'forwardingJobId = ? AND id = ? AND status IN (?, ?)',
     [
       forwardingJobId,
       matchedTransaction['id'],
       TransactionStatuses.doneConfirmed,
+      TransactionStatuses.pataMore,
     ],
     limit: 1,
   );
@@ -1512,9 +1582,7 @@ Future<void> _handleForwardedAltResult(
     [forwardingJobId, matchedTransaction['id']],
     columns: ['status'],
   );
-  if (handledRows.any(
-    (row) => row['status'] == TransactionStatuses.doneConfirmed,
-  )) {
+  if (handledRows.any((row) => isFinal(row['status']))) {
     await acknowledgeResult();
   }
 }
@@ -1712,6 +1780,9 @@ Future<void> handleForwardedSmsAcknowledgement(
   }
 
   final resultStatus = message.data['resultStatus']?.toString() ?? '';
+  // Phone B stayed on Second Attempt (no alternative code): this job is not
+  // confirmed; Phone A replies to the customer and may wait for a top-up.
+  final isSecondAttempt = resultStatus == TransactionStatuses.secondAttempt;
   var awaitingTopUp = false;
   int? requiredTopUp;
   int? targetAmount;
@@ -1721,31 +1792,37 @@ Future<void> handleForwardedSmsAcknowledgement(
   int unavailableAmount = 0;
   int? resolvedTargetOfferId;
   final sourceTransaction = beforeAckRows.first;
-  if (resultStatus == TransactionStatuses.unavailableOffer) {
+  if (resultStatus == TransactionStatuses.unavailableOffer || isSecondAttempt) {
     // The origin transaction carries the configured target offer association.
     final amount =
         int.tryParse(sourceTransaction['amount']?.toString() ?? '') ?? 0;
     unavailableAmount = amount;
     final controller = TransactionController();
-    final storedTargetOfferId =
-        int.tryParse(sourceTransaction['targetOfferId']?.toString() ?? '');
+    // A Second Attempt target comes only from its own reply.
+    final storedTargetOfferId = isSecondAttempt
+        ? null
+        : int.tryParse(sourceTransaction['targetOfferId']?.toString() ?? '');
     final configuredTarget = storedTargetOfferId != null
         ? (
             id: storedTargetOfferId,
             amount: await controller.getOfferAmountById(storedTargetOfferId),
           )
-        : await controller.findConfiguredUnavailableTarget(amount);
+        : await controller.findConfiguredTopUpTarget(resultStatus, amount);
     resolvedTargetOfferId = configuredTarget?.id ?? storedTargetOfferId;
     final resolvedTargetAmount = configuredTarget?.amount;
     final requiredAmount = calculateRequiredTopUp(amount, resolvedTargetAmount);
     final hasReply = await controller.hasConfiguredReplyFor(
-      TransactionStatuses.unavailableOffer,
+      resultStatus,
       amount,
     );
     if (requiredAmount != null && hasReply) {
       awaitingTopUp = true;
       targetAmount = resolvedTargetAmount;
       requiredTopUp = requiredAmount;
+    } else if (isSecondAttempt) {
+      // No target offer: the customer adds whatever the operator asked
+      // for, and the sum is forwarded as a new amount.
+      awaitingTopUp = true;
     }
 
     unavailableNumber =
@@ -1763,24 +1840,40 @@ Future<void> handleForwardedSmsAcknowledgement(
       // inactive. A later confirmation from Phone B still upgrades it.
       'status': resultStatus == TransactionStatuses.hasOkoa
           ? TransactionStatuses.hasOkoa
-          : awaitingTopUp
-              ? TransactionStatuses.forwardedPending
-              : TransactionStatuses.forwardedConfirmed,
+          : isSecondAttempt
+              ? TransactionStatuses.secondAttempt
+              : awaitingTopUp
+                  ? TransactionStatuses.forwardedPending
+                  : TransactionStatuses.forwardedConfirmed,
       'canRetry': 0,
       'awaitingTopUp': awaitingTopUp ? 1 : 0,
       'requiredTopUp': requiredTopUp,
       'targetAmount': targetAmount,
       if (resolvedTargetOfferId != null) 'targetOfferId': resolvedTargetOfferId,
+      // The top-up is forwarded as a new job; remember this one so Phone B
+      // can be told when the combined amount completes.
+      if (isSecondAttempt) ...{
+        'pataMoreJobId': forwardingJobId,
+        'pataMoreDeviceName':
+            sourceTransaction['forwardingRecipientDeviceName'],
+        'pataMoreTransport': sourceTransaction['forwardingTransport'],
+      },
     },
     // Only correlated rows; a row already forwarded-confirmed is terminal and
-    // is not changed by a late or repeated confirmation.
+    // is not changed by a late or repeated confirmation. A Second Attempt
+    // report applies once, to a job still pending.
     'forwardingJobId = ? AND id IN '
         '(${List.filled(beforeAckRows.length, '?').join(', ')}) '
-        'AND status != ?',
+        '${isSecondAttempt ? 'AND status IN (?, ?, ?)' : 'AND status != ?'}',
     [
       forwardingJobId,
       ...beforeAckRows.map((row) => row['id']),
-      TransactionStatuses.forwardedConfirmed,
+      if (isSecondAttempt) ...[
+        TransactionStatuses.forwardedPending,
+        TransactionStatuses.forwardedOnline,
+        TransactionStatuses.forwarded,
+      ] else
+        TransactionStatuses.forwardedConfirmed,
     ],
     'transactions',
   );
@@ -1797,15 +1890,28 @@ Future<void> handleForwardedSmsAcknowledgement(
   );
 
   if (updatedRows > 0 &&
-      resultStatus == TransactionStatuses.unavailableOffer &&
+      (resultStatus == TransactionStatuses.unavailableOffer ||
+          isSecondAttempt) &&
       unavailableNumber != null) {
     await TransactionController().processReply(
       unavailableNumber,
-      TransactionStatuses.unavailableOffer,
+      resultStatus,
       unavailableFirstName,
       unavailableLastName,
       unavailableAmount,
     );
+  }
+
+  // A confirmed combined (topped-up) amount completes the forwarded Second
+  // Attempt it replaced. Also run for a repeated confirmation, in case the
+  // first one was interrupted; it is idempotent.
+  if (resultStatus != TransactionStatuses.hasOkoa &&
+      resultStatus != TransactionStatuses.unavailableOffer &&
+      !isSecondAttempt) {
+    final controller = TransactionController();
+    for (final row in beforeAckRows) {
+      await controller.completePataMoreFor(row, forwardingJobId);
+    }
   }
 
   // Send a receipt after the update (including idempotent duplicate delivery).

@@ -78,6 +78,10 @@ class TransactionStatuses {
       "transaction-alternative-delivery-pending";
   static const successfulPending = 'successful-pending';
 
+  /// A forwarded Second Attempt that the customer topped up and that was
+  /// then completed by another paired device (the combined amount).
+  static const pataMore = 'transaction-pata-more';
+
   static const doneMap = {0: done};
   static const errorMap = {1: error};
   static const secondAttemptMap = {2: secondAttempt};

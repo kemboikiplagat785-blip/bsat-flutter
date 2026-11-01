@@ -174,6 +174,15 @@ Widget transactionListItem(
                   fontSize: 14,
                 ),
               ),
+            if (status == TransactionStatuses.pataMore)
+              const Text(
+                'Pata More',
+                style: TextStyle(
+                  color: Color(0xFF00FF88),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
             const SizedBox(height: kPagePadding / 3),
             Text(
               displayReply,

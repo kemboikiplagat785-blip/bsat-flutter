@@ -130,8 +130,7 @@ class SQLiteService {
   /// arrived over the Internet; only the run that adds the column marks them.
   Future<void> _addInboundJobTransportColumn(DatabaseExecutor db) async {
     final columns = await db.rawQuery('PRAGMA table_info("forwardedSmsJobs")');
-    if (columns.isEmpty ||
-        columns.any((row) => row['name'] == 'transport')) {
+    if (columns.isEmpty || columns.any((row) => row['name'] == 'transport')) {
       return;
     }
     await db.execute(
@@ -193,6 +192,15 @@ class SQLiteService {
         'alternativeRequestCode': 'TEXT',
         'alternativeRequestIsAdvanced': 'INTEGER',
         'alternativeDeliveryNextAttemptAt': 'INTEGER',
+        // Phone A: the Second Attempt job on Phone B that a top-up replaced,
+        // and the delivery of its "Pata More" notice once the combined
+        // amount is confirmed.
+        'pataMoreJobId': 'TEXT',
+        'pataMoreDeviceName': 'TEXT',
+        'pataMoreTransport': 'TEXT',
+        'pataMoreState': 'TEXT',
+        'pataMoreAttempt': 'INTEGER NOT NULL DEFAULT 0',
+        'pataMoreNextAttemptAt': 'INTEGER',
       },
       'ussdCodeVariants': {
         'alternativeUssdCode': 'TEXT',
@@ -447,6 +455,10 @@ class SQLiteService {
       // Transport the request arrived on; its result goes back the same
       // way. NULL (every job before LAN alternatives) is Online.
       'transport': 'TEXT',
+      // A failed attempt is dialed again at retryAt instead of being
+      // reported; retryAttempt counts those retries.
+      'retryAttempt': 'INTEGER NOT NULL DEFAULT 0',
+      'retryAt': 'INTEGER',
     }.entries) {
       if (!existingAlternativeJobColumns.contains(definition.key)) {
         await db.execute(
@@ -1438,7 +1450,8 @@ class SQLiteService {
   }
 
   /// Marks a pairing revoked. Every later session with that key is refused.
-  Future<int> revokeLanPeer(String fingerprint, {required int revokedAt}) async {
+  Future<int> revokeLanPeer(String fingerprint,
+      {required int revokedAt}) async {
     final db = await database;
     return db.update(
       'lanPeers',
@@ -2488,11 +2501,18 @@ class SQLiteService {
     return queryCustom(
       'transactions',
       '''
-        (status = ?
+        ((status = ?
           AND COALESCE(retryState, 'ready') NOT IN ('claimed', 'dispatching'))
         OR
         (status = ? AND date = ? AND canRetry < ?
-          AND COALESCE(retryState, 'ready') = 'ready')
+          AND COALESCE(retryState, 'ready') = 'ready'))
+        -- An alternative this device ran for another device is retried
+        -- with its alternative code by the alternative job, never here.
+        AND NOT EXISTS (
+          SELECT 1 FROM alternativeJobs j
+          WHERE COALESCE(transactions.forwardingJobId, '') != ''
+            AND j.forwardingJobId = transactions.forwardingJobId
+        )
       ''',
       [
         TransactionStatuses.error,

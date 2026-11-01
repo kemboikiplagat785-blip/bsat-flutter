@@ -65,6 +65,13 @@ enum LanMessageKind {
 
   /// Phone A to Phone C (reply only): receipt of that result.
   alternativeResultReceipt,
+
+  /// Phone A to Phone B: a Second Attempt was completed by another device
+  /// after the customer topped up (`forwarded_sms_pata_more`).
+  pataMoreNotice,
+
+  /// Phone B to Phone A (reply only): receipt of that notice.
+  pataMoreReceipt,
 }
 
 final RegExp _jobIdPattern = RegExp(r'^[A-Za-z0-9_\-]{4,128}$');
@@ -119,6 +126,14 @@ const Map<LanMessageKind, Set<String>> _requiredKeys = {
     'recipientDeviceName',
   },
   LanMessageKind.alternativeResultReceipt: _messageAckRequiredKeys,
+  LanMessageKind.pataMoreNotice: {
+    'type',
+    'status',
+    'forwardingJobId',
+    'senderDeviceName',
+    'recipientDeviceName',
+  },
+  LanMessageKind.pataMoreReceipt: _messageAckRequiredKeys,
 };
 
 const Set<String> _messageAckRequiredKeys = {
@@ -160,6 +175,8 @@ const Map<LanMessageKind, Set<String>> _optionalKeys = {
   LanMessageKind.alternativeRequestReceipt: _messageAckOptionalKeys,
   LanMessageKind.alternativeResult: {'ussdReply'},
   LanMessageKind.alternativeResultReceipt: _messageAckOptionalKeys,
+  LanMessageKind.pataMoreNotice: {'transactionId', 'body', 'title'},
+  LanMessageKind.pataMoreReceipt: _messageAckOptionalKeys,
 };
 
 /// Free-text fields: as long as a body, and may contain line breaks.
@@ -193,6 +210,12 @@ LanMessageKind? lanMessageKindOf(Map<String, Object?> data) {
       data['originalType'] == 'forwarded_alt_result') {
     return LanMessageKind.alternativeResultReceipt;
   }
+  if (type == 'forwarded_sms_pata_more') return LanMessageKind.pataMoreNotice;
+  if (type == 'MESSAGE_ACK' &&
+      ackKind == 'pata_more_received' &&
+      data['originalType'] == 'forwarded_sms_pata_more') {
+    return LanMessageKind.pataMoreReceipt;
+  }
   return null;
 }
 
@@ -203,6 +226,7 @@ const Set<LanMessageKind> lanRequestKinds = {
   LanMessageKind.confirmationReceipt,
   LanMessageKind.alternativeRequest,
   LanMessageKind.alternativeResult,
+  LanMessageKind.pataMoreNotice,
 };
 
 /// Kinds a server may send as a reply to [request].
@@ -218,6 +242,7 @@ Set<LanMessageKind> lanReplyKindsFor(LanMessageKind request) =>
       LanMessageKind.alternativeResult => {
           LanMessageKind.alternativeResultReceipt,
         },
+      LanMessageKind.pataMoreNotice => {LanMessageKind.pataMoreReceipt},
       _ => const {},
     };
 

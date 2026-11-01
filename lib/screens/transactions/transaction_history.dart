@@ -70,7 +70,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _pausedCount = 0,
       _advancedCount = 0,
       _okoaCount = 0,
-      _maskedCount = 0;
+      _maskedCount = 0,
+      _pataMoreCount = 0;
 
   final _pagingController = PagingController<int, dynamic>(firstPageKey: 0);
   final _searchBarController = TextEditingController();
@@ -126,6 +127,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       count(TransactionCategory.okoa),
       count(TransactionCategory.advanced),
       count(TransactionCategory.masked),
+      count(TransactionCategory.pataMore),
     ]);
 
     if (!mounted) return;
@@ -143,6 +145,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _okoaCount = results[10];
       _advancedCount = results[11];
       _maskedCount = results[12];
+      _pataMoreCount = results[13];
     });
   }
 
@@ -1091,6 +1094,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               _secondAttemptCount,
               kWarningColor,
               'Second Attempt'),
+          const SizedBox(width: 8),
+          _tool(
+              TransactionStatuses.pataMore,
+              const Icon(Icons.add_card, color: kPrimaryColor, size: 14),
+              _pataMoreCount,
+              kPrimaryColor,
+              'Pata More'),
           const SizedBox(width: 8),
           _tool(
               TransactionStatuses.paused,

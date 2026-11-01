@@ -564,6 +564,14 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 'accentColor': kWarningColor,
                               },
                               {
+                                'count': vm.pataMoreCount,
+                                'icon': const Icon(Icons.add_card,
+                                    color: kPrimaryColor, size: 14),
+                                'query': TransactionStatuses.pataMore,
+                                'label': 'Pata More',
+                                'accentColor': kPrimaryColor,
+                              },
+                              {
                                 'count': vm.pausedCount,
                                 'icon': Icon(CupertinoIcons.pause_circle_fill,
                                     color: Theme.of(context).hintColor,

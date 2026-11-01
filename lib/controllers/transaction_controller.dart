@@ -137,6 +137,7 @@ class TransactionController {
         (_) async {
           await _retryPendingForwardingConfirmations();
           await _retryPendingForwardingDeliveries();
+          await _retryPendingPataMoreNotices();
           await resolveInactiveLineFailures();
         },
       );
@@ -158,7 +159,9 @@ class TransactionController {
           transactionId == null ||
           recipient.isEmpty ||
           message.isEmpty ||
-          sender.isEmpty) continue;
+          sender.isEmpty) {
+        continue;
+      }
       // A retry uses the job's persisted transport; the destination's current
       // preference is not consulted. A job without one is never sent.
       final jobTransport = row['forwardingTransport'];
@@ -473,6 +476,223 @@ class TransactionController {
       attempt: 1,
       resultStatus: TransactionStatuses.doneConfirmed,
     );
+  }
+
+  /// Phone A: [confirmedRow] was just confirmed by forwarding job
+  /// [confirmingJobId]. When it is the combined (topped-up) transaction of a
+  /// forwarded Second Attempt, that original moves to Pata More here and the
+  /// device that reported the Second Attempt is told to do the same.
+  /// Idempotent: a repeated confirmation queues nothing new.
+  Future<void> completePataMoreFor(
+    Map<String, dynamic> confirmedRow,
+    String confirmingJobId,
+  ) async {
+    final confirmedId = int.tryParse(confirmedRow['id']?.toString() ?? '');
+    if (confirmedId == null) return;
+    final current = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [confirmedId],
+      columns: ['status', 'parentTransactionId'],
+      limit: 1,
+    );
+    if (current.firstOrNull?['status'] !=
+        TransactionStatuses.forwardedConfirmed) {
+      return;
+    }
+    final parentId =
+        int.tryParse(current.first['parentTransactionId']?.toString() ?? '');
+    final candidateIds = {confirmedId, if (parentId != null) parentId};
+    // A confirmation of the Second Attempt job itself (Phone B succeeded
+    // after all) is not a Pata More.
+    final originals = await _sqliteService.queryCustom(
+      'transactions',
+      'id IN (${candidateIds.join(',')}) AND '
+          "COALESCE(pataMoreJobId, '') NOT IN ('', ?) AND pataMoreState IS NULL",
+      [confirmingJobId],
+      columns: ['id'],
+    );
+    for (final original in originals) {
+      final claimed = await _sqliteService.updateStuff(
+        {
+          'status': TransactionStatuses.pataMore,
+          'awaitingTopUp': 0,
+          'canRetry': 0,
+          'pataMoreState': 'pending',
+          'pataMoreAttempt': 0,
+          'pataMoreNextAttemptAt': 0,
+        },
+        'id = ? AND pataMoreState IS NULL',
+        [original['id']],
+        'transactions',
+      );
+      debugPrint(
+        'PATA MORE: original=${original['id']} completed by '
+        'job=$confirmingJobId, claimed=$claimed',
+      );
+    }
+    if (originals.isNotEmpty) await _retryPendingPataMoreNotices();
+  }
+
+  static const _pataMoreRetrySeconds = [5, 15, 30, 60, 120, 300];
+  static const _pataMoreMaxAttempts = 24;
+
+  Future<void> _retryPendingPataMoreNotices() async {
+    final due = await _sqliteService.queryCustom(
+      'transactions',
+      "pataMoreState = 'pending' AND COALESCE(pataMoreNextAttemptAt, 0) <= ?",
+      [DateTime.now().millisecondsSinceEpoch],
+      columns: [
+        'id',
+        'transactionId',
+        'pataMoreJobId',
+        'pataMoreDeviceName',
+        'pataMoreTransport',
+        'pataMoreAttempt',
+      ],
+    );
+    for (final row in due) {
+      await _deliverPataMoreNotice(row);
+    }
+  }
+
+  /// Sends one Pata More notice over the transport of the Second Attempt job
+  /// it is about, then schedules the next attempt until a receipt arrives.
+  Future<void> _deliverPataMoreNotice(Map<String, dynamic> row) async {
+    final jobId = row['pataMoreJobId']?.toString() ?? '';
+    final recipient = row['pataMoreDeviceName']?.toString() ?? '';
+    final sender = await forwardingDeviceName() ?? '';
+    // A job stored before transports were recorded is Online.
+    final transport = _transportForJob(row['pataMoreTransport'] ?? 'online');
+    if (jobId.isNotEmpty &&
+        recipient.isNotEmpty &&
+        sender.isNotEmpty &&
+        transport != null) {
+      try {
+        final result = await transport.submit(ForwardingSubmission({
+          'title': 'BSAT Online Forwarding',
+          'body': 'Second Attempt completed after top-up',
+          'senderDeviceName': sender,
+          'recipientDeviceName': recipient,
+          'data': {
+            'type': 'forwarded_sms_pata_more',
+            'status': TransactionStatuses.pataMore,
+            'forwardingJobId': jobId,
+            'transactionId': row['transactionId']?.toString() ?? '',
+            'senderDeviceName': sender,
+            'recipientDeviceName': recipient,
+          },
+        }));
+        debugPrint(
+          'PATA MORE NOTICE SENT: job=$jobId to=$recipient '
+          'result=${result.details}',
+        );
+      } catch (e) {
+        debugPrint('PATA MORE NOTICE FAILED: job=$jobId error=$e');
+      }
+    }
+    final attempt =
+        (int.tryParse(row['pataMoreAttempt']?.toString() ?? '') ?? 0) + 1;
+    final delay = _pataMoreRetrySeconds[
+        (attempt - 1).clamp(0, _pataMoreRetrySeconds.length - 1).toInt()];
+    await _sqliteService.updateStuff(
+      {
+        'pataMoreAttempt': attempt,
+        'pataMoreNextAttemptAt':
+            DateTime.now().add(Duration(seconds: delay)).millisecondsSinceEpoch,
+        if (attempt >= _pataMoreMaxAttempts) 'pataMoreState': 'failed',
+      },
+      "id = ? AND pataMoreState = 'pending'",
+      [row['id']],
+      'transactions',
+    );
+  }
+
+  /// Phone A: Phone B received the Pata More notice for [forwardingJobId].
+  /// [lanSenderDeviceName] is the authenticated peer when it came over LAN.
+  Future<void> markPataMoreDelivered({
+    required String forwardingJobId,
+    required String ackSenderDeviceName,
+    required String ackRecipientDeviceName,
+    String? lanSenderDeviceName,
+  }) async {
+    final localDeviceName = await forwardingDeviceName() ?? '';
+    if (forwardingJobId.isEmpty ||
+        (localDeviceName.isNotEmpty &&
+            ackRecipientDeviceName != localDeviceName) ||
+        (lanSenderDeviceName != null &&
+            lanSenderDeviceName != ackSenderDeviceName)) {
+      debugPrint('PATA MORE RECEIPT ignored: job=$forwardingJobId');
+      return;
+    }
+    final transportCondition = lanSenderDeviceName != null
+        ? "pataMoreTransport = 'lan'"
+        : "COALESCE(pataMoreTransport, 'online') != 'lan'";
+    final updated = await _sqliteService.updateStuff(
+      {'pataMoreState': 'delivered', 'pataMoreNextAttemptAt': 0},
+      'pataMoreJobId = ? AND pataMoreDeviceName = ? AND '
+          "pataMoreState IN ('pending', 'failed') AND $transportCondition",
+      [forwardingJobId, ackSenderDeviceName],
+      'transactions',
+    );
+    debugPrint('PATA MORE RECEIPT: job=$forwardingJobId rows=$updated');
+  }
+
+  /// Phone B: the origin device says the Second Attempt of
+  /// [forwardingJobId] was completed elsewhere after the customer topped up.
+  /// Moves the row to Pata More. Returns whether the notice matched a job
+  /// this device received from [senderDeviceName]; a matched notice is
+  /// receipted, also when repeated. [lanSenderDeviceName] is the
+  /// authenticated peer when it came over LAN.
+  Future<bool> applyPataMoreNotice({
+    required String forwardingJobId,
+    required String senderDeviceName,
+    required String recipientDeviceName,
+    required String transactionId,
+    String? lanSenderDeviceName,
+  }) async {
+    final localDeviceName = await forwardingDeviceName() ?? '';
+    if (forwardingJobId.isEmpty ||
+        senderDeviceName.isEmpty ||
+        (localDeviceName.isNotEmpty &&
+            recipientDeviceName != localDeviceName)) {
+      return false;
+    }
+    // The notice comes over the transport the job arrived on.
+    final inbound =
+        await _sqliteService.getInboundForwardingTransport(forwardingJobId);
+    if (lanSenderDeviceName != null
+        ? inbound != 'lan' || lanSenderDeviceName != senderDeviceName
+        : inbound == 'lan') {
+      debugPrint('PATA MORE ignored: transport mismatch job=$forwardingJobId');
+      return false;
+    }
+    final rows = await _sqliteService.queryCustom(
+      'transactions',
+      'forwardingJobId = ? AND forwardingSenderDeviceName = ?',
+      [forwardingJobId, senderDeviceName],
+      columns: ['id', 'transactionId'],
+    );
+    final isLocalRowId = RegExp(r'^[1-9]\d*$').hasMatch(transactionId);
+    if (rows.isEmpty ||
+        (transactionId.isNotEmpty &&
+            !isLocalRowId &&
+            !rows.any((row) => row['transactionId'] == transactionId))) {
+      debugPrint('PATA MORE ignored: no matching job=$forwardingJobId');
+      return false;
+    }
+    final updated = await _sqliteService.updateStuff(
+      {
+        'status': TransactionStatuses.pataMore,
+        'canRetry': 0,
+        'timeStamp': DateTime.now().millisecondsSinceEpoch,
+      },
+      'forwardingJobId = ? AND forwardingSenderDeviceName = ? AND status = ?',
+      [forwardingJobId, senderDeviceName, TransactionStatuses.secondAttempt],
+      'transactions',
+    );
+    debugPrint('PATA MORE applied: job=$forwardingJobId rows=$updated');
+    return true;
   }
 
   /// Sends the result of an alternative request back over the transport the
@@ -1143,18 +1363,23 @@ class TransactionController {
       );
     }
 
+    if (parentTransactionId == null) {
+      await _fixOpenSecondAttemptTopUp(number, amount);
+    }
+
     // Match only by customer, exact required amount, and persisted awaiting
     // state. If two rows qualify, leave this payment to the normal pipeline.
     final topUpCandidates = parentTransactionId == null
         ? await _sqliteService.queryCustom(
             'transactions',
             'number = ? AND requiredTopUp = ? AND awaitingTopUp = 1 AND '
-                'status IN (?, ?)',
+                'status IN (?, ?, ?)',
             [
               number,
               amount,
               TransactionStatuses.unavailableOffer,
               TransactionStatuses.forwardedPending,
+              TransactionStatuses.secondAttempt,
             ],
           )
         : <Map<String, dynamic>>[];
@@ -2027,8 +2252,20 @@ class TransactionController {
     //   return;
     // }
 
-    if (requestResponse[1] != TransactionStatuses.unavailableOffer ||
-        forwardingJobId == null) {
+    // A forwarded Second Attempt with no alternative code stays here and is
+    // reported to the origin device, which replies to the customer and
+    // waits for the top-up.
+    final reportSecondAttemptToOrigin =
+        requestResponse[1] == TransactionStatuses.secondAttempt &&
+            await _shouldReportForwardedSecondAttempt(
+              forwardingJobId: forwardingJobId,
+              forwardingSenderDeviceName: forwardingSenderDeviceName,
+              amount: amount,
+            );
+
+    if ((requestResponse[1] != TransactionStatuses.unavailableOffer ||
+            forwardingJobId == null) &&
+        !reportSecondAttemptToOrigin) {
       await processReply(
         number,
         requestResponse[1],
@@ -2065,6 +2302,15 @@ class TransactionController {
         recipientDeviceName: forwardingSenderDeviceName,
         transactionId: mpesaCode,
         resultStatus: TransactionStatuses.unavailableOffer,
+      );
+    }
+
+    if (reportSecondAttemptToOrigin) {
+      await _sendForwardingConfirmation(
+        forwardingJobId: forwardingJobId!,
+        recipientDeviceName: forwardingSenderDeviceName!,
+        transactionId: mpesaCode,
+        resultStatus: TransactionStatuses.secondAttempt,
       );
     }
 
@@ -3292,7 +3538,11 @@ class TransactionController {
           'id = ? AND status = ? AND NOT EXISTS ('
               'SELECT 1 FROM forwardingDeliveryRetries '
               'WHERE forwardingJobId = ? AND acknowledged = 1)',
-          [transactionId, TransactionStatuses.forwardedPending, forwardingJobId],
+          [
+            transactionId,
+            TransactionStatuses.forwardedPending,
+            forwardingJobId
+          ],
           'transactions',
         );
       }
@@ -3312,7 +3562,8 @@ class TransactionController {
     List<Map<String, dynamic>> rawStuff = await _sqliteService.queryCustom(
       'transactions',
       'status IN (?, ?) AND number = ? AND timeStamp >= ? AND '
-          'COALESCE(awaitingTopUp, 0) != 1',
+          'COALESCE(awaitingTopUp, 0) != 1 AND '
+          "COALESCE(pataMoreJobId, '') = ''",
       [
         TransactionStatuses.secondAttempt,
         TransactionStatuses.unavailableOffer,
@@ -3380,6 +3631,73 @@ class TransactionController {
     ];
   }
 
+  /// Phone A: a forwarded Second Attempt with no target offer accepts a
+  /// top-up of any amount smaller than the original, from the same customer
+  /// within a day. The first such payment fixes the target at the sum, so
+  /// the exact top-up match then combines and forwards it.
+  Future<void> _fixOpenSecondAttemptTopUp(int number, int amount) async {
+    if (number <= 0 || amount <= 0) return;
+    final open = await _sqliteService.queryCustom(
+      'transactions',
+      'number = ? AND awaitingTopUp = 1 AND status = ? AND '
+          'requiredTopUp IS NULL AND amount > ? AND timeStamp >= ? AND '
+          "COALESCE(pataMoreJobId, '') != ''",
+      [
+        number,
+        TransactionStatuses.secondAttempt,
+        amount,
+        DateTime.now().millisecondsSinceEpoch -
+            const Duration(days: 1).inMilliseconds,
+      ],
+      columns: ['id', 'amount'],
+    );
+    // Ambiguous: leave the payment to the normal pipeline.
+    if (open.length != 1) return;
+    final original = int.tryParse(open.single['amount']?.toString() ?? '');
+    if (original == null) return;
+    final fixed = await _sqliteService.updateStuff(
+      {
+        'requiredTopUp': amount,
+        'targetAmount': combinedTransactionAmount(original, amount),
+      },
+      'id = ? AND awaitingTopUp = 1 AND requiredTopUp IS NULL',
+      [open.single['id']],
+      'transactions',
+    );
+    debugPrint(
+      'SECOND ATTEMPT TOP-UP: original=${open.single['id']} '
+      'topUp=$amount target=${original + amount} fixed=$fixed',
+    );
+  }
+
+  /// Whether the active variant of the offer for [amount] has an alternative
+  /// code, which then owns a Second Attempt.
+  Future<bool> _hasAlternativeCodeFor(int amount) async {
+    final offerRows = await _sqliteService.queryCustom(
+      'ussdCodes',
+      'amount = ?',
+      [amount],
+      limit: 1,
+    );
+    if (offerRows.isEmpty) return false;
+    final variant = await _getActiveVariantWithLegacyFallback(
+      offerRows.first['id'] ?? -1,
+    );
+    final alternative = variant?['alternativeUssdCode']?.toString();
+    return alternative != null && alternative.trim().isNotEmpty;
+  }
+
+  /// Phone B: a Second Attempt on a forwarded job is reported to the origin
+  /// device (Phone A) unless an alternative code will run for it.
+  Future<bool> _shouldReportForwardedSecondAttempt({
+    required String? forwardingJobId,
+    required String? forwardingSenderDeviceName,
+    required int amount,
+  }) async =>
+      (forwardingJobId?.isNotEmpty ?? false) &&
+      (forwardingSenderDeviceName?.isNotEmpty ?? false) &&
+      !await _hasAlternativeCodeFor(amount);
+
   Future<bool> hasConfiguredReplyFor(String status, int amount) async {
     final condition = TransactionStatuses.statuses.entries
         .where((entry) => entry.value == status)
@@ -3410,11 +3728,16 @@ class TransactionController {
 
   Future<({int id, int? amount})?> findConfiguredUnavailableTarget(
     int amount,
+  ) =>
+      findConfiguredTopUpTarget(TransactionStatuses.unavailableOffer, amount);
+
+  /// The target offer the [status] reply for [amount] asks the customer to
+  /// top up to (Unavailable Offer or Second Attempt), or null.
+  Future<({int id, int? amount})?> findConfiguredTopUpTarget(
+    String status,
+    int amount,
   ) async {
-    final reply = await _findReplyFor(
-      TransactionStatuses.unavailableOffer,
-      amount,
-    );
+    final reply = await _findReplyFor(status, amount);
     final offerId = int.tryParse(reply?['targetOfferId']?.toString() ?? '');
     if (offerId == null) return null;
     return (
@@ -3805,6 +4128,13 @@ class TransactionController {
         'Skipping primary retry for alternative terminal/in-progress '
         'transaction $id (${tx.first['status']}).',
       );
+      return;
+    }
+
+    // An alternative run for another device is dialed again with its
+    // alternative code, never the primary one.
+    if (tx.first['status'] == TransactionStatuses.error &&
+        await _retryAlternativeNow(tx.first)) {
       return;
     }
 
@@ -4398,6 +4728,21 @@ class TransactionController {
         transactionId: id.toString(),
       );
     }
+    if (response[1] == TransactionStatuses.secondAttempt &&
+        await _shouldReportForwardedSecondAttempt(
+          forwardingJobId: forwardingJobId,
+          forwardingSenderDeviceName: forwardingSenderDeviceName,
+          amount: transaction.amount,
+        )) {
+      // The origin device replies to the customer and waits for a top-up.
+      await _sendForwardingConfirmation(
+        forwardingJobId: forwardingJobId!,
+        recipientDeviceName: forwardingSenderDeviceName!,
+        transactionId: transaction.transactionId,
+        resultStatus: TransactionStatuses.secondAttempt,
+      );
+      return;
+    }
     if (response[1] == TransactionStatuses.error ||
         (canRetry < retryTimes &&
             response[1] == TransactionStatuses.secondAttempt)) {
@@ -4912,7 +5257,8 @@ class TransactionController {
         forwardingJobId != null &&
         forwardingJobId.isNotEmpty &&
         transactions.first['forwardingJobId']?.toString() == forwardingJobId) {
-      forwardingTransport = transactions.first['forwardingTransport']?.toString();
+      forwardingTransport =
+          transactions.first['forwardingTransport']?.toString();
     }
 
     if (transactions.isNotEmpty && id != null) {
@@ -5329,8 +5675,8 @@ class TransactionController {
       [target],
     );
     if (forwardingRows.isNotEmpty) {
-      return (await _forwardingTransportResolver
-              .resolve(ForwardingDestination.fromDeviceRow(forwardingRows.first)))
+      return (await _forwardingTransportResolver.resolve(
+              ForwardingDestination.fromDeviceRow(forwardingRows.first)))
           .selected;
     }
     final whitelistedRows = await _sqliteService.queryCustom(
@@ -5768,6 +6114,10 @@ class TransactionController {
       return;
     }
     if (state != 'reserved') return;
+    final retryAt = int.tryParse(job['retryAt']?.toString() ?? '');
+    if (retryAt != null && retryAt > DateTime.now().millisecondsSinceEpoch) {
+      return;
+    }
 
     final jobMessage = job['smsMessage']?.toString() ?? '';
     final jobAmount = getAmount(jobMessage);
@@ -5866,6 +6216,18 @@ class TransactionController {
         ? transactionRows.first['ussdReply']?.toString() ?? ''
         : 'Alternative execution returned without a durable transaction '
             'outcome; it was not automatically dialed again.';
+    if (insertedId != null) {
+      await _removePreviousAlternativeAttempt(job, insertedId);
+    }
+    if (insertedId != null &&
+        await _scheduleAlternativeRetry(
+          job: job,
+          localTransactionId: insertedId,
+          status: resultStatus,
+          ussdReply: resultReply,
+        )) {
+      return;
+    }
     final resultState = resultStatus == TransactionStatuses.alternativeAmbiguous
         ? 'ambiguous'
         : resultStatus == TransactionStatuses.successfulPending ||
@@ -5911,16 +6273,34 @@ class TransactionController {
   ) async {
     final forwardingJobId = job['forwardingJobId']?.toString() ?? '';
     if (forwardingJobId.isEmpty) return;
+    // Only a row of this attempt counts: an earlier failed attempt's row is
+    // no evidence of what the interrupted dial did.
+    final executionStartedAt =
+        int.tryParse(job['executionStartedAt']?.toString() ?? '') ?? 0;
     final existingTransactions = await _sqliteService.queryCustom(
       'transactions',
-      'forwardingJobId = ?',
-      [forwardingJobId],
+      'forwardingJobId = ? AND timeStamp >= ?',
+      [forwardingJobId, executionStartedAt],
       orderBy: 'timeStamp DESC',
       limit: 1,
     );
     if (existingTransactions.isNotEmpty) {
       final transaction = existingTransactions.first;
       final status = transaction['status']?.toString() ?? '';
+      final localTransactionId =
+          int.tryParse(transaction['id']?.toString() ?? '');
+      if (localTransactionId != null) {
+        await _removePreviousAlternativeAttempt(job, localTransactionId);
+      }
+      if (localTransactionId != null &&
+          await _scheduleAlternativeRetry(
+            job: job,
+            localTransactionId: localTransactionId,
+            status: status,
+            ussdReply: transaction['ussdReply']?.toString() ?? '',
+          )) {
+        return;
+      }
       final awaitingConfirmation =
           status == TransactionStatuses.successfulPending ||
               status == TransactionStatuses.advancedUssd;
@@ -5987,6 +6367,116 @@ class TransactionController {
         ussdReply: ambiguousReply,
       );
     }
+  }
+
+  /// Seconds before each retry of a failed alternative (about 1.6 hours in
+  /// all). After the last one the failure is reported to the requester, so
+  /// its queue to this device is not blocked for good.
+  static const _alternativeRetrySeconds = [
+    30, 60, 120, 300, 300, 600, 600, 900, 900, 1800, //
+  ];
+
+  /// A dialed alternative that did not go through (error, timeout, Second
+  /// Attempt or the like) and can be dialed again. Successes, attempts
+  /// awaiting confirmation and unknown outcomes are not.
+  bool _isRetryableAlternativeFailure(String status) =>
+      status.isNotEmpty &&
+      status != 'unknown' &&
+      status != TransactionStatuses.successfulPending &&
+      status != TransactionStatuses.advancedUssd &&
+      status != TransactionStatuses.doneConfirmed &&
+      status != TransactionStatuses.done &&
+      status != TransactionStatuses.alternativeAmbiguous;
+
+  /// Phone C: a failed alternative is not reported to the device that asked
+  /// for it; the job goes back to `reserved` and is dialed again after the
+  /// next delay. Its row shows as an error until then. False once the
+  /// retries are used up (the failure is then reported as before).
+  Future<bool> _scheduleAlternativeRetry({
+    required Map<String, dynamic> job,
+    required int localTransactionId,
+    required String status,
+    required String ussdReply,
+  }) async {
+    if (!_isRetryableAlternativeFailure(status)) return false;
+    final forwardingJobId = job['forwardingJobId']?.toString() ?? '';
+    final retryAttempt =
+        int.tryParse(job['retryAttempt']?.toString() ?? '') ?? 0;
+    if (forwardingJobId.isEmpty ||
+        retryAttempt >= _alternativeRetrySeconds.length) {
+      return false;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final retryAt = now +
+        _alternativeRetrySeconds[retryAttempt] * Duration.millisecondsPerSecond;
+    final updated = await _sqliteService.updateAlternativeJob(
+      forwardingJobId,
+      {
+        'state': 'reserved',
+        'localTransactionId': localTransactionId,
+        'retryAttempt': retryAttempt + 1,
+        'retryAt': retryAt,
+        'ussdReply': ussdReply,
+        'updatedAt': now,
+      },
+      expectedState: 'executing',
+    );
+    if (updated != 1) return false;
+    // Error, not Second Attempt or the like, so no other retry or
+    // alternative logic picks the row up.
+    await _sqliteService.updateStuff(
+      {'status': TransactionStatuses.error, 'canRetry': 0},
+      'id = ? AND status = ?',
+      [localTransactionId, status],
+      'transactions',
+    );
+    debugPrint(
+      'ALT RETRY: job=$forwardingJobId status=$status not reported; '
+      'retry ${retryAttempt + 1}/${_alternativeRetrySeconds.length} '
+      'in ${_alternativeRetrySeconds[retryAttempt]}s',
+    );
+    return true;
+  }
+
+  /// Phone C: once a retry of an alternative is recorded, the error row of
+  /// the attempt before it is removed, so the job shows as one transaction.
+  Future<void> _removePreviousAlternativeAttempt(
+    Map<String, dynamic> job,
+    int localTransactionId,
+  ) async {
+    final previousId =
+        int.tryParse(job['localTransactionId']?.toString() ?? '');
+    final retryAttempt =
+        int.tryParse(job['retryAttempt']?.toString() ?? '') ?? 0;
+    if (retryAttempt == 0 ||
+        previousId == null ||
+        previousId == localTransactionId) {
+      return;
+    }
+    await _sqliteService.deleteWhere(
+      'transactions',
+      'id = ? AND forwardingJobId = ? AND status = ?',
+      [previousId, job['forwardingJobId'], TransactionStatuses.error],
+    );
+  }
+
+  /// Phone C: a manual retry of an alternative's error row dials the
+  /// alternative again now instead of the primary code. True when [row]
+  /// belongs to such a job.
+  Future<bool> _retryAlternativeNow(Map<String, dynamic> row) async {
+    final forwardingJobId = row['forwardingJobId']?.toString() ?? '';
+    if (forwardingJobId.isEmpty) return false;
+    final job = await _sqliteService.getAlternativeJob(forwardingJobId);
+    if (job == null) return false;
+    if (job['state'] == 'reserved') {
+      await _sqliteService.updateAlternativeJob(
+        forwardingJobId,
+        {'retryAt': 0},
+        expectedState: 'reserved',
+      );
+      await processReservedAlternativeRequest(forwardingJobId);
+    }
+    return true;
   }
 
   Future<void> _resumeReservedAlternativeRequests() async {
@@ -7073,12 +7563,13 @@ class TransactionController {
       for (final row in failureRows)
         InactiveLineFailure(
           id: row['id'] as int,
-          smsTimestamp: int.tryParse(row['smsTimestamp']?.toString() ?? '') ?? 0,
+          smsTimestamp:
+              int.tryParse(row['smsTimestamp']?.toString() ?? '') ?? 0,
           simSubId: int.tryParse(row['simSubId']?.toString() ?? ''),
         ),
     ];
-    final earliest = failures.first.smsTimestamp -
-        inactiveLineFailureWindow.inMilliseconds;
+    final earliest =
+        failures.first.smsTimestamp - inactiveLineFailureWindow.inMilliseconds;
     final pendingRows = await _sqliteService.queryCustom(
       'transactions',
       'status = ? AND (timeStamp >= ? OR retryStartedAt >= ?)',
@@ -7110,9 +7601,8 @@ class TransactionController {
         ),
     ];
 
-    for (final (failureId, transactionId)
-        in matchInactiveLineFailures(
-            failures: failures, pending: pending, now: now)) {
+    for (final (failureId, transactionId) in matchInactiveLineFailures(
+        failures: failures, pending: pending, now: now)) {
       final assigned = await _sqliteService.assignInactiveLineFailure(
         failureId: failureId,
         transactionId: transactionId,

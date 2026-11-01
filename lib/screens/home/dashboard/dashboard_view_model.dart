@@ -57,6 +57,7 @@ class DashboardViewModel extends ChangeNotifier {
   int okoaCount = 0;
   int blacklistedCount = 0;
   int maskedCount = 0;
+  int pataMoreCount = 0;
 
   KillswitchConfig? killswitchConfig;
 
@@ -145,6 +146,7 @@ class DashboardViewModel extends ChangeNotifier {
     okoaCount = await count(TransactionCategory.okoa);
     blacklistedCount = await count(TransactionCategory.blacklisted);
     maskedCount = await count(TransactionCategory.masked);
+    pataMoreCount = await count(TransactionCategory.pataMore);
 
     final todays = await _sqliteService.queryDay(
       'transactions',

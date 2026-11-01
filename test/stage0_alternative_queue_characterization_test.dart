@@ -236,7 +236,8 @@ void main() {
           jobId: 'J1', rowId: t1, status: TransactionStatuses.doneConfirmed)));
 
       final r1 = await row(t1);
-      expect(r1['status'], TransactionStatuses.doneConfirmed);
+      // The alternative is the transaction's Second Attempt: Pata More.
+      expect(r1['status'], TransactionStatuses.pataMore);
       expect(r1['alternativeQueueState'], 'released');
       expect((await row(t2))['alternativeQueueState'], 'active');
 

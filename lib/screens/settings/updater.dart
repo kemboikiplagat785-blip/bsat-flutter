@@ -36,7 +36,7 @@ class _ApkDownloaderPageState extends State<ApkDownloaderPage> {
     try {
       Dio dio = Dio();
       final response =
-          await dio.get('https://api.bsat.co.ke/api/devices/app-config');
+          await dio.get('https://api.$kBaseAppUrl/api/devices/app-config');
       final data = response.data;
       if (mounted) {
         setState(() {
@@ -92,7 +92,7 @@ class _ApkDownloaderPageState extends State<ApkDownloaderPage> {
       if (archType.contains("armeabi")) archType = "armeabi-v7a";
 
       final String apkUrl =
-          "https://api.bsat.co.ke/api/general/download-app?arch_type=$archType";
+          "https://api.$kBaseAppUrl/api/general/download-app?arch_type=$archType";
 
       // 2. Get the temporary directory of the device
       Directory tempDir = await getTemporaryDirectory();

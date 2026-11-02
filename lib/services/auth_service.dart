@@ -3,9 +3,11 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
+import 'package:bsat/utils/constants.dart';
 
 class AuthService {
-  final String baseUrl = 'https://api.bsat.co.ke'; // Replace with your API URL
+  final String baseUrl =
+      'https://api.$kBaseAppUrl'; // Replace with your API URL
   final SharedPreferencesService _prefs = SharedPreferencesService();
 
   // ping to check if phone is online

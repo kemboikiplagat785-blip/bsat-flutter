@@ -2,10 +2,11 @@ import 'dart:convert';
 import 'package:bsat/services/auth_service.dart';
 import 'package:bsat/utils/logger.dart';
 import 'package:http/http.dart' as http;
+import 'package:bsat/utils/constants.dart';
 
 class BackendService {
   final AuthService _authService = AuthService();
-  final String baseUrl = 'https://api.bsat.co.ke'; // Same as AuthService
+  final String baseUrl = "https://api.$kBaseAppUrl"; // Same as AuthService
   final _log = BsatLogger(tag: 'BackendService');
 
   /// Generic GET request
@@ -25,7 +26,8 @@ class BackendService {
   }
 
   /// Generic POST request
-  Future<Map<String, dynamic>> post(String endpoint, {Map<String, dynamic>? body}) async {
+  Future<Map<String, dynamic>> post(String endpoint,
+      {Map<String, dynamic>? body}) async {
     _log.info('POST request to $endpoint', body);
     try {
       final response = await _authService.authenticatedRequest(
@@ -42,7 +44,8 @@ class BackendService {
   }
 
   /// Generic PUT request
-  Future<Map<String, dynamic>> put(String endpoint, {Map<String, dynamic>? body}) async {
+  Future<Map<String, dynamic>> put(String endpoint,
+      {Map<String, dynamic>? body}) async {
     _log.info('PUT request to $endpoint', body);
     try {
       final response = await _authService.authenticatedRequest(
@@ -88,10 +91,8 @@ class BackendService {
           'statusCode': response.statusCode,
         };
       } else {
-        _log.warn('$context failed', {
-          'status': response.statusCode,
-          'body': body
-        });
+        _log.warn(
+            '$context failed', {'status': response.statusCode, 'body': body});
         return {
           'success': false,
           'message': body['message'] ?? 'Request failed',
@@ -100,7 +101,8 @@ class BackendService {
         };
       }
     } catch (e) {
-      _log.error('$context - Failed to parse response', {'body': response.body, 'error': e});
+      _log.error('$context - Failed to parse response',
+          {'body': response.body, 'error': e});
       return {
         'success': false,
         'message': 'Failed to parse response: ${response.body}',

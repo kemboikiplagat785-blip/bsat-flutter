@@ -44,7 +44,7 @@ class _SendMessagePageState extends State<SendMessagePage> {
     //   // Use `http://192.168.x.x:3000/send` for real device over Wi-Fi
 
     //   // We'll assume successful ADB reverse mapping for real Android devices
-    //   const String serverUrl = 'http://api.bsat.co.ke/api/fcm/send';
+    //   const String serverUrl = 'http://api.$kBaseUrl/api/fcm/send';
 
     //   final response = await http.post(
     //     Uri.parse(serverUrl),

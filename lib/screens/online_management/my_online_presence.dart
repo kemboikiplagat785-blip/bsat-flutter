@@ -132,7 +132,7 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
               children: [
                 const Icon(CupertinoIcons.link, size: 18, color: kPrimaryColor),
                 const SizedBox(width: 12),
-                const Text('bingwa.bsat.co.ke/',
+                const Text('bingwa.$kBaseAppUrl/',
                     style: TextStyle(fontSize: 14)),
                 Expanded(
                   child: TextField(
@@ -165,7 +165,7 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(
                           text:
-                              'https://bingwa.bsat.co.ke/${_linkController.text}'));
+                              'https://bingwa.$kBaseAppUrl/${_linkController.text}'));
                       ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Link copied')));
                     },

@@ -89,6 +89,46 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.1"
+  camera:
+    dependency: "direct main"
+    description:
+      name: camera
+      sha256: "4a0863bc142f6fbfdca19161205574fd8a8f00d4753b48d214c4dfbdcc534c51"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.12.2"
+  camera_android_camerax:
+    dependency: transitive
+    description:
+      name: camera_android_camerax
+      sha256: faf885ca8140f22df8dc05d1839afc702d0329dd9b0b2f0bc6f9b05f3f20e10c
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.7.6"
+  camera_avfoundation:
+    dependency: transitive
+    description:
+      name: camera_avfoundation
+      sha256: "971f7b4938ae761797dd667c078af92f1b6a1bb7760774c0cbcf9c9d4a14bdf1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.11.1"
+  camera_platform_interface:
+    dependency: transitive
+    description:
+      name: camera_platform_interface
+      sha256: b3083b183ef1daa408d5f0c98c8c7ac0325b490695fb4557ff4210fcf04c5984
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.15.0"
+  camera_web:
+    dependency: transitive
+    description:
+      name: camera_web
+      sha256: "45063367478a53aa6f2d6e8a53b70fce3499f2b1e98d294c9e71c72bcd20ebf0"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.5+7"
   characters:
     dependency: transitive
     description:
@@ -161,6 +201,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.7"
+  cryptography:
+    dependency: "direct main"
+    description:
+      name: cryptography
+      sha256: "3eda3029d34ec9095a27a198ac9785630fe525c0eb6a49f3d575272f8e792ef0"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.9.0"
   csslib:
     dependency: transitive
     description:
@@ -1096,6 +1144,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.26.0"
+  qr:
+    dependency: "direct main"
+    description:
+      name: qr
+      sha256: "5adccca7f0274326125fcdbf97328f5d6b1b2d7fb8a52a01cef9f40d96a759d9"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.0.0"
   record_use:
     dependency: transitive
     description:
@@ -1325,6 +1381,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.4"
+  stream_transform:
+    dependency: transitive
+    description:
+      name: stream_transform
+      sha256: a00e5f18bffc764f923e7dec1038527f7fe7a1791361a7117f0358193f13d53a
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.2"
   string_scanner:
     dependency: transitive
     description:
@@ -1654,7 +1718,7 @@ packages:
     source: hosted
     version: "3.1.4"
   zxing2:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: zxing2
       sha256: "2677c49a3b9ca9457cb1d294fd4bd5041cac6aab8cdb07b216ba4e98945c684f"

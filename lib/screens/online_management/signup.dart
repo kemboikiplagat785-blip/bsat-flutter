@@ -112,7 +112,7 @@ class _SignupPageState extends State<SignupPage> {
                           ),
                           child: Row(
                             children: [
-                              const Text('bingwa.bsat.co.ke/'),
+                              const Text('bingwa.$kBaseAppUrl/'),
                               Expanded(
                                 child: _buildTextField(
                                   'Link url',

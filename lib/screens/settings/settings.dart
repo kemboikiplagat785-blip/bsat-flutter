@@ -370,7 +370,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     builder: (context) =>
                         // KillswitchScreen(
                         //   config: KillswitchConfig(
-                        //     updateUrl: 'https://api.bsat.co.ke/api/general/download-app?arch_type=$arch',
+                        //     updateUrl: 'https://api.$kBaseUrl/api/general/download-app?arch_type=$arch',
                         //     message: '',
                         //     daysRemaining: 1000,
                         //     enforcement: KillswitchEnforcement.safe,

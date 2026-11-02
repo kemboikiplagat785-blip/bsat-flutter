@@ -4,6 +4,7 @@ import 'package:pub_semver/pub_semver.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:bsat/utils/constants.dart';
 
 enum KillswitchEnforcement { safe, softKill, hardKill, offlineLockout }
 
@@ -23,8 +24,7 @@ class KillswitchConfig {
 
 class AdminManagementService {
   static const String _configUrl =
-      'https://api.bsat.co.ke/api/devices/app-config';
-
+      'https://api.$kBaseAppUrl/api/devices/app-config';
 
   // Shared Preference key for the phone numbers
   String phonesPrefsKey = 'admin_phone_numbers';
@@ -86,7 +86,8 @@ class AdminManagementService {
         // Replace 'admin_phone_numbers' with the actual JSON key your API returns
         if (data['admin_phone_numbers'] != null) {
           // Safely convert the dynamic JSON list to a List<String>
-          List<String> fetchedNumbers = List<String>.from(data['admin_phone_numbers']);
+          List<String> fetchedNumbers =
+              List<String>.from(data['admin_phone_numbers']);
           await setPhoneNumbers(fetchedNumbers);
         }
 

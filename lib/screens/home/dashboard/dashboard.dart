@@ -681,6 +681,12 @@ class _DashBoardPageState extends State<DashBoardPage>
                                 vm.recentTransactions[0]['canRetry'] ?? 0,
                                 lineLimit: 1,
                                 vm.recentTransactions[0]["ussdReply"],
+                                destinationDeviceName: vm.recentTransactions[0]
+                                        ['forwardingRecipientDeviceName']
+                                    ?.toString(),
+                                transactionId: vm.recentTransactions[0]
+                                        ['transactionId']
+                                    ?.toString(),
                               )
                             : Row(
                                 mainAxisAlignment: MainAxisAlignment.center,

@@ -111,6 +111,12 @@ class TransactionCategory {
     _statusIn(const [TransactionStatuses.paused]),
   );
 
+  static final offerChanged = TransactionCategory(
+    TransactionStatuses.offerChanged,
+    'Offer Changed',
+    _statusIn(const [TransactionStatuses.offerChanged]),
+  );
+
   static final blacklisted = TransactionCategory(
     TransactionStatuses.blacklisted,
     'Blacklisted',
@@ -149,6 +155,7 @@ class TransactionCategory {
     secondAttempt,
     pataMore,
     paused,
+    offerChanged,
     blacklisted,
     error,
     masked,

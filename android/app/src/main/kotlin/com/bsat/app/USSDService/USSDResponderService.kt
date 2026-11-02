@@ -6,7 +6,6 @@ import android.view.accessibility.AccessibilityNodeInfo
 
 import com.bsat.app.UssdSession
 import com.bsat.app.UssdResponseHandler
-import com.bsat.app.Utils.MiscUtils
 
 import android.os.Bundle
 import android.widget.EditText
@@ -86,6 +85,10 @@ class USSDResponderService : AccessibilityService() {
             if (responseText.contains("connection problem", ignoreCase = true)  || responseText.contains("connection code", ignoreCase = true) || responseText.contains("technical difficulties", ignoreCase = true) || responseText.contains("application23", ignoreCase = true) ||responseText.contains("Error from application", ignoreCase = true) || responseText.contains("invalid mmi code", ignoreCase = true)) {
                 val okBtn = findButtonByText(root, "OK")
                 if (okBtn != null) {
+                    // A recording cannot continue; report it instead of waiting for the timeout.
+                    if (UssdSession.isGettingSignature) {
+                        UssdSession.finalResponse = responseText
+                    }
                     okBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                     NativeLogger.sendLog(
                         "debug",
@@ -141,70 +144,59 @@ class USSDResponderService : AccessibilityService() {
                     }
                 }
 
-                // Extract option text based on the finalized nextInput
-                var optionText: String? = MiscUtils().extractOptionText(responseText, nextInput)
+                val inputNode = findNodeByClass(root, EditText::class.java.name)
 
-                // ---------------------------------------------------------
-                // 2. MENU AUTO-SWITCH LOGIC
-                // ---------------------------------------------------------
-                if (UssdSession.acceptedProcedure.isNotEmpty()) {
-                    val procIndex = UssdSession.currentStepIndex - 2
-
-                    if (procIndex >= 0 && procIndex < UssdSession.acceptedProcedure.size) {
-                        val expectedOption = UssdSession.acceptedProcedure[procIndex]["option"] as? String
-
-                        // Prevent auto-switch if we are natively expecting a dynamic input, not a menu
-                        val isExpectedValidMenu = !expectedOption.isNullOrBlank() &&
-                                !expectedOption.equals("Option not found", ignoreCase = true) &&
-                                !expectedOption.equals("Accept", ignoreCase = true)
-
-                        if (isExpectedValidMenu) {
-                            NativeLogger.sendLog(
-                                "debug",
-                                "UssdSession",
-                                "Expected option: $expectedOption, Extracted option: $optionText, Next input: $nextInput"
-                            )
-
-                            // Short circuit execution safely prevents NullPointerException on optionText
-                            val needsSwitch = optionText == null || !expectedOption.contains(optionText, ignoreCase = true)
-
-                            if (needsSwitch) {
-                                if (UssdSession.autoSwitch) {
-                                    var nextBestOption = MiscUtils().findOptionIndex(responseText, expectedOption)
-
-                                    if (nextBestOption == null) {
-                                        val nextPageInput = findNextPageInput(root)
-                                        if (nextPageInput != null) {
-                                            UssdSession.currentStepIndex = (UssdSession.currentStepIndex - 1).coerceAtLeast(0)
-                                            NativeLogger.sendLog("debug", "UssdSession", "Expected option not found. Paging with input: $nextPageInput")
-                                            nextInput = nextPageInput
-                                        } else {
-                                            val alternativeInput = findAlternativeInputFromAcceptedOptions(responseText)
-                                            if (alternativeInput != null) {
-                                                NativeLogger.sendLog("debug", "UssdSession", "Similarity search found alternative input: $alternativeInput")
-                                                nextInput = alternativeInput
-                                            } else {
-                                                cancelSession(root, "Offer might have changed. Cannot find expected option $expectedOption. Found $responseText")
-                                                return
-                                            }
-                                        }
-                                    } else {
-                                        NativeLogger.sendLog("debug", "UssdSession", "Auto-switching from $nextInput to option $nextBestOption.")
-                                        nextInput = nextBestOption
-                                    }
-
-                                } else {
-                                    cancelSession(root, "Offer might have changed. Transaction might not go through.")
-                                    return
-                                }
-                            }
-                        } else {
-
-                        }
-                    }
+                // No input field: Safaricom ended the session with a message.
+                if (inputNode == null) {
+                    UssdSession.finalResponse = responseText
+                    NativeLogger.sendLog("debug", "UssdSession", "Input node is null, returning early.")
+                    UssdResponseHandler.sendSuccess(responseText)
+                    sendBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    return
                 }
 
-                UssdSession.wholeConversation[responseText] = nextInput
+                val stepIndex = UssdSession.currentStepIndex - 2
+
+                if (UssdSession.isGettingSignature) {
+                    UssdSession.recordStep(stepIndex, responseText, nextInput)
+
+                    // The last input is what buys the bundle: record it, never send it.
+                    if (UssdSession.currentStepIndex == UssdSession.ussdSteps.size) {
+                        NativeLogger.sendLog("debug", "UssdSession", "Signature recorded: ${UssdSession.conversation.size} steps.")
+                        UssdSession.signatureComplete = true
+                        cancelSession(root, responseText)
+                        return
+                    }
+                } else {
+                    val decision = SignatureMatcher.decide(
+                        screen = responseText,
+                        plannedInput = nextInput,
+                        procedure = UssdSession.procedure,
+                        stepIndex = stepIndex,
+                        autoSwitch = UssdSession.autoSwitch,
+                        pagesTaken = UssdSession.pagesTakenOnStep
+                    )
+                    NativeLogger.sendLog("debug", "UssdSession", "Step ${stepIndex + 1}: planned $nextInput, decision $decision")
+
+                    when (decision) {
+                        is SignatureMatcher.Decision.Send -> {
+                            nextInput = decision.input
+                            UssdSession.currentStepIndex += decision.stepsSkipped
+                            UssdSession.pagesTakenOnStep = 0
+                        }
+                        is SignatureMatcher.Decision.NextPage -> {
+                            nextInput = decision.input
+                            UssdSession.currentStepIndex -= 1
+                            UssdSession.pagesTakenOnStep += 1
+                        }
+                        is SignatureMatcher.Decision.Stop -> {
+                            UssdSession.offerChanged = true
+                            cancelSession(root, decision.reason)
+                            return
+                        }
+                    }
+                    UssdSession.recordStep(stepIndex, responseText, nextInput)
+                }
 
                 NativeLogger.sendLog(
                     "debug",
@@ -212,32 +204,23 @@ class USSDResponderService : AccessibilityService() {
                     "Next input: $nextInput, Response text: $responseText"
                 )
 
-                val inputNode = findNodeByClass(root, EditText::class.java.name)
+                inputNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+                    putCharSequence(
+                        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                        nextInput
+                    )
+                })
 
-                if (UssdSession.isGettingSignature && UssdSession.currentStepIndex == UssdSession.ussdSteps.size) {
-                    nextInput = ""
-                    NativeLogger.sendLog("debug", "UssdSession", "Getting signature. Clearing input. Results: $")
-                    cancelSession(root, "sd", isSuccess = true, responseText = responseText)
-                } else {
-                    inputNode?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
-                        putCharSequence(
-                            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                            nextInput
-                        )
-                    })
-
-                    sendBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                }
-
-                if (inputNode == null) {
-                    UssdSession.finalResponse = responseText
-                    NativeLogger.sendLog("debug", "UssdSession", "Input node is null, returning early.")
-                    UssdResponseHandler.sendSuccess(responseText)
+                sendBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            } else {
+                // A recording never sends anything past the steps of the code.
+                if (UssdSession.isGettingSignature) {
+                    cancelSession(root, responseText)
                     return
                 }
-            } else {
+
                 NativeLogger.sendLog("debug", "UssdSession", "Final response: $responseText")
-                NativeLogger.sendLog("debug", "UssdSession", "Whole conversation: ${UssdSession.wholeConversation}")
+                NativeLogger.sendLog("debug", "UssdSession", "Whole conversation: ${UssdSession.conversation}")
                 UssdSession.finalResponse = responseText
                 UssdResponseHandler.sendSuccess(responseText)
 
@@ -248,65 +231,13 @@ class USSDResponderService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
-    private fun cancelSession(root: AccessibilityNodeInfo?, message: String, isSuccess: Boolean = false, responseText: String? = null) {
+    private fun cancelSession(root: AccessibilityNodeInfo?, message: String) {
         val cancelBtn = findButtonByText(root, "Cancel") ?: findButtonByText(root, "Close")
         UssdSession.finalResponse = message
-        UssdResponseHandler.sendSuccess(responseText ?: message)
-        cancelBtn?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-    }
-
-    private fun findAlternativeInputFromAcceptedOptions(responseText: String): String? {
-        if (UssdSession.acceptedProcedure.isEmpty()) return null
-
-        for (step in UssdSession.acceptedProcedure) {
-            val expectedOption = step["option"] as? String ?: continue
-            val expectedChoice = step["choice"]?.toString() ?: continue
-
-            if (expectedOption.isBlank() || expectedOption.equals("Option not found", ignoreCase = true) || expectedOption.equals("Accept", ignoreCase = true)) continue
-
-            var matchIndex = responseText.indexOf(expectedOption, ignoreCase = true)
-
-            if (matchIndex == -1) {
-//                val words = expectedOption.split(Regex("\\W+")).filter { it.length > 3 }
-//                for (word in words) {
-//                    // FIX: Use Regex word boundaries (\b) to prevent partial substring matches
-//                    // (e.g., this guarantees "Sh20" does NOT match inside "Sh200")
-//                    val escapedWord = Regex.escape(word)
-//                    val wordMatch = Regex("\\b$escapedWord\\b", RegexOption.IGNORE_CASE).find(responseText)
-                    val wordMatch = Regex("\\b$expectedOption\\b", RegexOption.IGNORE_CASE).find(responseText)
-
-                    if (wordMatch != null) {
-                        matchIndex = wordMatch.range.first
-                        break
-                    }
-//                }
-            }
-
-            if (matchIndex != -1) {
-                val textBeforeMatch = responseText.substring(0, matchIndex).trimEnd()
-
-                val numberRegex = Regex("(?<![0-9*#])([0-9*#]{1,3})(?![0-9*#])[\\s:.)-]*$")
-                val match = numberRegex.find(textBeforeMatch)
-
-                if (match != null) {
-                    val inputChar = match.groupValues[1]
-                    NativeLogger.sendLog(
-                        "debug",
-                        "USSDResponderService",
-                        "Regex extraction found choice '$inputChar' matched via similarity to expected option: '$expectedOption'"
-                    )
-                    return inputChar
-                } else if (UssdSession.isFullyAutonomous) {
-                    NativeLogger.sendLog(
-                        "debug",
-                        "USSDResponderService",
-                        "Regex extraction failed. Autonomous fallback to original mapped choice '$expectedChoice' for option '$expectedOption'"
-                    )
-                    return expectedChoice
-                }
-            }
+        UssdResponseHandler.sendSuccess(message)
+        if (cancelBtn == null || !cancelBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            performGlobalAction(GLOBAL_ACTION_BACK)
         }
-        return null
     }
 
     private fun findNodeByClass(
@@ -379,39 +310,6 @@ class USSDResponderService : AccessibilityService() {
         for (i in 0 until node.childCount) {
             logNodeTree(node.getChild(i), depth + 1)
         }
-    }
-
-    private fun findNextPageInput(root: AccessibilityNodeInfo?): String? {
-        if (root == null) return null
-
-        val responseText = extractAllTextNodes(root)
-
-        val regex = Regex(
-            "([0-9#*nN]{1,3})[\\s:.-]*(?:page\\s*)?(?:next(?:\\s*page)?|go[t]?\\s*to\\s*next|more)",
-            RegexOption.IGNORE_CASE
-        )
-
-        val matches = regex.findAll(responseText).toList()
-
-        if (matches.isNotEmpty()) {
-            val nextIdentifier = matches.lastOrNull()?.groupValues?.get(1)
-
-            NativeLogger.sendLog(
-                "debug",
-                "USSDResponderService",
-                "Next page identifier found: $nextIdentifier in text: $responseText"
-            )
-
-            return nextIdentifier
-        }
-
-        NativeLogger.sendLog(
-            "debug",
-            "USSDResponderService",
-            "No next page identifier found in text: $responseText"
-        )
-
-        return null
     }
 
     private fun splitNumber(number: String): String {

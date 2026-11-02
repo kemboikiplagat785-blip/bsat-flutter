@@ -8,10 +8,13 @@ import 'dart:convert';
 ///
 ///
 ///
-/// acceptedProcedure: List of maps
+/// acceptedProcedure: List of maps, one per step after the dial, in order
 /// each map has:
-/// - "option": int (step in the conversation)
-/// - "choice": String (the response received at that step)
+/// - "options": String (the USSD screen shown at that step)
+/// - "choice": String (the input sent on it; "n" for the customer number)
+///
+/// A signature belongs to one exact USSD code ([usdCode]), so another code of
+/// the same offer, or its alternative code, is never checked against it.
 
 class CodeSignature {
   final int? id;
@@ -31,7 +34,7 @@ class CodeSignature {
     this.acceptedProcedure,
     this.lastProcedure,
     List<Map<String, String>>? importantSteps,
-    bool? mightBeCompromised = false,
+    this.mightBeCompromised = false,
     this.autoSwitch = false,
     this.isActive = true,
   }) : importantSteps = importantSteps ?? [];
@@ -108,7 +111,8 @@ class CodeSignature {
   static List<Map<String, String>>? decodeAcceptedProcedure(dynamic data) {
     if (data == null) return null;
     try {
-      final decoded = jsonDecode(data);
+      // DB rows hold JSON text; toMap() and toJson() hold the list itself.
+      final decoded = data is String ? jsonDecode(data) : data;
       if (decoded is List) {
         return decoded.map<Map<String, String>>((item) {
           if (item is Map) {
@@ -124,21 +128,58 @@ class CodeSignature {
     return null;
   }
 
-  static List<Map<String, String>> simpleProcedure(
-      List<Map<String, dynamic>>? acceptedProcedure) {
-    if (acceptedProcedure == null) return [];
-
-    return acceptedProcedure.map((step) {
-      // We create a temporary map to satisfy extractChosenOption's key requirements
-      String extracted = extractChosenOption(
-          {'options': step['options'] ?? '', 'choice': step['choice'] ?? ''});
-
+  /// A finished recording as stored: the probe number is not kept as a choice.
+  static List<Map<String, String>> procedureFromRecording(
+    List<Map<String, dynamic>> conversation,
+    String probeNumber,
+  ) {
+    return conversation.map((step) {
+      final choice = step['choice']?.toString() ?? '';
       return {
-        "option": extracted,
-        "choice": step["choice"]?.toString() ?? '',
+        'options': step['options']?.toString() ?? '',
+        'choice': choice.replaceAll(' ', '') == probeNumber ? 'n' : choice,
       };
-    }).toList(); // Convert Iterable to List
+    }).toList();
   }
+
+  /// What the native matcher needs from [acceptedProcedure].
+  static List<Map<String, String>> wireProcedure(
+      List<Map<String, dynamic>>? acceptedProcedure) {
+    return (acceptedProcedure ?? [])
+        .map((step) => {
+              'options': step['options']?.toString() ?? '',
+              'choice': step['choice']?.toString() ?? '',
+            })
+        .toList();
+  }
+
+  static List<String> codeSteps(String code) {
+    var sequence = code.trim();
+    if (sequence.endsWith('#')) {
+      sequence = sequence.substring(0, sequence.length - 1);
+    }
+    return sequence.split('*').where((step) => step.isNotEmpty).toList();
+  }
+
+  /// Whether [code] (a saved code, or one with `n` filled in) is this
+  /// signature's code.
+  bool matchesCode(String code) {
+    final mine = codeSteps(usdCode);
+    final other = codeSteps(code);
+    if (mine.isEmpty || mine.length != other.length) return false;
+    final customerNumber = RegExp(r'^(n|[0-9]{9,12})$');
+    for (var i = 0; i < mine.length; i++) {
+      final sameStep = mine[i] == other[i] ||
+          (mine[i] == 'n' && customerNumber.hasMatch(other[i]));
+      if (!sameStep) return false;
+    }
+    return true;
+  }
+
+  /// A signature only protects [code] if it was fully recorded from that code.
+  bool isUsableFor(String code) =>
+      matchesCode(code) &&
+      acceptedProcedure?.length == codeSteps(code).length - 1;
 
   static bool _parseBoolFromDynamic(dynamic v) {
     if (v == null) return false;
@@ -148,28 +189,20 @@ class CodeSignature {
     return s == '1' || s == 'true' || s == 'yes';
   }
 
-  static String extractChosenOption(Map<String, dynamic> data) {
-    String options = data['options'] ?? '';
-    String choice = data['choice'].toString();
-
-    // 1. Split the string into individual lines
-    // USSD responses usually use \n for new lines
-    List<String> lines = options.split('\n');
-
-    // 2. Define the prefix we are looking for (e.g., "6:")
-    String searchPrefix = "$choice:";
-
-    for (String line in lines) {
-      String trimmedLine = line.trim();
-
-      // 3. Check if the line starts with our choice number + colon
-      if (trimmedLine.startsWith(searchPrefix)) {
-        // 4. Remove the "6:" part and return the remaining text
-        return trimmedLine.substring(searchPrefix.length).trim();
-      }
+  /// The text of the option chosen at [step], or null for free input such as
+  /// the customer number.
+  static String? chosenLabel(Map<String, dynamic> step) {
+    final screen = step['options']?.toString() ?? '';
+    final choice = RegExp.escape(step['choice']?.toString() ?? '');
+    final line = RegExp(
+        '^$choice' r'\s*(?:[:)\-]\s*|\.(?!\d)\s*|\s+)(\S.*)$');
+    final optionStart = RegExp(r'(?<=\s)(?=(?:\d{1,3}|[*#])(?::|\)|\.(?!\d)))');
+    final lines = screen.split('\n').expand((text) => text.split(optionStart));
+    for (final candidate in lines) {
+      final match = line.firstMatch(candidate.trim());
+      if (match != null) return match.group(1)!.trim();
     }
-
-    return "Option not found";
+    return null;
   }
 
   static List<Map<String, String>> decodeImportantSteps(dynamic data) {

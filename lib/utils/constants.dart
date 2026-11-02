@@ -82,6 +82,10 @@ class TransactionStatuses {
   /// then completed by another paired device (the combined amount).
   static const pataMore = 'transaction-pata-more';
 
+  /// The USSD menu no longer matches the offer's signature and could not be
+  /// auto-switched. The session stopped before the last step: nothing bought.
+  static const offerChanged = 'transaction-offer-changed';
+
   static const doneMap = {0: done};
   static const errorMap = {1: error};
   static const secondAttemptMap = {2: secondAttempt};

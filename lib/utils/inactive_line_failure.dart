@@ -68,7 +68,7 @@ bool _fits(InactiveLineFailure failure, PendingPurchase purchase) {
 ///
 /// 1. A failure that fits exactly one purchase gets it. This repeats, since
 ///    each pairing can leave another failure with one purchase.
-/// 2. After [inactiveLineFailureWait], the failures still unclear on one SIM
+/// 2. After [wait], the failures still unclear on one SIM
 ///    are paired oldest-first with the purchases that fit them, but only when
 ///    there are as many purchases as failures and every pair fits
 ///    (Safaricom answers in the order the codes were dialed).
@@ -79,6 +79,7 @@ List<(int, int)> matchInactiveLineFailures({
   required List<InactiveLineFailure> failures,
   required List<PendingPurchase> pending,
   required int now,
+  Duration wait = inactiveLineFailureWait,
 }) {
   final pairs = <(int, int)>[];
   final openFailures = [...failures]
@@ -110,7 +111,7 @@ List<(int, int)> matchInactiveLineFailures({
   }
   for (final group in simGroups.values) {
     final waitedLongEnough = group.every((failure) =>
-        now - failure.smsTimestamp >= inactiveLineFailureWait.inMilliseconds);
+        now - failure.smsTimestamp >= wait.inMilliseconds);
     if (!waitedLongEnough) continue;
     final fitting = openPurchases
         .where((purchase) => group.any((failure) => _fits(failure, purchase)))

@@ -68,6 +68,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _forwardedConfirmedCount = 0,
       _unavailableOfferCount = 0,
       _pausedCount = 0,
+      _offerChangedCount = 0,
       _advancedCount = 0,
       _okoaCount = 0,
       _maskedCount = 0,
@@ -128,6 +129,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       count(TransactionCategory.advanced),
       count(TransactionCategory.masked),
       count(TransactionCategory.pataMore),
+      count(TransactionCategory.offerChanged),
     ]);
 
     if (!mounted) return;
@@ -146,6 +148,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _advancedCount = results[11];
       _maskedCount = results[12];
       _pataMoreCount = results[13];
+      _offerChangedCount = results[14];
     });
   }
 
@@ -1109,6 +1112,14 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
               _pausedCount,
               kWarningColor,
               'Paused'),
+          const SizedBox(width: 8),
+          _tool(
+              TransactionStatuses.offerChanged,
+              const Icon(CupertinoIcons.shield_lefthalf_fill,
+                  color: kWarningColor, size: 14),
+              _offerChangedCount,
+              kWarningColor,
+              'Offer Changed'),
           const SizedBox(width: 8),
           _tool(
               TransactionStatuses.blacklisted,

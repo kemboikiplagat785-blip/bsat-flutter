@@ -1,10 +1,12 @@
 import 'dart:math';
 
+import 'package:bsat/models/code_signature.dart';
 import 'package:bsat/models/transaction.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/logger.dart';
 import 'package:bsat/utils/forwarding_identifiers.dart';
 import 'package:bsat/utils/forwarding_delivery_retry.dart';
+import 'package:bsat/utils/safaricom_retry_failure.dart';
 import 'package:bsat/utils/transaction_reply.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -157,6 +159,27 @@ class SQLiteService {
         transactionRowId INTEGER,
         resolvedAt INTEGER,
         UNIQUE(smsTimestamp, body)
+      )
+    ''');
+    // Safaricom temporary failures held the same way, and the retries used by
+    // each transaction they were given to (see
+    // lib/utils/safaricom_retry_failure.dart).
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS safaricomRetryFailures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        body TEXT NOT NULL,
+        smsTimestamp INTEGER NOT NULL,
+        simSubId INTEGER,
+        transactionRowId INTEGER,
+        resolvedAt INTEGER,
+        UNIQUE(smsTimestamp, body)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS safaricomFailureRetries (
+        transactionRowId INTEGER PRIMARY KEY,
+        retriesUsed INTEGER NOT NULL DEFAULT 0,
+        lastRetryAt INTEGER
       )
     ''');
     await db.execute('''
@@ -2513,12 +2536,21 @@ class SQLiteService {
           WHERE COALESCE(transactions.forwardingJobId, '') != ''
             AND j.forwardingJobId = transactions.forwardingJobId
         )
+        -- After a Safaricom temporary failure, retries are spaced and limited.
+        AND NOT EXISTS (
+          SELECT 1 FROM safaricomFailureRetries r
+          WHERE r.transactionRowId = transactions.id
+            AND (r.retriesUsed >= ? OR COALESCE(r.lastRetryAt, 0) > ?)
+        )
       ''',
       [
         TransactionStatuses.error,
         TransactionStatuses.timedOut,
         today,
         retryLimit,
+        maxSafaricomFailureRetries,
+        DateTime.now().millisecondsSinceEpoch -
+            safaricomFailureRetryGap.inMilliseconds,
       ],
       columns: [
         'id',
@@ -2683,7 +2715,7 @@ class SQLiteService {
       values,
       where: '''
         id = ?
-        AND status IN (?, ?, ?, ?, ?, ?, ?, ?)
+        AND status IN (?, ?, ?, ?, ?, ?, ?, ?, ?)
         AND COALESCE(retryState, 'ready') = 'ready'
       ''',
       whereArgs: [
@@ -2695,9 +2727,25 @@ class SQLiteService {
         TransactionStatuses.advancedUssd,
         TransactionStatuses.advancedQueue,
         TransactionStatuses.paused,
+        TransactionStatuses.offerChanged,
         TransactionStatuses.hasOkoa,
       ],
     );
+  }
+
+  /// The signature recorded from [code] for this offer, if any. Each code has
+  /// its own, so one code's signature never applies to another.
+  Future<CodeSignature?> codeSignatureFor(int ussdCodeId, String code) async {
+    final rows = await queryCustom(
+      'codeSignature',
+      'ussdCodeId = ?',
+      [ussdCodeId],
+    );
+    for (final row in rows) {
+      final signature = CodeSignature.fromMap(row);
+      if (signature.matchesCode(code)) return signature;
+    }
+    return null;
   }
 
   Future<int> updateTransactionUnlessSafaricomSuccess(
@@ -2874,7 +2922,7 @@ class SQLiteService {
             (status = ?
               AND COALESCE(retryState, 'ready') NOT IN ('claimed', 'dispatching'))
             OR
-            (status IN (?, ?, ?, ?, ?, ?, ?)
+            (status IN (?, ?, ?, ?, ?, ?, ?, ?)
               AND COALESCE(retryState, 'ready') = 'ready')
           )
         ''',
@@ -2887,6 +2935,7 @@ class SQLiteService {
           TransactionStatuses.advancedUssd,
           TransactionStatuses.advancedQueue,
           TransactionStatuses.paused,
+          TransactionStatuses.offerChanged,
           TransactionStatuses.hasOkoa,
         ],
       );
@@ -2960,11 +3009,12 @@ class SQLiteService {
         TransactionStatuses.advancedUssd,
         TransactionStatuses.advancedQueue,
         TransactionStatuses.paused,
+        TransactionStatuses.offerChanged,
         TransactionStatuses.hasOkoa,
       };
       if (!eligibleStatuses.contains(status)) return 0;
 
-      return txn.update(
+      final updated = await txn.update(
         'transactions',
         {
           'retryState': 'dispatching',
@@ -2977,6 +3027,15 @@ class SQLiteService {
             'id = ? AND status = ? AND retryState = ? AND retryClaimOwner = ?',
         whereArgs: [transactionId, status, 'claimed', _retryClaimOwner],
       );
+      if (updated == 1) {
+        await txn.rawUpdate(
+          'UPDATE safaricomFailureRetries '
+          'SET retriesUsed = retriesUsed + 1, lastRetryAt = ? '
+          'WHERE transactionRowId = ?',
+          [now, transactionId],
+        );
+      }
+      return updated;
     });
   }
 
@@ -3126,6 +3185,101 @@ class SQLiteService {
         where: 'id = ?',
         whereArgs: [failureId],
       );
+      return true;
+    });
+  }
+
+  /// Holds a Safaricom temporary failure SMS; the same SMS seen twice is kept
+  /// once.
+  Future<void> recordSafaricomRetryFailure({
+    required String body,
+    required int smsTimestamp,
+    int? simSubId,
+  }) async {
+    final db = await database;
+    await db.insert(
+      'safaricomRetryFailures',
+      {
+        'body': body,
+        'smsTimestamp': smsTimestamp,
+        'simSubId': simSubId,
+      },
+      conflictAlgorithm: ConflictAlgorithm.ignore,
+    );
+  }
+
+  /// Temporary failures not yet given to a transaction, received between
+  /// [since] and [until], oldest first.
+  Future<List<Map<String, dynamic>>> unassignedSafaricomRetryFailures({
+    required int since,
+    required int until,
+  }) async {
+    final db = await database;
+    return db.query(
+      'safaricomRetryFailures',
+      where: 'transactionRowId IS NULL AND smsTimestamp BETWEEN ? AND ?',
+      whereArgs: [since, until],
+      orderBy: 'smsTimestamp ASC',
+    );
+  }
+
+  /// Gives temporary failure [failureId] to the Successful(Pending)
+  /// [transactionId], with the SMS added to its reply. With [moveToError] the
+  /// transaction moves to Error, ready for auto retry. All of it happens or
+  /// none (false: the failure was taken, or the transaction is no longer
+  /// pending).
+  Future<bool> assignSafaricomRetryFailure({
+    required int failureId,
+    required int transactionId,
+    required bool moveToError,
+  }) async {
+    final db = await database;
+    return db.transaction((txn) async {
+      final failures = await txn.query(
+        'safaricomRetryFailures',
+        columns: ['body'],
+        where: 'id = ? AND transactionRowId IS NULL',
+        whereArgs: [failureId],
+        limit: 1,
+      );
+      final rows = await txn.query(
+        'transactions',
+        columns: ['ussdReply'],
+        where: 'id = ? AND status = ?',
+        whereArgs: [transactionId, TransactionStatuses.successfulPending],
+        limit: 1,
+      );
+      if (failures.isEmpty || rows.isEmpty) return false;
+      final body = failures.single['body']?.toString().trim() ?? '';
+      final previousReply = rows.single['ussdReply']?.toString() ?? '';
+      await txn.update(
+        'transactions',
+        {
+          if (moveToError) 'status': TransactionStatuses.error,
+          if (moveToError) 'retryState': 'ready',
+          if (moveToError) 'retryClaimOwner': null,
+          'ussdReply':
+              previousReply.isEmpty ? body : '$body\n•\n$previousReply',
+        },
+        where: 'id = ? AND status = ?',
+        whereArgs: [transactionId, TransactionStatuses.successfulPending],
+      );
+      await txn.update(
+        'safaricomRetryFailures',
+        {
+          'transactionRowId': transactionId,
+          'resolvedAt': DateTime.now().millisecondsSinceEpoch,
+        },
+        where: 'id = ?',
+        whereArgs: [failureId],
+      );
+      if (moveToError) {
+        await txn.insert(
+          'safaricomFailureRetries',
+          {'transactionRowId': transactionId},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
       return true;
     });
   }

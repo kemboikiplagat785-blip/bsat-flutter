@@ -94,6 +94,8 @@ bool isAmbiguousTransactionOutcome({
   required String status,
   required String reply,
 }) {
+  // The signature stopped before the last step, so nothing was bought.
+  if (status == TransactionStatuses.offerChanged) return false;
   if (status == TransactionStatuses.timedOut || reply.trim().isEmpty) {
     return true;
   }

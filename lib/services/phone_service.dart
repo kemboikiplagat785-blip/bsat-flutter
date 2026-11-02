@@ -129,6 +129,11 @@ class PhoneService {
 
       debugPrint("Advanced USSD response: $res");
 
+      if (response[0]['offerChanged'] == true) {
+        await _flagSignatureCompromised(codeSignature);
+        return [res, TransactionStatuses.offerChanged];
+      }
+
       if (!isGettingSignature) {
         if (res.contains(RegExp(
             r'USSD session already in progress|duplicate sessions. rejecting new one',
@@ -140,7 +145,7 @@ class PhoneService {
         }
 
         if (res.contains(RegExp(
-            r'Offer might have changed|Invalid choice|Try again',
+            r'Invalid choice|Try again',
             caseSensitive: false))) {
           return [res, TransactionStatuses.paused];
         }
@@ -174,6 +179,7 @@ class PhoneService {
                 .map((e) => Map<String, dynamic>.from(e))
                 .toList()
             : [],
+        response[0]['signatureComplete'] == true,
       ];
     } catch (e, stackTrace) {
       debugPrint("UssdSession: Error sending code in makeAdvancedRequest: $e");
@@ -183,6 +189,21 @@ class PhoneService {
         "Error sending code: $e",
         TransactionStatuses.error,
       ];
+    }
+  }
+
+  Future<void> _flagSignatureCompromised(CodeSignature? signature) async {
+    final id = signature?.id;
+    if (id == null) return;
+    try {
+      await _sqLiteService.updateStuff(
+        {'mightBeCompromised': 1},
+        'id = ?',
+        [id],
+        'codeSignature',
+      );
+    } catch (e) {
+      debugPrint('Could not flag signature $id: $e');
     }
   }
 
@@ -260,30 +281,29 @@ class PhoneService {
     bool isGettingSignature = false,
   }) async {
     isRunning = true;
-    bool generalUseCodeSignature = false;
-    bool generalAutoSwitch = false; // You can make this configurable if needed
-    //print("UssdSession(fl): sendUssdSequence: $fullCode, $subscriptionId");
-    if (codeSignature != null) {
-      generalUseCodeSignature =
-          await SharedPreferencesService().getUseSignature() ?? true;
-      generalAutoSwitch =
-          await SharedPreferencesService().getCanAutoSwitch() ?? true;
+    final signature = codeSignature;
+    var procedure = <Map<String, String>>[];
+    var autoSwitch = false;
+    // Only this code's own, fully recorded, switched-on signature is enforced.
+    if (!isGettingSignature &&
+        signature != null &&
+        signature.isActive == true &&
+        signature.isUsableFor(fullCode) &&
+        (await SharedPreferencesService().getUseSignature() ?? true)) {
+      procedure = CodeSignature.wireProcedure(signature.acceptedProcedure);
+      autoSwitch = signature.autoSwitch == true &&
+          (await SharedPreferencesService().getCanAutoSwitch() ?? true);
     }
-// You can make this configurable if needed
     try {
       debugPrint(
-          "UssdSession(fl): Sending USSD code: $fullCode on sim with subscriptionId: $subscriptionId, precedure:${CodeSignature.simpleProcedure(codeSignature?.acceptedProcedure ?? [])}");
+          "UssdSession(fl): Sending USSD code: $fullCode on sim with subscriptionId: $subscriptionId, signature steps: ${procedure.length}, autoSwitch: $autoSwitch");
       final result = await platform.invokeMethod(
         'runUssdSequence',
         {
           "sequence": fullCode,
           "subscriptionId": subscriptionId,
-          "acceptedProcedure": generalUseCodeSignature
-              ? CodeSignature.simpleProcedure(
-                  codeSignature?.acceptedProcedure ?? [])
-              : [],
-          "autoSwitch":
-              (codeSignature?.autoSwitch ?? false) && generalAutoSwitch,
+          "acceptedProcedure": procedure,
+          "autoSwitch": autoSwitch,
           "isGettingSignature": isGettingSignature,
         },
       );

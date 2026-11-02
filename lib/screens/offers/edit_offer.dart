@@ -63,7 +63,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
   bool isAdvanced = false;
   bool usesBongaPoints = false;
-  bool hasAcceptedProcedure = false;
+  bool _isRecordingSignature = false;
 
   List<Map<String, dynamic>> forwardingDevices = [];
 
@@ -85,6 +85,64 @@ class _EditOfferPageState extends State<EditOfferPage> {
     isActive: false,
     autoSwitch: true,
   );
+
+  // Fills `n` while recording. The last step is never sent, so nothing is
+  // bought for this number.
+  static const int _signatureProbeNumber = 701135362;
+
+  String _currentUssdCode() => _resolveActiveUssdCode(
+        _codeEntries
+            .where((entry) =>
+                _entryController(entry, 'code').text.trim().isNotEmpty)
+            .map((entry) => <String, dynamic>{
+                  'code': _entryController(entry, 'code').text.trim(),
+                  'startTime': _entryController(entry, 'start').text,
+                  'endTime': _entryController(entry, 'end').text,
+                })
+            .toList(),
+      ).trim();
+
+  Future<void> _recordSignature() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final code = _currentUssdCode();
+    if (CodeSignature.codeSteps(code).length < 2) {
+      messenger.showSnackBar(const SnackBar(
+        content: Text('Enter the full USSD code of this offer first.'),
+      ));
+      return;
+    }
+
+    setState(() => _isRecordingSignature = true);
+    final res = await PhoneService().makeAdvancedRequest(
+      TransactionController().replaceNWithNumber(code, _signatureProbeNumber),
+      _dialSim,
+      isGettingSignature: true,
+    );
+    if (!mounted) return;
+
+    final isComplete = res.length > 3 && res[3] == true;
+    setState(() {
+      _isRecordingSignature = false;
+      if (isComplete) {
+        signature = signature.copyWith(
+          usdCode: code,
+          acceptedProcedure: CodeSignature.procedureFromRecording(
+            (res[2] as List).cast<Map<String, dynamic>>(),
+            '0$_signatureProbeNumber',
+          ),
+          mightBeCompromised: false,
+        );
+        _hasChanges = true;
+      }
+    });
+
+    messenger.showSnackBar(SnackBar(
+      content: Text(isComplete
+          ? 'Signature recorded. Check the steps, then save the offer.'
+          : 'Recording did not reach the last step, so it was not kept. '
+              'Last reply: ${res.isNotEmpty ? res[0] : ''}'),
+    ));
+  }
 
   Future<void> getAndProcessCards() async {
     final value = await Telephony.instance.getSubscriptionList();
@@ -548,8 +606,12 @@ class _EditOfferPageState extends State<EditOfferPage> {
       );
     }
 
+    // A recorded signature keeps the code it was recorded from.
     signature = signature.copyWith(
       ussdCodeId: codeId,
+      usdCode: (signature.acceptedProcedure?.isNotEmpty ?? false)
+          ? signature.usdCode
+          : _currentUssdCode(),
     );
 
     if (signature.id != null && signature.id! >= 0) {
@@ -561,10 +623,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
       );
     } else {
       try {
-        int id = await _sqliteService.insertStuff(
+        final id = await _sqliteService.insertStuff(
           signature.sqlSavableForm(),
           'codeSignature',
         );
+        signature = signature.copyWith(id: id);
       } catch (e) {}
     }
 
@@ -652,11 +715,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
                 'endTime': nv['end'],
               })
           .toList(),
-    );
-
-    signature = signature.copyWith(
-      ussdCodeId: codeId,
-      usdCode: activeUssdCode.isNotEmpty ? activeUssdCode : signature.usdCode,
     );
 
     // propagate non-amount changes to other offers that originally shared any of the original codes
@@ -819,36 +877,58 @@ class _EditOfferPageState extends State<EditOfferPage> {
             ? thisData['bongaPointsPerTransaction'].toString()
             : '60';
 
-    var rawSignature = (await _sqliteService.queryCustom(
+    final signatureRows = (await _sqliteService.queryCustom(
       'codeSignature',
       'ussdCodeId = ?',
       [widget.ruleId],
-      limit: 1,
-    ));
+    ))
+        .map(CodeSignature.fromMap)
+        .toList();
 
-    final loadedSignature =
-        CodeSignature.fromMap(rawSignature.isEmpty ? {} : rawSignature.first);
-
-    signature = signature.copyWith(
-      id: loadedSignature.id,
-      ussdCodeId: loadedSignature.ussdCodeId,
-      usdCode:
-          activeUssdCode.isNotEmpty ? activeUssdCode : loadedSignature.usdCode,
-      acceptedProcedure: loadedSignature.acceptedProcedure,
-      lastProcedure: loadedSignature.lastProcedure,
-      importantSteps: loadedSignature.importantSteps,
-      isActive: loadedSignature.isActive,
-      autoSwitch: loadedSignature.autoSwitch,
-    );
-
-    importantSteps = signature.importantSteps;
+    // Each code has its own signature; the switches carry over to a code that
+    // has not been recorded yet.
+    final loadedSignature = signatureRows
+        .where((row) => row.matchesCode(activeUssdCode))
+        .firstOrNull;
+    final switches = signatureRows.firstOrNull;
 
     if (mounted) {
       setState(() {
-        hasAcceptedProcedure = signature.acceptedProcedure != null &&
-            signature.acceptedProcedure!.isNotEmpty;
+        signature = loadedSignature ??
+            signature.copyWith(
+              ussdCodeId: widget.ruleId,
+              usdCode: activeUssdCode,
+              isActive: switches?.isActive ?? false,
+              autoSwitch: switches?.autoSwitch ?? false,
+            );
+        importantSteps = signature.importantSteps;
       });
     }
+  }
+
+  List<Widget> _signatureNotes() {
+    final recorded = signature.acceptedProcedure?.isNotEmpty ?? false;
+    final notes = [
+      if (signature.mightBeCompromised == true)
+        'Safaricom\'s menu changed since this was recorded, and purchases are '
+            'being stopped. Fix the USSD code if needed, then record again and '
+            'check that the steps show the right package.',
+      if (!signature.isUsableFor(_currentUssdCode()))
+        recorded
+            ? 'This signature is not for the current USSD code. It is not '
+                'protecting this offer until you record it again.'
+            : 'Not recorded yet. Click below to record each step of this code. '
+                'The last step is not sent, so nothing is bought.',
+      if (!isAdvanced)
+        'Signatures only protect offers dialed as Advanced USSD.',
+    ];
+    return [
+      for (final note in notes)
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Text(note, style: const TextStyle(color: kWarningColor)),
+        ),
+    ];
   }
 
   void _addChangeListeners() {
@@ -1195,13 +1275,11 @@ class _EditOfferPageState extends State<EditOfferPage> {
                       'Teach the app to recognize this code\'s USSD responses to detect harmful changes',
                   value: signature.isActive ?? false,
                   onChanged: (val) => setState(() {
-                    hasAcceptedProcedure = val;
                     signature = signature.copyWith(isActive: val);
                     _hasChanges = true;
-                    setState(() {});
                   }),
                 ),
-                if (hasAcceptedProcedure && signature.isActive == true) ...[
+                if (signature.isActive == true) ...[
                   Column(
                     children: [
                       _buildSwitchTile(
@@ -1216,6 +1294,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
                           });
                         },
                       ),
+                      ..._signatureNotes(),
                       if (signature.acceptedProcedure != null &&
                           signature.acceptedProcedure!.isNotEmpty)
                         Column(
@@ -1243,10 +1322,10 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                             MainAxisAlignment.spaceBetween,
                                         children: [
                                           const Text(
-                                            'Option',
+                                            'Step',
                                           ),
                                           Text(
-                                            'Text',
+                                            'Input',
                                           ),
                                         ],
                                       ),
@@ -1262,12 +1341,15 @@ class _EditOfferPageState extends State<EditOfferPage> {
                                             mainAxisAlignment:
                                                 MainAxisAlignment.spaceBetween,
                                             children: [
-                                              Text(
-                                                CodeSignature
-                                                    .extractChosenOption(
-                                                  e,
+                                              Expanded(
+                                                child: Text(
+                                                  CodeSignature.chosenLabel(
+                                                        e,
+                                                      ) ??
+                                                      'Typed input',
                                                 ),
                                               ),
+                                              const SizedBox(width: 12),
                                               Text(
                                                 e['choice'].toString(),
                                               ),
@@ -1294,65 +1376,16 @@ class _EditOfferPageState extends State<EditOfferPage> {
                           ),
                         ),
                         child: toolButton(
-                          () async {
-                            if (activeUssdCode.trim().isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'No active USSD code is available for this offer.',
-                                  ),
-                                ),
-                              );
-                              return;
-                            }
-
-                            final code =
-                                TransactionController().replaceNWithNumber(
-                              activeUssdCode,
-                              0701135362,
-                            );
-
-                            debugPrint(
-                              'USSD DEBUG: Signature test using activeUssdCode=[$activeUssdCode]',
-                            );
-
-                            // PhoneService phoneService = PhoneService();
-                            List res = await PhoneService().makeAdvancedRequest(
-                              code,
-                              _dialSim,
-                              isGettingSignature: true,
-                            );
-
-                            final acceptedProcedure =
-                                (res.length > 2 ? res[2] as List? : null)
-                                    ?.cast<Map<String, dynamic>>();
-
-                            signature = signature.copyWith(
-                              usdCode: activeUssdCode,
-                              acceptedProcedure: acceptedProcedure,
-                              lastProcedure: acceptedProcedure,
-                            );
-
-                            print("Signature: $signature");
-
-                            setState(() {});
-
-                            if (acceptedProcedure == null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Failed to get signature. Please ensure the USSD code is correct and try again. ${signature.toString()}',
-                                  ),
-                                ),
-                              );
-                              return;
-                            }
+                          () {
+                            if (!_isRecordingSignature) _recordSignature();
                           },
                           Icon(
                             CupertinoIcons.shield_lefthalf_fill,
                             color: kWarningColor,
                           ),
-                          "Click to Edit Signature",
+                          _isRecordingSignature
+                              ? "Recording, please wait..."
+                              : "Click to Edit Signature",
                           context,
                         ),
                       ),

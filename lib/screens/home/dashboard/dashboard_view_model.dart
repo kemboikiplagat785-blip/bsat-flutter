@@ -55,6 +55,7 @@ class DashboardViewModel extends ChangeNotifier {
   int pausedCount = 0;
   int advancedCount = 0;
   int okoaCount = 0;
+  int offerChangedCount = 0;
   int blacklistedCount = 0;
   int maskedCount = 0;
   int pataMoreCount = 0;
@@ -144,6 +145,7 @@ class DashboardViewModel extends ChangeNotifier {
     pausedCount = await count(TransactionCategory.paused);
     advancedCount = await count(TransactionCategory.advanced);
     okoaCount = await count(TransactionCategory.okoa);
+    offerChangedCount = await count(TransactionCategory.offerChanged);
     blacklistedCount = await count(TransactionCategory.blacklisted);
     maskedCount = await count(TransactionCategory.masked);
     pataMoreCount = await count(TransactionCategory.pataMore);

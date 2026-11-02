@@ -91,10 +91,13 @@ class MainActivity : FlutterActivity() {
 
                 sendNativeLog("debug", "UssdSession", "Starting new USSD session")
 
-                UssdSession.acceptedProcedure = listOf()
-
-                UssdSession.acceptedProcedure =
-                    call.argument<List<Map<String, Any>>>("acceptedProcedure") ?: listOf()
+                UssdSession.procedure =
+                    (call.argument<List<Map<String, Any?>>>("acceptedProcedure") ?: listOf()).map {
+                        SignatureMatcher.RecordedStep(
+                            it["options"]?.toString() ?: "",
+                            it["choice"]?.toString() ?: ""
+                        )
+                    }
                 UssdSession.autoSwitch = call.argument<Boolean>("autoSwitch") ?: false
                 UssdSession.isGettingSignature =
                     call.argument<Boolean>("isGettingSignature") ?: false
@@ -102,7 +105,7 @@ class MainActivity : FlutterActivity() {
                 sendNativeLog(
                     "debug",
                     "UssdSession",
-                    "Accepted Procedure: ${UssdSession.acceptedProcedure}, AutoSwitch: ${UssdSession.autoSwitch}"
+                    "Signature steps: ${UssdSession.procedure.size}, AutoSwitch: ${UssdSession.autoSwitch}, Recording: ${UssdSession.isGettingSignature}"
                 )
 
                 UssdSession.currentStepIndex = 1
@@ -285,52 +288,44 @@ class MainActivity : FlutterActivity() {
         result: MethodChannel.Result,
         maxRetries: Int = 20,
         delayMillis: Long = 1000,
-        currentRetry: Int = 1
+        currentRetry: Int = 1,
+        lastStepIndex: Int = UssdSession.currentStepIndex
     ) {
-        // Helper to convert wholeConversation to List<Map<String, Any?>>
-        fun buildResponseList(): List<Map<String, Any?>> {
-            val list = mutableListOf<Map<String, Any?>>()
-            // Preserve insertion order if possible by iterating entries
-            for ((key, value) in UssdSession.wholeConversation) {
-                list.add(mapOf("options" to key, "choice" to value))
-            }
-            return list
-        }
+        fun buildResponse(): MutableMap<String, Any?> = mutableMapOf(
+            "lastresponse" to UssdSession.finalResponse,
+            "conversation" to UssdSession.conversation.toList(),
+            "signatureComplete" to UssdSession.signatureComplete,
+            "offerChanged" to UssdSession.offerChanged
+        )
 
         if (UssdSession.finalResponse.isNotEmpty()) {
-            // If the response is ready, return the conversation list to Flutter
-            val resList = buildResponseList()
-
-            result.success(
-                mapOf(
-                    "lastresponse" to UssdSession.finalResponse,
-                    "conversation" to resList
-                )
-            )
-            UssdSession.finalResponse = "" // Reset for future requests
-            UssdSession.ussdSteps.clear() // Clear the steps
-            UssdSession.currentStepIndex = 0 // Reset step index
-            UssdSession.isRunning = false // Reset running state
-            UssdSession.wholeConversation.clear()
-            startNextQueuedUssd()
-
-            // create  "lastresponse": UssdSession.finalResponse, "conversation": resList
-
-            return
-        }
-
-        if (currentRetry >= maxRetries) {
-            // Timeout: return whatever we have (possibly empty)
-            val resList = buildResponseList()
-            result.success(mapOf("lastresponse" to UssdSession.finalResponse, "conversation" to resList, "timeout" to true))
+            result.success(buildResponse())
             resetUssdSession()
             startNextQueuedUssd()
             return
         }
 
+        if (currentRetry >= maxRetries) {
+            // Timeout: return whatever we have (possibly empty)
+            result.success(buildResponse().apply { put("timeout", true) })
+            resetUssdSession()
+            startNextQueuedUssd()
+            return
+        }
+
+        // A recording walks every step of the code, so it only times out when
+        // a step stops progressing, not on the length of the code.
+        val progressed = UssdSession.isGettingSignature && UssdSession.currentStepIndex != lastStepIndex
+
         // Schedule the next check
         android.os.Handler(mainLooper).postDelayed({
-            waitForUssdResponse(result, maxRetries, delayMillis, currentRetry + 1)
+            waitForUssdResponse(
+                result,
+                maxRetries,
+                delayMillis,
+                if (progressed) 1 else currentRetry + 1,
+                UssdSession.currentStepIndex
+            )
         }, delayMillis)
     }
 
@@ -339,7 +334,12 @@ class MainActivity : FlutterActivity() {
         UssdSession.ussdSteps.clear()
         UssdSession.currentStepIndex = 0
         UssdSession.isRunning = false
-        UssdSession.wholeConversation.clear()
+        UssdSession.conversation.clear()
+        UssdSession.procedure = listOf()
+        UssdSession.isGettingSignature = false
+        UssdSession.signatureComplete = false
+        UssdSession.offerChanged = false
+        UssdSession.pagesTakenOnStep = 0
     }
 }
 

@@ -36,6 +36,7 @@ import '../utils/top_up.dart';
 import '../utils/inactive_line_failure.dart';
 import '../utils/transaction_categories.dart';
 import '../utils/transaction_execution_safety.dart';
+import '../utils/safaricom_retry_failure.dart';
 import '../utils/transaction_reply.dart';
 
 // import '../services/skills.dart';
@@ -139,6 +140,7 @@ class TransactionController {
           await _retryPendingForwardingDeliveries();
           await _retryPendingPataMoreNotices();
           await resolveInactiveLineFailures();
+          await resolveSafaricomRetryFailures();
         },
       );
       _retryPendingForwardingDeliveries();
@@ -2055,20 +2057,10 @@ class TransactionController {
     if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]) {
       debugPrint('advanced starting');
 
-      Map<String, dynamic> signatureMap = (await _sqliteService.queryCustom(
-            'codeSignature',
-            'ussdCodeId = ?',
-            [ussdCodeItem.id ?? -1],
-          ))
-              .firstOrNull ??
-          {};
-      CodeSignature? signature;
-
-      if (signatureMap.isNotEmpty) {
-        signature = CodeSignature.fromMap(
-          signatureMap,
-        );
-      }
+      final signature = await _sqliteService.codeSignatureFor(
+        ussdCodeItem.id ?? -1,
+        ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
+      );
 
       if (retryTransactionId != null &&
           await _sqliteService.claimTransactionRetry(retryTransactionId) != 1) {
@@ -2092,7 +2084,7 @@ class TransactionController {
       requestResponse = await PhoneService().makeAdvancedRequest(
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
-        codeSignature: signatureMap.isEmpty ? null : signature,
+        codeSignature: signature,
       );
 
       requestResponse[1] = await transactionStatus(requestResponse);
@@ -4452,16 +4444,10 @@ class TransactionController {
         thisCode = variantMatches.first;
       }
 
-      var signatureQuery = await _sqliteService.queryCustom(
-        'codeSignature',
-        'ussdCodeId = ?',
-        [thisCode['ussdCodeId'] ?? thisCode['id'] ?? -1],
+      codeSignature ??= await _sqliteService.codeSignatureFor(
+        thisCode['ussdCodeId'] ?? thisCode['id'] ?? -1,
+        ussdCode,
       );
-
-      codeSignature = codeSignature ??
-          CodeSignature.fromMap(
-            signatureQuery.isNotEmpty ? signatureQuery.first : {},
-          );
 
       if (kDebugMode) {
         debugPrint("so far so good");
@@ -5439,18 +5425,13 @@ class TransactionController {
           'transactions',
         );
         if (alternativeClaimed != 1) continue;
-        final signatureRows = isAdvanced
-            ? await _sqliteService.queryCustom(
-                'codeSignature',
-                'ussdCodeId = ?',
-                [variant?['ussdCodeId'] ?? codeRows.first['id'] ?? -1],
-                limit: 1,
-              )
-            : <Map<String, dynamic>>[];
         final simSubId = int.tryParse(tx['simSubId']?.toString() ?? '') ?? -1;
-        final signature = signatureRows.isEmpty
-            ? null
-            : CodeSignature.fromMap(signatureRows.first);
+        final signature = isAdvanced
+            ? await _sqliteService.codeSignatureFor(
+                variant?['ussdCodeId'] ?? codeRows.first['id'] ?? -1,
+                processedCode,
+              )
+            : null;
         final currentAlternativeRows = await _sqliteService.queryCustom(
           'transactions',
           'id = ? AND status = ?',
@@ -5864,14 +5845,9 @@ class TransactionController {
 
       CodeSignature? signature;
       if (codeMap.isNotEmpty) {
-        signature = CodeSignature.fromMap(
-          (await _sqliteService.queryCustom(
-                'codeSignature',
-                'ussdCodeId = ?',
-                [codeMap.first['id'] ?? -1],
-              ))
-                  .firstOrNull ??
-              {},
+        signature = await _sqliteService.codeSignatureFor(
+          codeMap.first['id'] ?? -1,
+          stuff['ussdDialed']?.toString() ?? '',
         );
 
         Map<String, dynamic> code = codeMap.first;
@@ -6583,7 +6559,14 @@ class TransactionController {
     String lastName,
     int amount,
   ) async {
-    final reply = await _findReplyFor(transactionStatus, amount);
+    // A stopped offer is waiting on the owner, so the customer gets the Paused
+    // reply rather than a dedicated one.
+    final reply = await _findReplyFor(
+      transactionStatus == TransactionStatuses.offerChanged
+          ? TransactionStatuses.paused
+          : transactionStatus,
+      amount,
+    );
     var message = '';
     if (reply != null) {
       message = fillReplyTemplate(
@@ -6614,6 +6597,12 @@ class TransactionController {
 
     final String responseText =
         response.isNotEmpty ? response[0].toString() : '';
+
+    // The reply quotes the USSD screen, so its text must not decide this one.
+    if (response.length > 1 &&
+        response[1] == TransactionStatuses.offerChanged) {
+      return TransactionStatuses.offerChanged;
+    }
 
     // 1) Check custom codes first
     final List<Map<String, dynamic>> customCodes =
@@ -6994,6 +6983,19 @@ class TransactionController {
         simSubId: smsMessage.subscriptionId,
       );
       await resolveInactiveLineFailures();
+      return;
+    }
+    if (isSafaricomRetryFailureMessage(confirmationBody)) {
+      final smsTimestamp = smsMessage.date;
+      if (smsTimestamp == null || smsTimestamp <= 0) {
+        debugPrint('SAFARICOM RETRY FAILURE: missing SMS timestamp; ignored');
+        return;
+      }
+      await _sqliteService.recordSafaricomRetryFailure(
+        body: confirmationBody.trim(),
+        smsTimestamp: smsTimestamp,
+        simSubId: smsMessage.subscriptionId,
+      );
       return;
     }
     final isGiftConfirmation = RegExp(
@@ -7630,6 +7632,75 @@ class TransactionController {
           resultStatus: TransactionStatuses.hasOkoa,
         );
       }
+    }
+  }
+
+  /// Gives held temporary failures (see [isSafaricomRetryFailureMessage]),
+  /// once they have waited [safaricomRetryFailureWait] for a confirmation, to
+  /// the Successful(Pending) transactions they belong to, by
+  /// [matchInactiveLineFailures], and moves those to Error for auto retry. The
+  /// customer gets no SMS. An alternative run for another phone stays pending
+  /// with the SMS in its reply: that phone already has its first result.
+  Future<void> resolveSafaricomRetryFailures() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final failureRows = await _sqliteService.unassignedSafaricomRetryFailures(
+      since: now - inactiveLineFailureExpiry.inMilliseconds,
+      until: now - safaricomRetryFailureWait.inMilliseconds,
+    );
+    if (failureRows.isEmpty) return;
+    final failures = [
+      for (final row in failureRows)
+        InactiveLineFailure(
+          id: row['id'] as int,
+          smsTimestamp:
+              int.tryParse(row['smsTimestamp']?.toString() ?? '') ?? 0,
+          simSubId: int.tryParse(row['simSubId']?.toString() ?? ''),
+        ),
+    ];
+    final earliest =
+        failures.first.smsTimestamp - inactiveLineFailureWindow.inMilliseconds;
+    final pendingRows = await _sqliteService.queryCustom(
+      'transactions',
+      'status = ? AND (timeStamp >= ? OR retryStartedAt >= ?)',
+      [TransactionStatuses.successfulPending, earliest, earliest],
+      columns: ['id', 'timeStamp', 'retryStartedAt', 'simSubId', 'forwardingJobId'],
+    );
+    final rowsById = {for (final row in pendingRows) row['id'] as int: row};
+    final pending = [
+      for (final row in pendingRows)
+        PendingPurchase(
+          id: row['id'] as int,
+          // The latest dial: a retry dials again after the first attempt.
+          dialedAt: [
+            int.tryParse(row['timeStamp']?.toString() ?? '') ?? 0,
+            int.tryParse(row['retryStartedAt']?.toString() ?? '') ?? 0,
+          ].reduce((a, b) => a > b ? a : b),
+          simSubId: switch (int.tryParse(row['simSubId']?.toString() ?? '')) {
+            final sim? when sim >= 0 => sim,
+            _ => null,
+          },
+        ),
+    ];
+
+    for (final (failureId, transactionId) in matchInactiveLineFailures(
+        failures: failures,
+        pending: pending,
+        now: now,
+        wait: safaricomRetryFailureWait)) {
+      final forwardingJobId =
+          rowsById[transactionId]!['forwardingJobId']?.toString() ?? '';
+      final isAlternative = forwardingJobId.isNotEmpty &&
+          await _sqliteService.getAlternativeJob(forwardingJobId) != null;
+      final assigned = await _sqliteService.assignSafaricomRetryFailure(
+        failureId: failureId,
+        transactionId: transactionId,
+        moveToError: !isAlternative,
+      );
+      debugPrint(
+        'SAFARICOM RETRY FAILURE: failure=$failureId '
+        '${assigned ? 'given to' : 'could not be given to'} '
+        'transaction=$transactionId, alternative=$isAlternative',
+      );
     }
   }
 

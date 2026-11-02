@@ -622,6 +622,14 @@ class _DashBoardPageState extends State<DashBoardPage>
                                           'accentColor': kWarningColor,
                                         },
                                         {
+                                          'count': vm.offerChangedCount,
+                                          'icon': const Icon(CupertinoIcons.shield_lefthalf_fill,
+                                              color: kWarningColor, size: 14),
+                                          'query': TransactionStatuses.offerChanged,
+                                          'label': 'offer changed',
+                                          'accentColor': kWarningColor,
+                                        },
+                                        {
                                           'count': vm.okoaCount,
                                           'icon': const Icon(
                                               Icons.sailing_rounded,

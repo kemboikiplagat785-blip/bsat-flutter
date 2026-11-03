@@ -11,6 +11,7 @@ import 'package:bsat/utils/date_ops.dart';
 import 'package:bsat/utils/transaction_categories.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -210,6 +211,8 @@ class DashboardViewModel extends ChangeNotifier {
 
   Future<void> setAppActive(bool isActive) async {
     await _sharedPreferencesService.setAppIsActiveState(isActive);
+    // Battery optimisation can stop the service that dials in the background.
+    if (isActive) await Permission.ignoreBatteryOptimizations.request();
   }
 
   @override

@@ -25,6 +25,8 @@ dependencies:
   flutter:
     sdk: flutter
 
+  bsat_ussd:
+    path: packages/bsat_ussd
   cupertino_icons: ^1.0.2
   google_fonts: ^6.2.1
   ussd_service: ^0.1.1

@@ -1,0 +1,19 @@
+name: bsat_ussd
+description: Runs BSAT's Advanced USSD sequences from any Flutter engine in the app.
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+  flutter: '>=3.3.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.bsat.ussd
+        pluginClass: BsatUssdPlugin

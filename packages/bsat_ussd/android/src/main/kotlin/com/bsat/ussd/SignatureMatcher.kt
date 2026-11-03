@@ -1,4 +1,4 @@
-package com.bsat.app
+package com.bsat.ussd
 
 /**
  * Compares a live USSD screen with the step recorded in an offer's signature

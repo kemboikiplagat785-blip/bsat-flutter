@@ -1,4 +1,4 @@
-package com.bsat.app
+package com.bsat.ussd
 
 import android.util.Log
 import io.flutter.plugin.common.MethodChannel

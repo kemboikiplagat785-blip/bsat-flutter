@@ -6,21 +6,15 @@ import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/transaction_reply.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:another_telephony/telephony.dart';
 import 'package:ussd_service/ussd_service.dart';
 
 import '../models/code_signature.dart';
-import 'main_engine_ussd_bridge.dart';
 
 class PhoneService {
   static const platform = MethodChannel('com.bsat.app');
   static bool isRunning = false;
   static final UssdExecutionQueue _executionQueue = UssdExecutionQueue();
-
-  /// Set in the background service isolate. MainActivity's USSD channel only
-  /// exists on the main engine, so Advanced codes are dialed there.
-  static ServiceInstance? mainEngineBridge;
 
   SharedPreferencesService sharedPreferencesService =
       SharedPreferencesService();
@@ -112,23 +106,6 @@ class PhoneService {
     final sims = await getAllSimSubids();
     if (!(sims.contains(subscriptionId)) || subscriptionId == -1) {
       subscriptionId = (await getAllSimSubids()).first;
-    }
-
-    final bridge = mainEngineBridge;
-    if (bridge != null) {
-      if (!await isMainEngineRunning(bridge)) {
-        return [
-          'Error sending code: MissingPluginException(the app is not running)',
-          TransactionStatuses.error,
-        ];
-      }
-      return executeAlternativeUssdOnMainEngine(
-        service: bridge,
-        code: code,
-        subscriptionId: subscriptionId,
-        isAdvanced: true,
-        codeSignature: codeSignature,
-      );
     }
 
     try {

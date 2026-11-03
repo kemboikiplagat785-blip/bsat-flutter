@@ -21,7 +21,6 @@ import 'package:bsat/utils/date_ops.dart';
 import 'package:bsat/utils/forwarding_mode.dart';
 import 'package:bsat/utils/offer_time_window.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
 
 import '../models/client.dart';
 import '../models/code_signature.dart';
@@ -43,7 +42,6 @@ import '../utils/transaction_reply.dart';
 import '../services/skills.dart';
 import '../services/sms_sevice.dart';
 import '../services/phone_service.dart';
-import '../services/main_engine_ussd_bridge.dart';
 
 enum ForwardingAttemptState {
   noConfiguration,
@@ -5330,10 +5328,7 @@ class TransactionController {
     return insertedId;
   }
 
-  Future<void> _checkDelayedAlternativeForwards({
-    bool useMainEngineBridge = false,
-    ServiceInstance? backgroundService,
-  }) async {
+  Future<void> _checkDelayedAlternativeForwards() async {
     final pending = await _sqliteService.queryCustom(
       'transactions',
       'status IN (?, ?)',
@@ -5463,26 +5458,13 @@ class TransactionController {
           limit: 1,
         );
         if (currentAlternativeRows.isEmpty) continue;
-        final List<dynamic> altResponse = useMainEngineBridge
-            ? backgroundService == null
-                ? <String>[
-                    'Background service instance is required for the main-engine USSD bridge.',
-                    'alternative-failed',
-                  ]
-                : await executeAlternativeUssdOnMainEngine(
-                    service: backgroundService,
-                    code: processedCode,
-                    subscriptionId: simSubId,
-                    isAdvanced: isAdvanced,
-                    codeSignature: signature,
-                  )
-            : isAdvanced
-                ? await PhoneService().makeAdvancedRequest(
-                    processedCode,
-                    simSubId,
-                    codeSignature: signature,
-                  )
-                : await PhoneService().makeMyRequest(processedCode, simSubId);
+        final List<dynamic> altResponse = isAdvanced
+            ? await PhoneService().makeAdvancedRequest(
+                processedCode,
+                simSubId,
+                codeSignature: signature,
+              )
+            : await PhoneService().makeMyRequest(processedCode, simSubId);
         final executionStatus = altResponse.length > 1
             ? altResponse[1]?.toString()
             : TransactionStatuses.error;
@@ -5834,11 +5816,7 @@ class TransactionController {
     );
   }
 
-  Future<void> retryAll(
-    bool isAutoRetrying, {
-    bool useMainEngineBridge = false,
-    ServiceInstance? backgroundService,
-  }) async {
+  Future<void> retryAll(bool isAutoRetrying) async {
     await _recoverStaleAlternativeRequests();
     await _resumeReservedAlternativeRequests();
     await _recoverSuccessfulPendingAlternativeResults();
@@ -5847,10 +5825,7 @@ class TransactionController {
 
     // Alternative routing has its own delay and must not be blocked by normal
     // retry settings or the offer-change guard.
-    await _checkDelayedAlternativeForwards(
-      useMainEngineBridge: useMainEngineBridge,
-      backgroundService: backgroundService,
-    );
+    await _checkDelayedAlternativeForwards();
 
     bool mightHaveChanged =
         await _sharedPreferencesService.getOffersMightHaveChanged() ?? false;

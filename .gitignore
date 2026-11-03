@@ -58,3 +58,8 @@ server/serviceAccountKey.json
 android/app/keys/
 # Widget Preview related
 .widget_preview/
+
+# Local plugin: its dependencies are locked by the app
+packages/*/pubspec.lock
+packages/*/android/.gradle/
+packages/*/android/build/

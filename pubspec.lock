@@ -81,6 +81,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
+  bsat_ussd:
+    dependency: "direct main"
+    description:
+      path: "packages/bsat_ussd"
+      relative: true
+    source: path
+    version: "1.0.0"
   call_log:
     dependency: "direct main"
     description:

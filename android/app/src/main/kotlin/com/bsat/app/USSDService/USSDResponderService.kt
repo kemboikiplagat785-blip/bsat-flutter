@@ -4,14 +4,15 @@ import android.accessibilityservice.AccessibilityService
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 
-import com.bsat.app.UssdSession
+import com.bsat.ussd.SignatureMatcher
+import com.bsat.ussd.UssdSession
 import com.bsat.app.UssdResponseHandler
 
 import android.os.Bundle
 import android.widget.EditText
 import android.content.Context
 
-import com.bsat.app.NativeLogger
+import com.bsat.ussd.NativeLogger
 
 class USSDResponderService : AccessibilityService() {
 

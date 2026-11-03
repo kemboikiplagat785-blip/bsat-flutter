@@ -1,4 +1,4 @@
-package com.bsat.app
+package com.bsat.ussd
 
 object UssdSession {
     var interpunct: String = "·"

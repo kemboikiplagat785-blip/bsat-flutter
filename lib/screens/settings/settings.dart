@@ -43,6 +43,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool forwardMaskedMessages = false;
   bool autoScheduleFailed = false;
   bool downloadOffers = true;
+  int stalePendingRetryMinutes = 0;
 
   @override
   void initState() {
@@ -72,6 +73,8 @@ class _SettingsPageState extends State<SettingsPage> {
     autoScheduleFailed =
         await sharedPreferencesService.getAutoScheduleFailed() ?? false;
     downloadOffers = await sharedPreferencesService.getDownloadOffers() ?? true;
+    stalePendingRetryMinutes =
+        await sharedPreferencesService.getStalePendingRetryMinutes() ?? 0;
 
     if (mounted) setState(() {});
   }
@@ -217,6 +220,43 @@ class _SettingsPageState extends State<SettingsPage> {
                   (val) =>
                       sharedPreferencesService.setRetryMinutes(int.parse(val))),
             ),
+            const Divider(),
+            _buildToggleTile(
+              label: 'Auto-retry long pending transactions',
+              hint:
+                  'Retry transactions left in Successful(Pending) with no reply from Safaricom. A retry can buy again if Safaricom completed the first request.',
+              value: stalePendingRetryMinutes > 0,
+              onChanged: (val) async {
+                final minutes =
+                    val ? kStalePendingRetryMinuteOptions.first : 0;
+                setState(() => stalePendingRetryMinutes = minutes);
+                await sharedPreferencesService
+                    .setStalePendingRetryMinutes(minutes);
+              },
+            ),
+            if (stalePendingRetryMinutes > 0)
+              ListTile(
+                title: const Text('Retry after',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+                trailing: DropdownButton<int>(
+                  value: stalePendingRetryMinutes,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    for (final minutes in kStalePendingRetryMinuteOptions)
+                      DropdownMenuItem(
+                        value: minutes,
+                        child: Text('$minutes minutes'),
+                      ),
+                  ],
+                  onChanged: (minutes) async {
+                    if (minutes == null) return;
+                    setState(() => stalePendingRetryMinutes = minutes);
+                    await sharedPreferencesService
+                        .setStalePendingRetryMinutes(minutes);
+                  },
+                ),
+              ),
             const Divider(),
             // automatically schedule "Recommendation failed" clients next midnight
             _buildToggleTile(

@@ -432,6 +432,28 @@ class SharedPreferencesService {
     return minutes;
   }
 
+  /// Minutes a transaction may stay in Successful(Pending) before it is
+  /// retried automatically; 0 is off.
+  Future<bool> setStalePendingRetryMinutes(int minutes) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    try {
+      await prefs.setInt("stale_pending_retry_minutes", minutes);
+      return true;
+    } catch (e) {
+      if (kDebugMode) {
+        // //print(e.toString());
+      }
+    }
+    return false;
+  }
+
+  Future<int?> getStalePendingRetryMinutes() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    return prefs.getInt("stale_pending_retry_minutes");
+  }
+
   Future<bool> setAppIsActiveState(bool state) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();

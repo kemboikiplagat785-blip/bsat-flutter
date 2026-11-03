@@ -1881,6 +1881,18 @@ Future<void> handleForwardedSmsAcknowledgement(
   int unavailableAmount = 0;
   int? resolvedTargetOfferId;
   final sourceTransaction = beforeAckRows.first;
+  if (resultStatus != TransactionStatuses.hasOkoa &&
+      resultStatus != TransactionStatuses.unavailableOffer &&
+      !isSecondAttempt) {
+    final source = sourceTransaction['source']?.toString().trim() ?? '';
+    final sourceParts = source.split(RegExp(r'\s+'));
+    unavailableNumber =
+        int.tryParse(sourceTransaction['number']?.toString() ?? '') ?? 0;
+    unavailableFirstName = sourceParts.first;
+    unavailableLastName = sourceParts.skip(1).join(' ');
+    unavailableAmount =
+        int.tryParse(sourceTransaction['amount']?.toString() ?? '') ?? 0;
+  }
   if (resultStatus == TransactionStatuses.unavailableOffer || isSecondAttempt) {
     // The origin transaction carries the configured target offer association.
     final amount =
@@ -1979,12 +1991,18 @@ Future<void> handleForwardedSmsAcknowledgement(
   );
 
   if (updatedRows > 0 &&
+      unavailableNumber != null &&
       (resultStatus == TransactionStatuses.unavailableOffer ||
-          isSecondAttempt) &&
-      unavailableNumber != null) {
+          isSecondAttempt ||
+          await TransactionController().hasConfiguredReplyFor(
+            TransactionStatuses.forwardedConfirmed,
+            unavailableAmount,
+          ))) {
     await TransactionController().processReply(
       unavailableNumber,
-      resultStatus,
+      resultStatus == TransactionStatuses.unavailableOffer || isSecondAttempt
+          ? resultStatus
+          : TransactionStatuses.forwardedConfirmed,
       unavailableFirstName,
       unavailableLastName,
       unavailableAmount,

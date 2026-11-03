@@ -109,6 +109,8 @@ class TransactionStatuses {
   static const alternativeExecutingMap = {16: alternativeExecuting};
   static const alternativeFailedMap = {17: alternativeFailed};
   static const successfulPendingMap = {18: successfulPending};
+  static const pataMoreMap = {19: pataMore};
+  static const offerChangedMap = {20: offerChanged};
   static const statuses = {
     0: done,
     1: error,
@@ -129,6 +131,8 @@ class TransactionStatuses {
     16: alternativeExecuting,
     17: alternativeFailed,
     18: successfulPending,
+    19: pataMore,
+    20: offerChanged,
   };
 }
 
@@ -282,6 +286,10 @@ List<Map<String, dynamic>> kInitialCodes = [
   {'code': '*180*5*2*n*1*1#', 'amount': 19},
   {'code': '*180*5*2*n*4*1#', 'amount': 49},
 ];
+
+/// Choices, in minutes, for auto-retrying a transaction left in
+/// Successful(Pending).
+const kStalePendingRetryMinuteOptions = [20, 30, 40];
 
 List<Map<String, dynamic>> kNoAutoretryCodes = [
   {'code': '*544*13*1*n*1*1#', 'amount': 130},

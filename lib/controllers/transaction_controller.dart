@@ -510,7 +510,7 @@ class TransactionController {
       'id IN (${candidateIds.join(',')}) AND '
           "COALESCE(pataMoreJobId, '') NOT IN ('', ?) AND pataMoreState IS NULL",
       [confirmingJobId],
-      columns: ['id'],
+      columns: ['id', 'number', 'amount', 'source'],
     );
     for (final original in originals) {
       final claimed = await _sqliteService.updateStuff(
@@ -530,6 +530,19 @@ class TransactionController {
         'PATA MORE: original=${original['id']} completed by '
         'job=$confirmingJobId, claimed=$claimed',
       );
+      final amount = int.tryParse(original['amount']?.toString() ?? '') ?? 0;
+      if (claimed == 1 &&
+          await hasConfiguredReplyFor(TransactionStatuses.pataMore, amount)) {
+        final source = original['source']?.toString().trim() ?? '';
+        final sourceParts = source.split(RegExp(r'\s+'));
+        await processReply(
+          int.tryParse(original['number']?.toString() ?? '') ?? 0,
+          TransactionStatuses.pataMore,
+          sourceParts.first,
+          sourceParts.skip(1).join(' '),
+          amount,
+        );
+      }
     }
     if (originals.isNotEmpty) await _retryPendingPataMoreNotices();
   }
@@ -5834,6 +5847,10 @@ class TransactionController {
       return;
     }
 
+    if (isAutoRetrying) {
+      await _moveStalePendingTransactionsToRetry();
+    }
+
     int retryTimes = await _sharedPreferencesService.getRetryMinutes() ?? 6;
 
     retryTimes *= 2;
@@ -5883,6 +5900,41 @@ class TransactionController {
         stuff["ussdReply"],
         codeSignature: signature,
       );
+    }
+  }
+
+  /// When the setting is on, a transaction Safaricom never answered is moved
+  /// from Successful(Pending) to Error for the automatic retry. One last dialed
+  /// over a day ago is left alone.
+  Future<void> _moveStalePendingTransactionsToRetry() async {
+    final minutes =
+        await _sharedPreferencesService.getStalePendingRetryMinutes() ?? 0;
+    if (minutes <= 0) return;
+
+    final now = DateTime.now();
+    final staleBefore =
+        now.subtract(Duration(minutes: minutes)).millisecondsSinceEpoch;
+    final stale = await _sqliteService.getStalePendingRetryCandidates(
+      staleBefore: staleBefore,
+      notBefore: now.subtract(const Duration(days: 1)).millisecondsSinceEpoch,
+    );
+    for (final row in stale) {
+      final codes = await _sqliteService.queryCustom(
+        'ussdCodes',
+        'amount = ?',
+        [row['amount']],
+        columns: ['enabled'],
+        limit: 1,
+      );
+      if (codes.isNotEmpty && codes.first['enabled'] != 1) continue;
+      final id = row['id'] as int;
+      if (await _sqliteService.moveStalePendingToRetry(
+        id,
+        staleBefore: staleBefore,
+      )) {
+        debugPrint('STALE PENDING: transaction=$id moved to retry after '
+            '$minutes minutes without a Safaricom reply');
+      }
     }
   }
 
@@ -6617,14 +6669,12 @@ class TransactionController {
     String lastName,
     int amount,
   ) async {
-    // A stopped offer is waiting on the owner, so the customer gets the Paused
-    // reply rather than a dedicated one.
-    final reply = await _findReplyFor(
-      transactionStatus == TransactionStatuses.offerChanged
-          ? TransactionStatuses.paused
-          : transactionStatus,
-      amount,
-    );
+    // A stopped offer is waiting on the owner, so without a reply of its own
+    // the customer gets the Paused reply.
+    final reply = await _findReplyFor(transactionStatus, amount) ??
+        (transactionStatus == TransactionStatuses.offerChanged
+            ? await _findReplyFor(TransactionStatuses.paused, amount)
+            : null);
     var message = '';
     if (reply != null) {
       message = fillReplyTemplate(
@@ -6701,10 +6751,11 @@ class TransactionController {
     // A purchase confirmation is final. Recommendation success/commission
     // wording remains pending here because the later Safaricom SMS is the
     // confirmation source for recommendations.
-    if (RegExp(
-      r'successfully purchased|continue connecting|have purchased',
-      caseSensitive: false,
-    ).hasMatch(responseText)) {
+    if (isSafaricomPurchaseAcknowledgement(responseText) ||
+        RegExp(
+          r'successfully purchased|continue connecting|have purchased',
+          caseSensitive: false,
+        ).hasMatch(responseText)) {
       debugPrint(
         "TRANSACTION STATUS DEBUG: confirmed success response matched "
         "-> doneConfirmed",
@@ -7327,7 +7378,11 @@ class TransactionController {
     final body = smsMessage.body ?? '';
     final safaricomEvidence = SafaricomTransactionEvidence.parse(body);
     final purchaseConfirmed = safaricomEvidence?.kind ==
-        SafaricomTransactionMessageKind.giftBundlePurchased;
+            SafaricomTransactionMessageKind.giftBundlePurchased ||
+        safaricomEvidence?.kind ==
+            SafaricomTransactionMessageKind.purchaseAcknowledged;
+    final acknowledgedWithoutRecipient =
+        safaricomEvidence == null && isSafaricomPurchaseAcknowledgement(body);
     final recommendationSubmitted = safaricomEvidence?.kind ==
         SafaricomTransactionMessageKind.recommendationSubmitted;
     final recommendationSuccessful = safaricomEvidence?.kind ==
@@ -7342,6 +7397,7 @@ class TransactionController {
     ).hasMatch(body);
 
     if (!purchaseConfirmed &&
+        !acknowledgedWithoutRecipient &&
         !recommendationSubmitted &&
         !recommendationSuccessful &&
         !hasTotalCommission &&
@@ -7349,8 +7405,10 @@ class TransactionController {
       return;
     }
 
-    final confirmed =
-        purchaseConfirmed || recommendationSuccessful || hasTotalCommission;
+    final confirmed = purchaseConfirmed ||
+        acknowledgedWithoutRecipient ||
+        recommendationSuccessful ||
+        hasTotalCommission;
     final targetStatus = recommendationFailed
         ? TransactionStatuses.secondAttempt
         : safaricomEvidence?.targetStatus ??
@@ -7393,7 +7451,9 @@ class TransactionController {
     );
     final smsTimestamp = smsMessage.date;
 
-    if (code.isEmpty && recipientNumber.isEmpty) {
+    if (code.isEmpty &&
+        recipientNumber.isEmpty &&
+        !acknowledgedWithoutRecipient) {
       debugPrint(
         'SAFARICOM CONFIRMATION: no transaction code or recipient; '
         'leaving unresolved',
@@ -7445,6 +7505,7 @@ class TransactionController {
         'status',
         'ussdReply',
         'retryStartedAt',
+        'simSubId',
         'source',
         'forwardingJobId',
         'forwardingSenderDeviceName',
@@ -7452,7 +7513,13 @@ class TransactionController {
       ],
     );
 
-    var candidates = eligibleTransactions;
+    var candidates = acknowledgedWithoutRecipient
+        ? advancedTransactionsForAcknowledgement(
+            eligibleTransactions,
+            smsTimestamp: smsTimestamp,
+            simSubId: smsMessage.subscriptionId,
+          )
+        : eligibleTransactions;
     if (code.isNotEmpty) {
       candidates = candidates
           .where((row) => row['transactionId']?.toString() == code)
@@ -7483,6 +7550,7 @@ class TransactionController {
     final uniqueCandidate = uniqueSafaricomTransactionCandidate(candidates);
     if (uniqueCandidate == null) {
       if (candidates.isEmpty &&
+          !acknowledgedWithoutRecipient &&
           targetStatus == TransactionStatuses.doneConfirmed) {
         final resolvedAmbiguous =
             await _completeAmbiguousAlternativeFromConfirmation(
@@ -7601,7 +7669,10 @@ class TransactionController {
       }
     }
 
-    if (notifyReplies) {
+    // The acknowledgement already replied; the later "You have purchased"
+    // message for the same transaction must not reply again.
+    final alreadyConfirmed = currentStatus == TransactionStatuses.doneConfirmed;
+    if (notifyReplies && !alreadyConfirmed) {
       processReply(
         number,
         status,

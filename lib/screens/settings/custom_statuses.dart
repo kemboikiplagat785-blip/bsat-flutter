@@ -21,6 +21,10 @@ class _CustomStatusesPageState extends State<CustomStatusesPage> {
   void initState() {
     super.initState();
     _statusOptions = TransactionStatuses.statuses.values
+        // Set by the app itself, never by a USSD reply's wording.
+        .where((status) =>
+            status != TransactionStatuses.pataMore &&
+            status != TransactionStatuses.offerChanged)
         .toSet()
         .map((e) => e.toString())
         .toList()

@@ -4,6 +4,7 @@ enum SafaricomTransactionMessageKind {
   recommendationSubmitted,
   recommendationConfirmed,
   giftBundlePurchased,
+  purchaseAcknowledged,
 }
 
 class SafaricomTransactionEvidence {
@@ -23,7 +24,8 @@ class SafaricomTransactionEvidence {
         SafaricomTransactionMessageKind.recommendationSubmitted =>
           TransactionStatuses.successfulPending,
         SafaricomTransactionMessageKind.recommendationConfirmed ||
-        SafaricomTransactionMessageKind.giftBundlePurchased =>
+        SafaricomTransactionMessageKind.giftBundlePurchased ||
+        SafaricomTransactionMessageKind.purchaseAcknowledged =>
           TransactionStatuses.doneConfirmed,
       };
 
@@ -35,17 +37,19 @@ class SafaricomTransactionEvidence {
       dotAll: true,
     ).hasMatch(body)
         ? SafaricomTransactionMessageKind.giftBundlePurchased
-        : RegExp(
-            r'you\s+have\s+successfully\s+recommended\s+offer',
-            caseSensitive: false,
-          ).hasMatch(body)
-            ? SafaricomTransactionMessageKind.recommendationConfirmed
+        : isSafaricomPurchaseAcknowledgement(body)
+            ? SafaricomTransactionMessageKind.purchaseAcknowledged
             : RegExp(
-                r'recommendation\s+for\s+\d+\s+submitted\s+successfully',
+                r'you\s+have\s+successfully\s+recommended\s+offer',
                 caseSensitive: false,
               ).hasMatch(body)
-                ? SafaricomTransactionMessageKind.recommendationSubmitted
-                : null;
+                ? SafaricomTransactionMessageKind.recommendationConfirmed
+                : RegExp(
+                    r'recommendation\s+for\s+\d+\s+submitted\s+successfully',
+                    caseSensitive: false,
+                  ).hasMatch(body)
+                    ? SafaricomTransactionMessageKind.recommendationSubmitted
+                    : null;
     if (kind == null) return null;
 
     final recipientMatch = RegExp(
@@ -77,6 +81,47 @@ class SafaricomTransactionEvidence {
       transactionCode: codeMatch?.group(0),
     );
   }
+}
+
+/// "Thank you for choosing Safaricom. Kindly wait as we process your request":
+/// confirms the purchase, without waiting for the later "You have purchased"
+/// message.
+bool isSafaricomPurchaseAcknowledgement(String body) => RegExp(
+      r'thank\s+you\s+for\s+choosing\s+safaricom.*?'
+      r'kindly\s+wait\s+as\s+we\s+process',
+      caseSensitive: false,
+      dotAll: true,
+    ).hasMatch(body);
+
+const safaricomAcknowledgementWindow = Duration(minutes: 2);
+
+/// The Advanced transactions an acknowledgement naming no recipient can belong
+/// to: dialed within [safaricomAcknowledgementWindow] of the SMS, on the SIM
+/// that received it when both SIMs are known.
+List<Map<String, dynamic>> advancedTransactionsForAcknowledgement(
+  Iterable<Map<String, dynamic>> transactions, {
+  required int smsTimestamp,
+  int? simSubId,
+}) {
+  int? knownSim(Object? value) {
+    final sim = int.tryParse(value?.toString() ?? '');
+    return sim != null && sim >= 0 ? sim : null;
+  }
+
+  final smsSim = knownSim(simSubId);
+  return transactions.where((row) {
+    if (row['status'] != TransactionStatuses.advancedUssd) return false;
+    final dialedAt = [
+      int.tryParse(row['timeStamp']?.toString() ?? '') ?? 0,
+      int.tryParse(row['retryStartedAt']?.toString() ?? '') ?? 0,
+    ].reduce((a, b) => a > b ? a : b);
+    if ((dialedAt - smsTimestamp).abs() >
+        safaricomAcknowledgementWindow.inMilliseconds) {
+      return false;
+    }
+    final rowSim = knownSim(row['simSubId']);
+    return smsSim == null || rowSim == null || rowSim == smsSim;
+  }).toList();
 }
 
 String normalizeSafaricomRecipient(String digits) {

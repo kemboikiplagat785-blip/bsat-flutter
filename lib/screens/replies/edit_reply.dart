@@ -209,6 +209,17 @@ class _EditReplyPageState extends State<EditReplyPage> {
                             // ),
                           ),
                           RadioListTile(
+                            title: const Text('On Successful (Pending) - recommendation submitted'),
+                            value: TransactionStatuses
+                                .successfulPendingMap.keys.first,
+                            groupValue: _selectedOption,
+                            onChanged: (int? value) {
+                              setState(() {
+                                _selectedOption = value!;
+                              });
+                            },
+                          ),
+                          RadioListTile(
                             title: const Text('On pending purchase'),
                             // leading: Radio<int>(
                             value: TransactionStatuses.doneMap.keys.first,
@@ -284,6 +295,17 @@ class _EditReplyPageState extends State<EditReplyPage> {
                             },
                           ),
                           RadioListTile(
+                            title: const Text('Offer changed'),
+                            value: TransactionStatuses
+                                .offerChangedMap.keys.first,
+                            groupValue: _selectedOption,
+                            onChanged: (int? value) {
+                              setState(() {
+                                _selectedOption = value!;
+                              });
+                            },
+                          ),
+                          RadioListTile(
                             title: const Text('Advanced'),
                             // leading: Radio<int>(
                             value:
@@ -318,10 +340,32 @@ class _EditReplyPageState extends State<EditReplyPage> {
                             },
                           ),
                           RadioListTile(
-                            title: const Text('Forwarded (online)'),
+                            title: const Text('Forwarded (Pending)'),
                             // leading: Radio<int>(
                             value: TransactionStatuses
                                 .forwardedOnlineMap.keys.first,
+                            groupValue: _selectedOption,
+                            onChanged: (int? value) {
+                              setState(() {
+                                _selectedOption = value!;
+                              });
+                            },
+                          ),
+                          RadioListTile(
+                            title: const Text('Forwarded (Successful)'),
+                            value: TransactionStatuses
+                                .forwardedConfirmedMap.keys.first,
+                            groupValue: _selectedOption,
+                            onChanged: (int? value) {
+                              setState(() {
+                                _selectedOption = value!;
+                              });
+                            },
+                          ),
+                          RadioListTile(
+                            title: const Text('Pata More'),
+                            value: TransactionStatuses
+                                .pataMoreMap.keys.first,
                             groupValue: _selectedOption,
                             onChanged: (int? value) {
                               setState(() {

@@ -196,6 +196,8 @@ class SQLiteService {
         db, 'transactions', 'retryState', "TEXT NOT NULL DEFAULT 'ready'");
     await _addColumnIfMissing(db, 'transactions', 'retryStartedAt', 'INTEGER');
     await _addColumnIfMissing(db, 'transactions', 'retryClaimOwner', 'TEXT');
+    await _addColumnIfMissing(
+        db, 'transactions', 'stalePendingRetries', 'INTEGER');
     // Repair legacy schema gaps on each open using SQLite metadata. The
     // transaction above serializes repair across database connections.
     for (final definition in const <String, Map<String, String>>{
@@ -730,6 +732,7 @@ class SQLiteService {
         retryState TEXT NOT NULL DEFAULT 'ready',
         retryStartedAt INTEGER,
         retryClaimOwner TEXT,
+        stalePendingRetries INTEGER,
         firstFailedTimeStamp INTEGER,
         forwardingJobId TEXT,
         forwardingSenderDeviceName TEXT,
@@ -2565,6 +2568,76 @@ class SQLiteService {
         'retryState',
       ],
     );
+  }
+
+  /// Transactions left in the Successful(Pending) category since before
+  /// [staleBefore], last dialed no earlier than [notBefore], that still have
+  /// automatic retries left.
+  Future<List<Map<String, dynamic>>> getStalePendingRetryCandidates({
+    required int staleBefore,
+    required int notBefore,
+  }) async {
+    return queryCustom(
+      'transactions',
+      '''
+        status IN (?, ?)
+        AND COALESCE(retryState, 'ready') NOT IN ('claimed', 'dispatching')
+        AND COALESCE(stalePendingRetries, 0) < ?
+        AND MAX(COALESCE(timeStamp, 0), COALESCE(retryStartedAt, 0))
+          BETWEEN ? AND ?
+        AND NOT EXISTS (
+          SELECT 1 FROM alternativeJobs j
+          WHERE COALESCE(transactions.forwardingJobId, '') != ''
+            AND j.forwardingJobId = transactions.forwardingJobId
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM safaricomFailureRetries r
+          WHERE r.transactionRowId = transactions.id
+            AND r.retriesUsed >= ?
+        )
+      ''',
+      [
+        TransactionStatuses.successfulPending,
+        TransactionStatuses.done,
+        maxStalePendingRetries,
+        notBefore,
+        staleBefore,
+        maxSafaricomFailureRetries,
+      ],
+      columns: ['id', 'amount'],
+    );
+  }
+
+  /// Most automatic retries of one transaction left in Successful(Pending).
+  /// Safaricom may have completed it silently, so each retry can buy again.
+  static const int maxStalePendingRetries = 3;
+
+  /// Moves a stale pending transaction to Error, where the automatic retry
+  /// takes it. Confirmation or a new dial arriving first keeps it out.
+  Future<bool> moveStalePendingToRetry(
+    int transactionId, {
+    required int staleBefore,
+  }) async {
+    final db = await database;
+    final updated = await db.rawUpdate(
+      '''
+        UPDATE transactions
+        SET status = ?, retryState = 'ready', retryClaimOwner = NULL,
+          stalePendingRetries = COALESCE(stalePendingRetries, 0) + 1
+        WHERE id = ?
+          AND status IN (?, ?)
+          AND COALESCE(retryState, 'ready') NOT IN ('claimed', 'dispatching')
+          AND MAX(COALESCE(timeStamp, 0), COALESCE(retryStartedAt, 0)) <= ?
+      ''',
+      [
+        TransactionStatuses.error,
+        transactionId,
+        TransactionStatuses.successfulPending,
+        TransactionStatuses.done,
+        staleBefore,
+      ],
+    );
+    return updated == 1;
   }
 
   Future<List<Map<String, dynamic>>> queryAll(

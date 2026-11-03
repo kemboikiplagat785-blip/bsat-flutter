@@ -10,6 +10,9 @@ object UssdSession {
     var ussdDialed: String = ""
     var isGettingSignature = false
 
+    // The whole code goes in the dial itself; Safaricom's reply ends the session.
+    var isOneCall = false
+
     // True only once a signature recording reached the last step of the code.
     var signatureComplete = false
 

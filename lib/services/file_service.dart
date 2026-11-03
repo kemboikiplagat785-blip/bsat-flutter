@@ -487,6 +487,7 @@ class FileService {
           'dialSim': offer['dialSim'],
           'canRetry': offer['canRetry'],
           'isAdvanced': offer['isAdvanced'],
+          'isOneCall': offer['isOneCall'],
           'enabled': offer['enabled'],
           'usesBongaPoints': offer['usesBongaPoints'],
           'fallbackCode': offer['fallbackCode'],

@@ -24,6 +24,7 @@ class UssdRequest(
     val procedure: List<SignatureMatcher.RecordedStep>,
     val autoSwitch: Boolean,
     val isGettingSignature: Boolean,
+    val isOneCall: Boolean,
 ) {
     companion object {
         fun from(call: MethodCall) = UssdRequest(
@@ -38,6 +39,7 @@ class UssdRequest(
                 },
             autoSwitch = call.argument<Boolean>("autoSwitch") ?: false,
             isGettingSignature = call.argument<Boolean>("isGettingSignature") ?: false,
+            isOneCall = call.argument<Boolean>("isOneCall") ?: false,
         )
     }
 }
@@ -77,6 +79,7 @@ object UssdRunner {
         UssdSession.procedure = request.procedure
         UssdSession.autoSwitch = request.autoSwitch
         UssdSession.isGettingSignature = request.isGettingSignature
+        UssdSession.isOneCall = request.isOneCall
         NativeLogger.sendLog(
             "debug",
             TAG,
@@ -84,8 +87,9 @@ object UssdRunner {
         )
 
         UssdSession.currentStepIndex = 1
-        UssdSession.ussdSteps = request.sequence.removeSuffix("#")
-            .split("*").filter { it.isNotEmpty() }.toMutableList()
+        val code = request.sequence.removeSuffix("#")
+        UssdSession.ussdSteps = (if (request.isOneCall) listOf(code) else code.split("*"))
+            .filter { it.isNotEmpty() }.toMutableList()
         UssdSession.usedUssdSteps.clear()
         NativeLogger.sendLog("debug", TAG, "UssdSteps: ${UssdSession.ussdSteps}")
 
@@ -94,7 +98,7 @@ object UssdRunner {
             return
         }
 
-        val firstCode = "*${UssdSession.ussdSteps[0]}#"
+        val firstCode = if (request.isOneCall) request.sequence else "*${UssdSession.ussdSteps[0]}#"
         UssdSession.ussdDialed = firstCode
 
         val missing = arrayOf(Manifest.permission.CALL_PHONE, Manifest.permission.READ_PHONE_STATE)
@@ -258,6 +262,7 @@ object UssdRunner {
         UssdSession.conversation.clear()
         UssdSession.procedure = listOf()
         UssdSession.isGettingSignature = false
+        UssdSession.isOneCall = false
         UssdSession.signatureComplete = false
         UssdSession.offerChanged = false
         UssdSession.pagesTakenOnStep = 0

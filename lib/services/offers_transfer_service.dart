@@ -6,7 +6,10 @@ import 'package:bsat/services/sqlite_service.dart';
 import 'package:flutter/foundation.dart';
 
 class OffersTransferService {
-  final SQLiteService _sqliteService = SQLiteService();
+  OffersTransferService({SQLiteService? sqliteService})
+      : _sqliteService = sqliteService ?? SQLiteService();
+
+  final SQLiteService _sqliteService;
   final SharedPreferencesService _sharedPreferencesService =
       SharedPreferencesService();
 
@@ -16,6 +19,7 @@ class OffersTransferService {
     'dialSim',
     'canRetry',
     'isAdvanced',
+    'isOneCall',
     'enabled',
     'usesBongaPoints',
     'fallbackCode',
@@ -67,6 +71,25 @@ class OffersTransferService {
         await _sharedPreferencesService.getDeviceName() ??
             'Unknown Device ${DateTime.now().millisecondsSinceEpoch}';
 
+    return BackendService().post(
+      '/api/fcm/send-secure',
+      body: {
+        'title': 'BSAT Offers Transfer',
+        'body': 'Offers from $myDeviceName',
+        'senderDeviceName': myDeviceName,
+        'recipientDeviceName': recipientDeviceName,
+        'data': {
+          'type': 'OFFERS_RESPONSE',
+          'requestId': requestId,
+          'senderDeviceName': myDeviceName,
+          'offers': await exportOffersJson(),
+        },
+      },
+    );
+  }
+
+  /// This phone's offers in the form [importOffersFromPayload] takes.
+  Future<String> exportOffersJson() async {
     final List<Map<String, dynamic>> offers = await _sqliteService.queryAll(
       'ussdCodes',
       orderBy: 'id ASC',
@@ -102,21 +125,7 @@ class OffersTransferService {
         .where((row) => row.isNotEmpty)
         .toList();
 
-    return BackendService().post(
-      '/api/fcm/send-secure',
-      body: {
-        'title': 'BSAT Offers Transfer',
-        'body': 'Offers from $myDeviceName',
-        'senderDeviceName': myDeviceName,
-        'recipientDeviceName': recipientDeviceName,
-        'data': {
-          'type': 'OFFERS_RESPONSE',
-          'requestId': requestId,
-          'senderDeviceName': myDeviceName,
-          'offers': jsonEncode(serializableOffers),
-        },
-      },
-    );
+    return jsonEncode(serializableOffers);
   }
 
   Future<int> importOffersFromPayload(
@@ -239,6 +248,7 @@ class OffersTransferService {
           key == 'dialSim' ||
           key == 'canRetry' ||
           key == 'isAdvanced' ||
+          key == 'isOneCall' ||
           key == 'enabled' ||
           key == 'usesBongaPoints' ||
           key == 'bongaPointsPerTransaction') {
@@ -301,6 +311,12 @@ class OffersTransferService {
   }
 
   Future<void> _ensureOfferColumnsExist() async {
+    await _sqliteService.addColumnIfNotExists(
+      'ussdCodes',
+      'isOneCall',
+      'INTEGER',
+      defaultValue: 0,
+    );
     await _sqliteService.addColumnIfNotExists(
       'ussdCodes',
       'enabled',

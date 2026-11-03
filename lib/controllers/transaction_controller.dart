@@ -2131,9 +2131,11 @@ class TransactionController {
         return null;
       }
       transactionExecutionStartedAt = DateTime.now().millisecondsSinceEpoch;
-      requestResponse = await PhoneService().makeMyRequest(
+      requestResponse = await _dialPlainCode(
+        PhoneService(),
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[0],
         ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[1],
+        amount,
       );
       requestResponse[1] = await transactionStatus(requestResponse);
     }
@@ -4591,9 +4593,11 @@ class TransactionController {
             'Safaricom evidence changed after the claim.');
         return;
       }
-      response = await _phoneService.makeMyRequest(
+      response = await _dialPlainCode(
+        _phoneService,
         ussdCode,
         simSubId,
+        transaction.amount,
       );
       response[1] = await transactionStatus(response);
     }
@@ -6907,9 +6911,11 @@ class TransactionController {
         simSubId,
       );
     } else {
-      response = await _phoneService.makeMyRequest(
+      response = await _dialPlainCode(
+        _phoneService,
         ussdCode,
         simSubId,
+        amount,
       );
     }
 
@@ -7045,6 +7051,18 @@ class TransactionController {
         sales.fold(0, (sum, sale) => sum + (sale['amount'] ?? 0));
     return (totalAmount * 0.1);
   }
+
+  /// Dials an offer's code that is not Advanced: in one call either way,
+  /// through the phone's USSD dialog when the offer asks for that.
+  Future<List> _dialPlainCode(
+    PhoneService phoneService,
+    String code,
+    int simSubId,
+    int amount,
+  ) async =>
+      await _sqliteService.isOneCallCode(amount, getCodeFromUssd(code))
+          ? phoneService.makeOneCallRequest(code, simSubId)
+          : phoneService.makeMyRequest(code, simSubId);
 
   Future<bool> isAdvanced(String code) async {
     String ussdRaw = getCodeFromUssd(code);

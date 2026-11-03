@@ -37,8 +37,8 @@ class LanRejectReasons {
 }
 
 /// Message kinds that may travel over LAN. Everything else (data requests,
-/// settings, offers...) is refused: it stays on its existing Internet path,
-/// or is not available over LAN.
+/// settings...) is refused: it stays on its existing Internet path, or is not
+/// available over LAN.
 enum LanMessageKind {
   /// Phone A to Phone B: a forwarding job (`forwarded_sms`).
   forwardedSms,
@@ -72,7 +72,17 @@ enum LanMessageKind {
 
   /// Phone B to Phone A (reply only): receipt of that notice.
   pataMoreReceipt,
+
+  /// A phone asks a paired phone for its offers.
+  offersRequest,
+
+  /// Reply only: one piece of those offers. Offers are only ever sent on the
+  /// session of a phone that asked for them.
+  offersChunk,
 }
+
+const String lanOffersRequestType = 'lan_offers_request';
+const String lanOffersChunkType = 'lan_offers_chunk';
 
 final RegExp _jobIdPattern = RegExp(r'^[A-Za-z0-9_\-]{4,128}$');
 final RegExp _requestIdPattern = RegExp(r'^[0-9a-f]{32}$');
@@ -81,6 +91,10 @@ final RegExp _controlCharacters = RegExp(r'[\x00-\x08\x0b\x0c\x0e-\x1f]');
 const int maxLanBodyChars = 2000;
 const int maxLanNameChars = 100;
 const int maxLanFieldChars = 200;
+
+/// One piece of a phone's offers. With its envelope, within one LAN record.
+const int maxLanOffersChunkChars = 4000;
+const int maxLanOffersChunks = 250;
 
 const Map<LanMessageKind, Set<String>> _requiredKeys = {
   LanMessageKind.forwardedSms: {
@@ -134,6 +148,21 @@ const Map<LanMessageKind, Set<String>> _requiredKeys = {
     'recipientDeviceName',
   },
   LanMessageKind.pataMoreReceipt: _messageAckRequiredKeys,
+  LanMessageKind.offersRequest: {
+    'type',
+    'forwardingJobId',
+    'senderDeviceName',
+    'recipientDeviceName',
+  },
+  LanMessageKind.offersChunk: {
+    'type',
+    'forwardingJobId',
+    'senderDeviceName',
+    'recipientDeviceName',
+    'part',
+    'totalParts',
+    'chunk',
+  },
 };
 
 const Set<String> _messageAckRequiredKeys = {
@@ -177,6 +206,8 @@ const Map<LanMessageKind, Set<String>> _optionalKeys = {
   LanMessageKind.alternativeResultReceipt: _messageAckOptionalKeys,
   LanMessageKind.pataMoreNotice: {'transactionId', 'body', 'title'},
   LanMessageKind.pataMoreReceipt: _messageAckOptionalKeys,
+  LanMessageKind.offersRequest: {},
+  LanMessageKind.offersChunk: {},
 };
 
 /// Free-text fields: as long as a body, and may contain line breaks.
@@ -216,6 +247,8 @@ LanMessageKind? lanMessageKindOf(Map<String, Object?> data) {
       data['originalType'] == 'forwarded_sms_pata_more') {
     return LanMessageKind.pataMoreReceipt;
   }
+  if (type == lanOffersRequestType) return LanMessageKind.offersRequest;
+  if (type == lanOffersChunkType) return LanMessageKind.offersChunk;
   return null;
 }
 
@@ -227,6 +260,7 @@ const Set<LanMessageKind> lanRequestKinds = {
   LanMessageKind.alternativeRequest,
   LanMessageKind.alternativeResult,
   LanMessageKind.pataMoreNotice,
+  LanMessageKind.offersRequest,
 };
 
 /// Kinds a server may send as a reply to [request].
@@ -243,6 +277,7 @@ Set<LanMessageKind> lanReplyKindsFor(LanMessageKind request) =>
           LanMessageKind.alternativeResultReceipt,
         },
       LanMessageKind.pataMoreNotice => {LanMessageKind.pataMoreReceipt},
+      LanMessageKind.offersRequest => {LanMessageKind.offersChunk},
       _ => const {},
     };
 
@@ -328,6 +363,7 @@ LanForwardingData validateLanForwardingData(
     final limit = switch (entry.key) {
       _ when _textKeys.contains(entry.key) => maxLanBodyChars,
       'senderDeviceName' || 'recipientDeviceName' => maxLanNameChars,
+      'chunk' => maxLanOffersChunkChars,
       _ => maxLanFieldChars,
     };
     if (value == null || value.length > limit) {
@@ -367,6 +403,19 @@ LanForwardingData validateLanForwardingData(
     if ((data['body'] ?? '').trim().isEmpty) {
       throw const LanMessageException(
           LanRejectReasons.invalidMessage, 'empty body');
+    }
+  }
+  if (kind == LanMessageKind.offersChunk) {
+    final part = int.tryParse(data['part'] ?? '');
+    final totalParts = int.tryParse(data['totalParts'] ?? '');
+    if (part == null ||
+        totalParts == null ||
+        part < 0 ||
+        part >= totalParts ||
+        totalParts > maxLanOffersChunks ||
+        (data['chunk'] ?? '').isEmpty) {
+      throw const LanMessageException(
+          LanRejectReasons.invalidMessage, 'invalid offers chunk');
     }
   }
   final peer = authenticatedPeerDeviceName.trim();

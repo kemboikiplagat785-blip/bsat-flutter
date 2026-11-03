@@ -241,6 +241,7 @@ class SQLiteService {
         'fallbackCode': 'TEXT',
         'balanceCheckCode': 'TEXT',
         'bongaPointsPerTransaction': 'INTEGER DEFAULT 0',
+        'isOneCall': 'INTEGER DEFAULT 0',
       },
       'replies': {'targetOfferId': 'INTEGER'},
       'codeSignature': {
@@ -775,6 +776,7 @@ class SQLiteService {
         fallbackCode TEXT,
         balanceCheckCode TEXT,
         bongaPointsPerTransaction INTEGER DEFAULT 0,
+        isOneCall INTEGER DEFAULT 0,
         offerName TEXT,
         startTime TEXT,
         endTime TEXT
@@ -2568,6 +2570,23 @@ class SQLiteService {
         'retryState',
       ],
     );
+  }
+
+  /// Whether the offer for [amount] dialing [rawCode] (with `n` for the number)
+  /// runs its code in one call through the phone's USSD dialog.
+  Future<bool> isOneCallCode(int amount, String rawCode) async {
+    final rows = await rawQueryInput(
+      '''
+      SELECT u.id
+      FROM ussdCodes u
+      LEFT JOIN ussdCodeVariants v ON v.ussdCodeId = u.id
+      WHERE u.amount = ? AND u.isOneCall = 1
+        AND (v.code = ? OR u.fallbackCode = ?)
+      LIMIT 1
+      ''',
+      [amount, rawCode, rawCode],
+    );
+    return rows.isNotEmpty;
   }
 
   /// Transactions left in the Successful(Pending) category since before

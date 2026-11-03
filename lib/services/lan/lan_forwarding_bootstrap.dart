@@ -9,6 +9,7 @@ import 'package:flutter/widgets.dart';
 import 'lan_forwarding_service.dart';
 import 'lan_local_identity.dart';
 import 'lan_messages.dart';
+import 'lan_offers_transfer.dart';
 import 'lan_peer_store.dart';
 
 /// Runs a validated LAN request through the same handler FCM messages use,
@@ -19,11 +20,13 @@ Future<void> handleLanForwardingRequest(
   LanPeer peer,
   LanReplySink reply,
 ) =>
-    handleRemoteMessage(
-      RemoteMessage(data: message.data),
-      replySink: reply,
-      authenticatedSenderDeviceName: peer.deviceName,
-    );
+    message.kind == LanMessageKind.offersRequest
+        ? serveLanOffersRequest(message, reply)
+        : handleRemoteMessage(
+            RemoteMessage(data: message.data),
+            replySink: reply,
+            authenticatedSenderDeviceName: peer.deviceName,
+          );
 
 /// Runs a validated LAN reply (a receipt ACK, a confirmation receipt, or an
 /// alternative request or result receipt) through the existing

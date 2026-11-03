@@ -78,6 +78,45 @@ class PhoneService {
     ];
   }
 
+  /// Sends the whole of [code] in one call, like [makeMyRequest], but through
+  /// the phone's USSD dialog like [makeAdvancedRequest]: the screen wakes for
+  /// the session and the accessibility service reads the reply.
+  ///
+  /// Returns the same as [makeMyRequest].
+  Future<List> makeOneCallRequest(String code, int subscriptionId) async {
+    return _executionQueue.run(() => _makeOneCallRequest(code, subscriptionId));
+  }
+
+  Future<List> _makeOneCallRequest(String code, int subscriptionId) async {
+    final sims = await getAllSimSubids();
+    if (!(sims.contains(subscriptionId)) || subscriptionId == -1) {
+      subscriptionId = sims.first;
+    }
+
+    try {
+      final response =
+          await sendUssdSequence(code, subscriptionId, isOneCall: true);
+      final reply = response.isEmpty
+          ? ''
+          : '${response[0]['lastresponse'] ?? response[0]['value'] ?? ''}';
+      debugPrint("ONE CALL USSD DEBUG: code=[$code], "
+          "sim=$subscriptionId, response=[$reply]");
+      return reply.trim().isEmpty
+          ? [failedUssdNoReply, TransactionStatuses.error]
+          : [reply, TransactionStatuses.done];
+    } on PlatformException catch (e) {
+      debugPrint("error! code: ${e.code} - message: ${e.message}, "
+          "ussd code: $code, subscriptionId: $subscriptionId");
+      return [
+        "Error sending code: ${e.message ?? e.code}",
+        TransactionStatuses.error,
+      ];
+    } catch (e) {
+      debugPrint("error! $e");
+      return ["Error sending code: $e", TransactionStatuses.error];
+    }
+  }
+
   Future<List> makeAdvancedRequest(
     String code,
     int subscriptionId, {
@@ -280,6 +319,7 @@ class PhoneService {
     int subscriptionId, {
     CodeSignature? codeSignature,
     bool isGettingSignature = false,
+    bool isOneCall = false,
   }) async {
     isRunning = true;
     final signature = codeSignature;
@@ -306,6 +346,7 @@ class PhoneService {
           "acceptedProcedure": procedure,
           "autoSwitch": autoSwitch,
           "isGettingSignature": isGettingSignature,
+          "isOneCall": isOneCall,
         },
       );
       debugPrint(

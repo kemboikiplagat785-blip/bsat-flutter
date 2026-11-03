@@ -86,8 +86,8 @@ class USSDResponderService : AccessibilityService() {
             if (responseText.contains("connection problem", ignoreCase = true)  || responseText.contains("connection code", ignoreCase = true) || responseText.contains("technical difficulties", ignoreCase = true) || responseText.contains("application23", ignoreCase = true) ||responseText.contains("Error from application", ignoreCase = true) || responseText.contains("invalid mmi code", ignoreCase = true)) {
                 val okBtn = findButtonByText(root, "OK")
                 if (okBtn != null) {
-                    // A recording cannot continue; report it instead of waiting for the timeout.
-                    if (UssdSession.isGettingSignature) {
+                    // These cannot continue; report it instead of waiting for the timeout.
+                    if (UssdSession.isGettingSignature || UssdSession.isOneCall) {
                         UssdSession.finalResponse = responseText
                     }
                     okBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK)
@@ -216,6 +216,13 @@ class USSDResponderService : AccessibilityService() {
             } else {
                 // A recording never sends anything past the steps of the code.
                 if (UssdSession.isGettingSignature) {
+                    cancelSession(root, responseText)
+                    return
+                }
+
+                // A menu after a one-call code: nothing more will be sent, so
+                // it must not stay open and block the next session.
+                if (UssdSession.isOneCall && findNodeByClass(root, EditText::class.java.name) != null) {
                     cancelSession(root, responseText)
                     return
                 }

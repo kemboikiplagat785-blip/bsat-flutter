@@ -62,6 +62,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
   bool _hasChanges = false;
 
   bool isAdvanced = false;
+  bool isOneCall = false;
   bool usesBongaPoints = false;
   bool _isRecordingSignature = false;
 
@@ -570,6 +571,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
       'dialSim': _dialSim,
       'canRetry': _canRetry ? 1 : 0,
       'isAdvanced': isAdvanced ? 1 : 0,
+      'isOneCall': isOneCall && !isAdvanced ? 1 : 0,
       'usesBongaPoints': usesBongaPoints ? 1 : 0,
       'fallbackCode': _fallbackCodeTextController.text,
       'balanceCheckCode': _balanceCheckCodeTextController.text,
@@ -865,6 +867,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
     _canRetry = thisData['canRetry'] == 1;
     isAdvanced =
         (thisData['isAdvanced'] != null) ? thisData['isAdvanced'] == 1 : false;
+    isOneCall = thisData['isOneCall'] == 1;
 
     _fromBothSims = _fromSim < 0 ? true : false;
     usesBongaPoints = (thisData['usesBongaPoints'] != null)
@@ -1225,6 +1228,18 @@ class _EditOfferPageState extends State<EditOfferPage> {
                     setState(() => isAdvanced = val);
                   },
                 ),
+                if (!isAdvanced) ...[
+                  const Divider(color: Colors.white24),
+                  _buildSwitchTile(
+                    label: 'Run in one call, screen off',
+                    value: isOneCall,
+                    onChanged: (val) {
+                      if (val) showAccessibilityPermissionDialog(context);
+                      _hasChanges = true;
+                      setState(() => isOneCall = val);
+                    },
+                  ),
+                ],
               ]),
 
               _buildSectionTitle('Error detection and avoidance'),

@@ -1,6 +1,4 @@
-import 'package:bsat/screens/home/home.dart';
 import 'package:bsat/screens/onboarding/automate_splash.dart';
-import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -15,32 +13,8 @@ class OnboardingPage extends StatefulWidget {
 }
 
 class OnboardingPageState extends State<OnboardingPage> {
-  final _sharedPreferencesService = SharedPreferencesService();
-
-  void toDashBoard(BuildContext context) {
-    Navigator.pop(context);
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            const HomePage(),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return CupertinoPageTransition(
-            primaryRouteAnimation: animation,
-            secondaryRouteAnimation: secondaryAnimation,
-            linearTransition: true,
-            child: child,
-          );
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    _sharedPreferencesService
-        .getRunningStatus()
-        .then((value) => value ?? false ? toDashBoard(context) : value);
-
     var size = MediaQuery.of(context).size;
     var textTheme = Theme.of(context).textTheme;
     return Scaffold(

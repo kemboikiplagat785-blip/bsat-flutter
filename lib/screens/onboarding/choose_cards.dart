@@ -282,8 +282,9 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
                   )
                       .then(
                     (value) {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).push(
+                      // Onboarding is over: Home is left as the first screen,
+                      // as it is whenever the app is opened from now on.
+                      Navigator.of(context).pushAndRemoveUntil(
                         PageRouteBuilder(
                           pageBuilder:
                               (context, animation, secondaryAnimation) =>
@@ -300,6 +301,7 @@ class _ChooseCardPageState extends State<ChooseCardPage> {
                             );
                           },
                         ),
+                        (route) => false,
                       );
                     },
                   );

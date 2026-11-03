@@ -1382,6 +1382,81 @@ Future<void> _handleForwardedAltResult(
     return;
   }
 
+  // A failed attempt stays on Phone C, which keeps retrying: this row stays
+  // Forwarded (Pending) and the queue to Phone C moves on. A plain error comes
+  // from a Phone C that has not been updated yet.
+  if (status == TransactionStatuses.alternativeRetrying ||
+      status == TransactionStatuses.error) {
+    final updatedRows = await SQLiteService().updateStuff(
+      {
+        'status': TransactionStatuses.forwardedPending,
+        'alternativeQueueState': 'released',
+        'alternativeDeliveryNextAttemptAt': null,
+        'canRetry': 0,
+      },
+      'forwardingJobId = ? AND id = ? AND alternativeQueueState = ? '
+          'AND status IN (?, ?)',
+      [
+        forwardingJobId,
+        matchedTransaction['id'],
+        'active',
+        TransactionStatuses.alternativeDeliveryPending,
+        TransactionStatuses.forwardedPending,
+      ],
+      'transactions',
+    );
+    debugPrint(
+      'ALT RESULT: job=$forwardingJobId still retrying on $expectedSender; '
+      'updatedRows=$updatedRows',
+    );
+    if (updatedRows == 1 && expectedSender.isNotEmpty) {
+      await TransactionController()
+          .dispatchNextAlternativeDelivery(expectedSender);
+    }
+    await acknowledgeResult();
+    return;
+  }
+
+  // Okoa: the customer's line is inactive. Phone A's copy moves too.
+  if (status == TransactionStatuses.hasOkoa) {
+    final updatedRows = await SQLiteService().updateStuff(
+      {
+        'status': TransactionStatuses.hasOkoa,
+        'alternativeQueueState': 'released',
+        'alternativeDeliveryNextAttemptAt': null,
+        'canRetry': 0,
+        'ussdReply': ussdReply,
+        'timeStamp': DateTime.now().millisecondsSinceEpoch,
+      },
+      'forwardingJobId = ? AND id = ? AND status NOT IN (?, ?)',
+      [
+        forwardingJobId,
+        matchedTransaction['id'],
+        TransactionStatuses.doneConfirmed,
+        TransactionStatuses.pataMore,
+      ],
+      'transactions',
+    );
+    final origin =
+        matchedTransaction['forwardingSenderDeviceName']?.toString() ?? '';
+    if (updatedRows == 1 && origin.isNotEmpty) {
+      await TransactionController().sendForwardingConfirmation(
+        forwardingJobId: forwardingJobId,
+        recipientDeviceName: origin,
+        transactionId: matchedTransaction['id'].toString(),
+        resultStatus: TransactionStatuses.hasOkoa,
+      );
+    }
+    if (updatedRows == 1 &&
+        matchedTransaction['alternativeQueueState'] == 'active' &&
+        expectedSender.isNotEmpty) {
+      await TransactionController()
+          .dispatchNextAlternativeDelivery(expectedSender);
+    }
+    await acknowledgeResult();
+    return;
+  }
+
   if (status == TransactionStatuses.successfulPending) {
     final updatedRows = await SQLiteService().updateStuff(
       {
@@ -1392,14 +1467,19 @@ Future<void> _handleForwardedAltResult(
         'ussdReply': ussdReply,
         'timeStamp': DateTime.now().millisecondsSinceEpoch,
       },
-      'forwardingJobId = ? AND id = ? AND alternativeQueueState = ? '
-          'AND status IN (?, ?)',
+      // The slot may be released already: an earlier attempt failed on Phone C
+      // and this is its retry.
+      'forwardingJobId = ? AND id = ? AND alternativeQueueState IN (?, ?) '
+          'AND status IN (?, ?, ?, ?)',
       [
         forwardingJobId,
         matchedTransaction['id'],
         'active',
+        'released',
         TransactionStatuses.alternativeDeliveryPending,
         TransactionStatuses.forwardedPending,
+        TransactionStatuses.alternativeFailed,
+        TransactionStatuses.hasOkoa,
       ],
       'transactions',
     );
@@ -1550,6 +1630,15 @@ Future<void> _handleForwardedAltResult(
       final confirmation =
           await SQLiteService().getForwardingConfirmation(forwardingJobId);
       confirmationDurablyRecorded = confirmation != null;
+      // Phone A was told Okoa; this confirmation upgrades its copy.
+      if (confirmation?['resultStatus'] == TransactionStatuses.hasOkoa &&
+          forwardingSenderDeviceName.isNotEmpty) {
+        await TransactionController().sendForwardingConfirmation(
+          forwardingJobId: forwardingJobId,
+          recipientDeviceName: forwardingSenderDeviceName,
+          transactionId: tx.first['id']?.toString() ?? '',
+        );
+      }
       if (confirmation == null && forwardingSenderDeviceName.isNotEmpty) {
         await TransactionController().ensureForwardingConfirmation(
           forwardingJobId: forwardingJobId,

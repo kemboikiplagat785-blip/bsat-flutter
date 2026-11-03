@@ -14,7 +14,8 @@ import 'dart:convert';
 /// - "choice": String (the input sent on it; "n" for the customer number)
 ///
 /// A signature belongs to one exact USSD code ([usdCode]), so another code of
-/// the same offer, or its alternative code, is never checked against it.
+/// the same offer, or its alternative code, is never checked against it. Offers
+/// for different amounts that dial the same code share its signature.
 
 class CodeSignature {
   final int? id;
@@ -175,6 +176,22 @@ class CodeSignature {
     }
     return true;
   }
+
+  bool get isRecorded => acceptedProcedure?.isNotEmpty ?? false;
+
+  /// This signature as offer [offerId]'s copy, stored in row [rowId] if it has
+  /// one: offers for different amounts can share one code, and so its menu.
+  CodeSignature forOffer(int offerId, {int? rowId}) => CodeSignature(
+        id: rowId,
+        ussdCodeId: offerId,
+        usdCode: usdCode,
+        acceptedProcedure: acceptedProcedure,
+        lastProcedure: lastProcedure,
+        importantSteps: importantSteps,
+        mightBeCompromised: mightBeCompromised,
+        autoSwitch: autoSwitch,
+        isActive: isActive,
+      );
 
   /// A signature only protects [code] if it was fully recorded from that code.
   bool isUsableFor(String code) =>

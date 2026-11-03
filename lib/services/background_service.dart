@@ -10,6 +10,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:phone_state/phone_state.dart';
 
+import './phone_service.dart';
 import './sms_sevice.dart';
 import '../controllers/transaction_controller.dart';
 
@@ -66,6 +67,8 @@ void onStart(ServiceInstance serviceInstance) async {
       SharedPreferencesService();
 
   DartPluginRegistrant.ensureInitialized();
+
+  PhoneService.mainEngineBridge = serviceInstance;
 
   if (serviceInstance is AndroidServiceInstance) {
     serviceInstance.on('setAsForeground').listen((event) {

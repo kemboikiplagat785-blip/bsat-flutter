@@ -82,8 +82,28 @@ class _ScriptedPhoneService extends PhoneService {
   }
 }
 
+/// The customer's reply needs Android's SMS API.
+class _NoCustomerSmsController extends TransactionController {
+  _NoCustomerSmsController({super.phoneService, super.paymentOps})
+      : super(
+          sharedPreferencesService: SharedPreferencesService(),
+          startConfirmationTimer: false,
+        );
+
+  @override
+  Future<void> processReply(
+    int number,
+    String transactionStatus,
+    String firstName,
+    String lastName,
+    int amount,
+  ) async {}
+}
+
 const _jobAlt = 'fwd_SJK1ALT123_1761650200000';
 const _altCode = '*180*5*2*0712345678*1*1#';
+const _poolStateReply = 'Sorry, there was an error. Please try again later.'
+    '(The subscriber is in pool state, and service handling is not allowed.';
 
 void main() {
   final h = Stage0Harness();
@@ -536,7 +556,10 @@ void main() {
           .capture(() => controller.processReservedAlternativeRequest(_jobAlt));
 
       expect(phone.calls, [_altCode]);
-      expect(results(), isEmpty, reason: 'the error is not reported');
+      // Phone B only learns that its queue can move on, not the error.
+      expect(results().single['status'],
+          TransactionStatuses.alternativeRetrying);
+      expect(results().single['ussdReply'], '');
       final waiting = await job();
       expect(waiting['state'], 'reserved');
       expect(waiting['retryAttempt'], 1);
@@ -572,8 +595,8 @@ void main() {
       expect(rows, hasLength(1));
       expect(rows.single['id'], isNot(failed['id']));
       expect(rows.single['status'], TransactionStatuses.successfulPending);
-      expect(results().single['status'], TransactionStatuses.successfulPending);
-      expect(results().single['recipientDeviceName'], 'Phone B');
+      expect(results().last['status'], TransactionStatuses.successfulPending);
+      expect(results().last['recipientDeviceName'], 'Phone B');
     });
 
     test('a manual retry of the error row dials the alternative now', () async {
@@ -593,14 +616,332 @@ void main() {
           TransactionStatuses.successfulPending);
     });
 
-    test('once the retries are used up the failure is reported', () async {
-      await (await h.db).update('alternativeJobs', {'retryAttempt': 10});
+    test('after three automatic retries it waits for a manual retry; Phone B '
+        'never gets the error', () async {
+      Future<void> dial() async {
+        await (await h.db).update('alternativeJobs', {'retryAt': 0});
+        await h.capture(
+            () => controller.processReservedAlternativeRequest(_jobAlt));
+      }
+
+      for (var i = 0; i < 4; i++) {
+        await dial();
+      }
+
+      expect(phone.calls, hasLength(4), reason: 'the first dial and 3 retries');
+      expect((await job())['state'], 'manual_retry');
+      expect(results().map((r) => r['status']),
+          everyElement(TransactionStatuses.alternativeRetrying));
+
+      // No more automatic dials.
+      await dial();
+      expect(phone.calls, hasLength(4));
+
+      // The user can still retry, and a success reaches Phone B.
+      final failed = (await jobRows()).single;
+      expect(failed['status'], TransactionStatuses.error);
+      phone.responses.add((
+        'Recommendation for 0712345678 submitted successfully',
+        TransactionStatuses.done,
+      ));
+      final result = await h.capture(
+          () => controller.manuallyRetryTransaction(failed['id'] as int));
+
+      expect(result, ManualRetryResult.executionDispatched);
+      expect(phone.calls, hasLength(5));
+      expect(phone.calls.last, _altCode);
+      expect((await jobRows()).single['status'],
+          TransactionStatuses.successfulPending);
+      expect(results().last['status'], TransactionStatuses.successfulPending);
+    });
+
+    test('a manual retry that fails again stays on Phone C', () async {
+      await (await h.db).update('alternativeJobs', {'retryAttempt': 3});
+      await h
+          .capture(() => controller.processReservedAlternativeRequest(_jobAlt));
+      expect((await job())['state'], 'manual_retry');
+      final failed = (await jobRows()).single;
+
+      final result = await h.capture(
+          () => controller.manuallyRetryTransaction(failed['id'] as int));
+
+      expect(result, ManualRetryResult.executionDispatched);
+      expect(phone.calls, hasLength(2));
+      expect((await job())['state'], 'manual_retry');
+      expect((await jobRows()).single['status'], TransactionStatuses.error);
+    });
+
+    test('an attempt that never reached the carrier uses no retry', () async {
+      phone.responses.add((
+        'Error sending code: MissingPluginException(no channel)',
+        TransactionStatuses.error,
+      ));
+      await h
+          .capture(() => controller.processReservedAlternativeRequest(_jobAlt));
+
+      final waiting = await job();
+      expect(waiting['state'], 'reserved');
+      expect(waiting['retryAttempt'], 0);
+    });
+
+    test('a pool state reply is Okoa: it is reported and not retried',
+        () async {
+      phone.responses.add((_poolStateReply, TransactionStatuses.error));
 
       await h
           .capture(() => controller.processReservedAlternativeRequest(_jobAlt));
 
-      expect((await job())['state'], 'completed');
-      expect(results().single['status'], TransactionStatuses.error);
+      expect((await jobRows()).single['status'], TransactionStatuses.hasOkoa);
+      final finished = await job();
+      expect(finished['state'], 'completed');
+      expect(finished['retryAttempt'], 0);
+      expect(results().single['status'], TransactionStatuses.hasOkoa);
+    });
+
+    test('a confirmation after Okoa replaces the result Phone B has', () async {
+      phone.responses.add((_poolStateReply, TransactionStatuses.error));
+      await h
+          .capture(() => controller.processReservedAlternativeRequest(_jobAlt));
+      await (await h.db)
+          .update('alternativeJobs', {'resultDeliveryState': 'delivered'});
+      final okoa = (await jobRows()).single;
+      phone.responses.add((
+        'You have successfully purchased 1GB for 0712345678',
+        TransactionStatuses.done,
+      ));
+
+      await h.capture(
+          () => controller.manuallyRetryTransaction(okoa['id'] as int));
+
+      expect((await jobRows()).single['status'],
+          TransactionStatuses.doneConfirmed);
+      expect(results().last['status'], TransactionStatuses.doneConfirmed);
+    });
+  });
+
+  group('Phone B after asking Phone C for the alternative', () {
+    const jobNext = 'fwd_SJK1NEXT99_1761650300000';
+
+    setUp(() => h.setUp(prefs: {
+          'user_device_name': 'Phone B',
+          'jwt_token': 'test-jwt',
+        }));
+
+    Future<int> altRow(
+      String jobId, {
+      String queueState = 'active',
+      String status = TransactionStatuses.forwardedPending,
+    }) async =>
+        (await h.db).insert('transactions', {
+          'transactionId': 'RCPT-$jobId',
+          'initialMessage': 'RCPT-$jobId Confirmed. Ksh20.00 received from '
+              'JOHN DOE 0712345678.',
+          'amount': 20,
+          'number': 712345678,
+          'status': status,
+          'canRetry': 0,
+          'forwardingJobId': jobId,
+          'forwardingSenderDeviceName': 'Phone A',
+          'forwardingRecipientDeviceName': 'Phone C',
+          'forwardingTransport': 'online',
+          'alternativeRequestSenderDeviceName': 'Phone B',
+          'alternativeRequestCode': _altCode,
+          'alternativeQueueState': queueState,
+          'ussdReply': 'Alternative request durably received by target.',
+          'timeStamp': DateTime.now().millisecondsSinceEpoch,
+        });
+
+    RemoteMessage result(int rowId, String status, {String reply = ''}) =>
+        RemoteMessage(messageId: 'alt-$status', data: {
+          'type': 'forwarded_alt_result',
+          'transactionId': '$rowId',
+          'forwardingJobId': _jobAlt,
+          'status': status,
+          'ussdReply': reply,
+          'senderDeviceName': 'Phone C',
+          'recipientDeviceName': 'Phone B',
+        });
+
+    List<Map<String, dynamic>> sent(String type) => h.backendPosts
+        .where((p) => p.data['type'] == type)
+        .map((p) => p.data)
+        .toList();
+
+    test('"still retrying" keeps Forwarded (Pending) and frees the queue',
+        () async {
+      final id = await altRow(_jobAlt);
+      final next = await altRow(
+        jobNext,
+        queueState: 'waiting',
+        status: TransactionStatuses.alternativeDeliveryPending,
+      );
+
+      await h.capture(() => handleRemoteMessage(
+          result(id, TransactionStatuses.alternativeRetrying)));
+
+      final mine = await row(id);
+      expect(mine['status'], TransactionStatuses.forwardedPending);
+      expect(mine['ussdReply'],
+          'Alternative request durably received by target.');
+      expect(mine['alternativeQueueState'], 'released');
+      expect((await row(next))['alternativeQueueState'], 'active');
+      expect(sent('process_alt_request').single['forwardingJobId'], jobNext);
+      expect(sent('MESSAGE_ACK').single['ackKind'],
+          'alternative_result_received');
+      expect(sent('forwarded_sms_ack'), isEmpty,
+          reason: 'Phone A is not told about an attempt that failed');
+    });
+
+    test('an error from a Phone C that is not updated yet does the same',
+        () async {
+      final id = await altRow(_jobAlt);
+
+      await h.capture(() => handleRemoteMessage(
+          result(id, TransactionStatuses.error, reply: 'Sorry, try later')));
+
+      final mine = await row(id);
+      expect(mine['status'], TransactionStatuses.forwardedPending);
+      expect(mine['ussdReply'], isNot(contains('Sorry')));
+    });
+
+    test('the retry succeeding on Phone C still reaches this row', () async {
+      final id = await altRow(_jobAlt, queueState: 'released');
+
+      await h.capture(() => handleRemoteMessage(
+          result(id, TransactionStatuses.successfulPending, reply: 'ok')));
+
+      expect((await row(id))['status'], TransactionStatuses.successfulPending);
+      expect(sent('MESSAGE_ACK').single['ackKind'],
+          'alternative_result_received');
+    });
+
+    test('Okoa moves this row and tells Phone A; a later confirmation '
+        'upgrades both', () async {
+      final id = await altRow(_jobAlt);
+      final next = await altRow(
+        jobNext,
+        queueState: 'waiting',
+        status: TransactionStatuses.alternativeDeliveryPending,
+      );
+
+      await h.capture(() => handleRemoteMessage(result(
+          id, TransactionStatuses.hasOkoa,
+          reply: _poolStateReply)));
+
+      final mine = await row(id);
+      expect(mine['status'], TransactionStatuses.hasOkoa);
+      expect(mine['alternativeQueueState'], 'released');
+      expect((await row(next))['alternativeQueueState'], 'active');
+      final toA = sent('forwarded_sms_ack').single;
+      expect(toA['resultStatus'], TransactionStatuses.hasOkoa);
+      expect(toA['recipientDeviceName'], 'Phone A');
+
+      h.requests.clear();
+      await h.capture(() => handleRemoteMessage(
+          result(id, TransactionStatuses.doneConfirmed, reply: 'purchased')));
+
+      expect((await row(id))['status'], TransactionStatuses.pataMore);
+      expect(sent('forwarded_sms_ack').single['resultStatus'],
+          TransactionStatuses.doneConfirmed);
+    });
+  });
+
+  group('a forwarded transaction that gets a pool state reply on Phone B', () {
+    late _ScriptedPhoneService phone;
+    late TransactionController controller;
+
+    setUp(() async {
+      await h.setUp(prefs: {
+        'user_device_name': 'Phone B',
+        'jwt_token': 'test-jwt',
+      });
+      phone = _ScriptedPhoneService();
+      controller = TransactionController(
+        phoneService: phone,
+        paymentOps: _PaidPaymentOps(),
+        sharedPreferencesService: SharedPreferencesService(),
+        startConfirmationTimer: false,
+      );
+    });
+
+    test('is Okoa even if a custom code matches its text', () async {
+      await (await h.db).rawInsert(
+        'INSERT INTO "custom codes" '
+        '(pattern, transactionStatus, isCaseSensitive) VALUES (?, ?, 0)',
+        ['Sorry', TransactionStatuses.error],
+      );
+
+      expect(
+        await controller
+            .transactionStatus([_poolStateReply, TransactionStatuses.paused]),
+        TransactionStatuses.hasOkoa,
+      );
+    });
+
+    test('keeps its job and tells Phone A', () async {
+      final id = await h.capture(() => controller.dontProcess(
+            'message',
+            'SJK1ABCD23',
+            712345678,
+            '*180#',
+            20,
+            1,
+            status: TransactionStatuses.hasOkoa,
+            reply: _poolStateReply,
+            forwardingJobId: _jobB,
+            forwardingSenderDeviceName: 'Phone A',
+          ));
+
+      expect((await row(id!))['forwardingJobId'], _jobB);
+      final toA = h.backendPosts
+          .singleWhere((p) => p.data['type'] == 'forwarded_sms_ack')
+          .data;
+      expect(toA['resultStatus'], TransactionStatuses.hasOkoa);
+      expect(toA['recipientDeviceName'], 'Phone A');
+    });
+
+    test('on a retry also tells Phone A', () async {
+      final db = await h.db;
+      final offer = await db.insert('ussdCodes', {
+        'amount': 20,
+        'fromSim': -1,
+        'dialSim': 1,
+        'canRetry': 1,
+        'isAdvanced': 0,
+        'enabled': 1,
+      });
+      await db.insert('ussdCodeVariants', {'ussdCodeId': offer, 'code': '*180#'});
+      final id = await db.insert('transactions', {
+        'transactionId': 'SJK1ABCD23',
+        'initialMessage': 'SJK1ABCD23 Confirmed. Ksh20.00 received from '
+            'JOHN DOE 0712345678 on 1/11/26 at 6:16 PM.',
+        'amount': 20,
+        'number': 712345678,
+        'status': TransactionStatuses.error,
+        'ussdDialed': '*180#',
+        'ussdReply': 'Error sending code: timeout',
+        'source': 'JOHN DOE',
+        'simSubId': 1,
+        'canRetry': 1,
+        'date': 'today',
+        'smsDate': 'today',
+        'smsTime': 'now',
+        'forwardingJobId': _jobB,
+        'forwardingSenderDeviceName': 'Phone A',
+        'timeStamp': DateTime.now().millisecondsSinceEpoch,
+      });
+      phone.responses.add((_poolStateReply, TransactionStatuses.done));
+
+      await h.capture(() => _NoCustomerSmsController(
+            phoneService: phone,
+            paymentOps: _PaidPaymentOps(),
+          ).manuallyRetryTransaction(id));
+
+      expect((await row(id))['status'], TransactionStatuses.hasOkoa);
+      final toA = h.backendPosts
+          .singleWhere((p) => p.data['type'] == 'forwarded_sms_ack')
+          .data;
+      expect(toA['resultStatus'], TransactionStatuses.hasOkoa);
     });
   });
 

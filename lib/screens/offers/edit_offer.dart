@@ -784,6 +784,7 @@ class _EditOfferPageState extends State<EditOfferPage> {
         }
       } catch (e) {}
     }
+    await _sqliteService.shareCodeSignature(signature);
     _hasChanges = false;
   }
 
@@ -885,11 +886,15 @@ class _EditOfferPageState extends State<EditOfferPage> {
         .map(CodeSignature.fromMap)
         .toList();
 
-    // Each code has its own signature; the switches carry over to a code that
-    // has not been recorded yet.
-    final loadedSignature = signatureRows
+    // Each code has its own signature, shared by the offers dialing it; the
+    // switches carry over to a code that has not been recorded yet.
+    final ownRow = signatureRows
         .where((row) => row.matchesCode(activeUssdCode))
         .firstOrNull;
+    final codeSignature =
+        await _sqliteService.codeSignatureFor(widget.ruleId, activeUssdCode);
+    final loadedSignature =
+        codeSignature?.forOffer(widget.ruleId, rowId: ownRow?.id);
     final switches = signatureRows.firstOrNull;
 
     if (mounted) {
@@ -1017,6 +1022,9 @@ class _EditOfferPageState extends State<EditOfferPage> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
+        // Also called after this page has popped; popping again would leave
+        // My Offers too.
+        if (didPop) return;
         _handleBackPress();
       },
       child: SafeArea(

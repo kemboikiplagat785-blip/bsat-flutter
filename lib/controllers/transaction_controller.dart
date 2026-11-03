@@ -732,7 +732,9 @@ class TransactionController {
         'transactionId': transactionId,
         'forwardingJobId': forwardingJobId,
         'status': status,
-        'ussdReply': ussdReply,
+        // Phone C's failure stays on Phone C.
+        'ussdReply':
+            status == TransactionStatuses.alternativeRetrying ? '' : ussdReply,
         'senderDeviceName': senderDeviceName,
         'recipientDeviceName': recipientDeviceName,
       },
@@ -763,7 +765,10 @@ class TransactionController {
   }) async {
     final job = await _sqliteService.getAlternativeJob(forwardingJobId);
     if (job == null) return;
-    if (job['resultDeliveryState'] == 'delivered' && !replaceDeliveredResult) {
+    // "Still retrying" only released the queue; the outcome replaces it.
+    if (job['resultDeliveryState'] == 'delivered' &&
+        !replaceDeliveredResult &&
+        job['resultStatus'] != TransactionStatuses.alternativeRetrying) {
       return;
     }
 
@@ -837,6 +842,8 @@ class TransactionController {
         job['resultStatus'] == TransactionStatuses.successfulPending;
     final firstResultAwaitingAck =
         replacesPendingResult && job['resultDeliveryState'] != 'delivered';
+    final alreadyConfirmed =
+        job['resultStatus'] == TransactionStatuses.doneConfirmed;
     final updated = await _sqliteService.updateAlternativeJob(
       forwardingJobId,
       {
@@ -863,7 +870,8 @@ class TransactionController {
       status: TransactionStatuses.doneConfirmed,
       transactionId: transactionId,
       ussdReply: ussdReply,
-      replaceDeliveredResult: resolvedAmbiguity || replacesPendingResult,
+      // Anything Phone B has so far (such as Okoa) gives way to a confirmation.
+      replaceDeliveredResult: !alreadyConfirmed,
     );
     debugPrint(
       'ALT DELIVERY RESULT: job=$forwardingJobId, transaction=$transactionId',
@@ -2158,6 +2166,8 @@ class TransactionController {
         reply: requestResponse[0],
         canRetry: false,
         source: name,
+        forwardingJobId: forwardingJobId,
+        forwardingSenderDeviceName: forwardingSenderDeviceName,
         parentTransactionId: parentTransactionId,
       );
     }
@@ -4123,10 +4133,10 @@ class TransactionController {
       return;
     }
 
-    // An alternative run for another device is dialed again with its
-    // alternative code, never the primary one.
+    // An alternative run for another device is dialed again by its job, with
+    // its alternative code, never the primary one.
     if (tx.first['status'] == TransactionStatuses.error &&
-        await _retryAlternativeNow(tx.first)) {
+        await _alternativeJobOf(tx.first) != null) {
       return;
     }
 
@@ -4714,6 +4724,18 @@ class TransactionController {
         transactionId: id.toString(),
       );
     }
+    if (response[1] == TransactionStatuses.hasOkoa &&
+        forwardingJobId != null &&
+        forwardingJobId.isNotEmpty &&
+        forwardingSenderDeviceName != null &&
+        forwardingSenderDeviceName.isNotEmpty) {
+      await _sendForwardingConfirmation(
+        forwardingJobId: forwardingJobId,
+        recipientDeviceName: forwardingSenderDeviceName,
+        transactionId: id.toString(),
+        resultStatus: TransactionStatuses.hasOkoa,
+      );
+    }
     if (response[1] == TransactionStatuses.secondAttempt &&
         await _shouldReportForwardedSecondAttempt(
           forwardingJobId: forwardingJobId,
@@ -5294,6 +5316,7 @@ class TransactionController {
         forwardingSenderDeviceName != null &&
         forwardingSenderDeviceName.isNotEmpty &&
         (status == TransactionStatuses.unavailableOffer ||
+            status == TransactionStatuses.hasOkoa ||
             status == TransactionStatuses.doneConfirmed)) {
       await _sendForwardingConfirmation(
         forwardingJobId: forwardingJobId,
@@ -5463,12 +5486,15 @@ class TransactionController {
         final executionStatus = altResponse.length > 1
             ? altResponse[1]?.toString()
             : TransactionStatuses.error;
-        if (executionStatus == 'alternative-failed' ||
+        final classifiedStatus = await transactionStatus(altResponse);
+        if (classifiedStatus == TransactionStatuses.hasOkoa) {
+          altResponse[1] = TransactionStatuses.hasOkoa;
+        } else if (executionStatus == 'alternative-failed' ||
             executionStatus == TransactionStatuses.error ||
             executionStatus == TransactionStatuses.secondAttempt) {
           altResponse[1] = TransactionStatuses.alternativeFailed;
         } else {
-          altResponse[1] = await transactionStatus(altResponse);
+          altResponse[1] = classifiedStatus;
           if (altResponse[1] == TransactionStatuses.error ||
               altResponse[1] == TransactionStatuses.secondAttempt) {
             altResponse[1] = TransactionStatuses.alternativeFailed;
@@ -5525,6 +5551,20 @@ class TransactionController {
             ?.toString();
         final alternativeSucceeded =
             finalAlternativeStatus == TransactionStatuses.doneConfirmed;
+
+        if (alternativeUpdateRows == 1 &&
+            finalAlternativeStatus == TransactionStatuses.hasOkoa &&
+            forwardingJobId != null &&
+            forwardingJobId.isNotEmpty &&
+            senderDevice != null &&
+            senderDevice.isNotEmpty) {
+          await _sendForwardingConfirmation(
+            forwardingJobId: forwardingJobId,
+            recipientDeviceName: senderDevice,
+            transactionId: transactionId.toString(),
+            resultStatus: TransactionStatuses.hasOkoa,
+          );
+        }
 
         if (alternativeUpdateRows == 1 &&
             alternativeSucceeded &&
@@ -5938,6 +5978,19 @@ class TransactionController {
   }
 
   Future<ManualRetryResult> _manuallyRetryTransaction(int id) async {
+    final jobRows = await _sqliteService.queryCustom(
+      'transactions',
+      'id = ?',
+      [id],
+      columns: ['forwardingJobId'],
+      limit: 1,
+    );
+    final alternativeJob =
+        jobRows.isEmpty ? null : await _alternativeJobOf(jobRows.first);
+    if (alternativeJob != null) {
+      return _manuallyRetryAlternative(id, alternativeJob);
+    }
+
     if (!await _sqliteService.unlockTransactionForManualRetry(id)) {
       debugPrint('Manual retry rejected: transaction $id not found or being '
           'dialed now.');
@@ -6240,6 +6293,8 @@ class TransactionController {
         transactionId:
             insertedId?.toString() ?? job['transactionId']?.toString() ?? '',
         ussdReply: resultReply,
+        replaceDeliveredResult:
+            job['resultStatus'] == TransactionStatuses.alternativeRetrying,
       );
     }
   }
@@ -6309,6 +6364,8 @@ class TransactionController {
           status: status,
           transactionId: transaction['id'].toString(),
           ussdReply: transaction['ussdReply']?.toString() ?? '',
+          replaceDeliveredResult:
+              job['resultStatus'] == TransactionStatuses.alternativeRetrying,
         );
       }
       return;
@@ -6345,16 +6402,17 @@ class TransactionController {
     }
   }
 
-  /// Seconds before each retry of a failed alternative (about 1.6 hours in
-  /// all). After the last one the failure is reported to the requester, so
-  /// its queue to this device is not blocked for good.
-  static const _alternativeRetrySeconds = [
-    30, 60, 120, 300, 300, 600, 600, 900, 900, 1800, //
-  ];
+  /// Seconds before each automatic retry of a failed alternative. Once they
+  /// are used up the job waits for a manual retry on this phone.
+  static const _alternativeRetrySeconds = [30, 60, 120];
+
+  /// A failed alternative that used up its automatic retries.
+  static const _alternativeManualRetryState = 'manual_retry';
 
   /// A dialed alternative that did not go through (error, timeout, Second
   /// Attempt or the like) and can be dialed again. Successes, attempts
-  /// awaiting confirmation and unknown outcomes are not.
+  /// awaiting confirmation, unknown outcomes and Okoa (the customer's line is
+  /// inactive; dialing again cannot help) are not.
   bool _isRetryableAlternativeFailure(String status) =>
       status.isNotEmpty &&
       status != 'unknown' &&
@@ -6362,12 +6420,14 @@ class TransactionController {
       status != TransactionStatuses.advancedUssd &&
       status != TransactionStatuses.doneConfirmed &&
       status != TransactionStatuses.done &&
+      status != TransactionStatuses.hasOkoa &&
       status != TransactionStatuses.alternativeAmbiguous;
 
-  /// Phone C: a failed alternative is not reported to the device that asked
-  /// for it; the job goes back to `reserved` and is dialed again after the
-  /// next delay. Its row shows as an error until then. False once the
-  /// retries are used up (the failure is then reported as before).
+  /// Phone C: a failed alternative stays on this phone. The job goes back to
+  /// `reserved` and is dialed again after the next delay; once the automatic
+  /// retries are used up it waits for a manual retry. Its row shows as an
+  /// error, and the requester's row stays Forwarded (Pending). The requester
+  /// is only told that its queue to this phone can move on.
   Future<bool> _scheduleAlternativeRetry({
     required Map<String, dynamic> job,
     required int localTransactionId,
@@ -6376,22 +6436,24 @@ class TransactionController {
   }) async {
     if (!_isRetryableAlternativeFailure(status)) return false;
     final forwardingJobId = job['forwardingJobId']?.toString() ?? '';
+    if (forwardingJobId.isEmpty) return false;
     final retryAttempt =
         int.tryParse(job['retryAttempt']?.toString() ?? '') ?? 0;
-    if (forwardingJobId.isEmpty ||
-        retryAttempt >= _alternativeRetrySeconds.length) {
-      return false;
-    }
+    final canAutoRetry = retryAttempt < _alternativeRetrySeconds.length;
+    // Nothing reached the carrier (no USSD channel here), so no retry is used.
+    final dialed = !ussdReply.contains('MissingPluginException');
     final now = DateTime.now().millisecondsSinceEpoch;
-    final retryAt = now +
-        _alternativeRetrySeconds[retryAttempt] * Duration.millisecondsPerSecond;
     final updated = await _sqliteService.updateAlternativeJob(
       forwardingJobId,
       {
-        'state': 'reserved',
+        'state': canAutoRetry ? 'reserved' : _alternativeManualRetryState,
         'localTransactionId': localTransactionId,
-        'retryAttempt': retryAttempt + 1,
-        'retryAt': retryAt,
+        if (canAutoRetry && dialed) 'retryAttempt': retryAttempt + 1,
+        'retryAt': canAutoRetry
+            ? now +
+                _alternativeRetrySeconds[retryAttempt] *
+                    Duration.millisecondsPerSecond
+            : null,
         'ussdReply': ussdReply,
         'updatedAt': now,
       },
@@ -6408,9 +6470,23 @@ class TransactionController {
     );
     debugPrint(
       'ALT RETRY: job=$forwardingJobId status=$status not reported; '
-      'retry ${retryAttempt + 1}/${_alternativeRetrySeconds.length} '
-      'in ${_alternativeRetrySeconds[retryAttempt]}s',
+      '${canAutoRetry ? 'attempt ${retryAttempt + 1} of '
+          '${_alternativeRetrySeconds.length} due in '
+          '${_alternativeRetrySeconds[retryAttempt]}s' : 'waiting for a manual retry'}',
     );
+    if ((job['resultStatus']?.toString() ?? '').isEmpty) {
+      await _sqliteService.updateAlternativeJob(
+        forwardingJobId,
+        {
+          'resultStatus': TransactionStatuses.alternativeRetrying,
+          'resultDeliveryState': 'pending',
+          'resultNextAttemptAt': 0,
+        },
+      );
+      await _retryPendingForwardedAlternativeResults(
+        forwardingJobId: forwardingJobId,
+      );
+    }
     return true;
   }
 
@@ -6422,13 +6498,7 @@ class TransactionController {
   ) async {
     final previousId =
         int.tryParse(job['localTransactionId']?.toString() ?? '');
-    final retryAttempt =
-        int.tryParse(job['retryAttempt']?.toString() ?? '') ?? 0;
-    if (retryAttempt == 0 ||
-        previousId == null ||
-        previousId == localTransactionId) {
-      return;
-    }
+    if (previousId == null || previousId == localTransactionId) return;
     await _sqliteService.deleteWhere(
       'transactions',
       'id = ? AND forwardingJobId = ? AND status = ?',
@@ -6436,23 +6506,51 @@ class TransactionController {
     );
   }
 
-  /// Phone C: a manual retry of an alternative's error row dials the
-  /// alternative again now instead of the primary code. True when [row]
-  /// belongs to such a job.
-  Future<bool> _retryAlternativeNow(Map<String, dynamic> row) async {
+  /// The alternative job [row] was run for on this phone, if any.
+  Future<Map<String, dynamic>?> _alternativeJobOf(
+    Map<String, dynamic> row,
+  ) async {
     final forwardingJobId = row['forwardingJobId']?.toString() ?? '';
-    if (forwardingJobId.isEmpty) return false;
-    final job = await _sqliteService.getAlternativeJob(forwardingJobId);
-    if (job == null) return false;
-    if (job['state'] == 'reserved') {
-      await _sqliteService.updateAlternativeJob(
-        forwardingJobId,
-        {'retryAt': 0},
-        expectedState: 'reserved',
-      );
-      await processReservedAlternativeRequest(forwardingJobId);
+    if (forwardingJobId.isEmpty) return null;
+    return _sqliteService.getAlternativeJob(forwardingJobId);
+  }
+
+  /// Phone C: a manual retry of an alternative dials its alternative code now,
+  /// whatever became of the job so far, unless it is being dialed right now.
+  Future<ManualRetryResult> _manuallyRetryAlternative(
+    int id,
+    Map<String, dynamic> job,
+  ) async {
+    final forwardingJobId = job['forwardingJobId'].toString();
+    final state = job['state']?.toString();
+    if (state == 'executing' || state == 'eligibility_pending') {
+      debugPrint('Manual retry rejected: alternative job $forwardingJobId is '
+          '$state.');
+      return ManualRetryResult.rejected;
     }
-    return true;
+    if (!await _sqliteService.unlockTransactionForManualRetry(id)) {
+      return ManualRetryResult.rejected;
+    }
+    final previousResult = job['resultStatus']?.toString() ?? '';
+    final armed = await _sqliteService.updateAlternativeJob(
+      forwardingJobId,
+      {
+        'state': 'reserved',
+        'retryAt': 0,
+        'localTransactionId': id,
+        // The outcome of this dial replaces what the requester has so far.
+        if (previousResult.isNotEmpty)
+          'resultStatus': TransactionStatuses.alternativeRetrying,
+        'updatedAt': DateTime.now().millisecondsSinceEpoch,
+      },
+      expectedState: state,
+    );
+    if (armed != 1) return ManualRetryResult.rejected;
+    await processReservedAlternativeRequest(forwardingJobId);
+    final after = await _sqliteService.getAlternativeJob(forwardingJobId);
+    return after?['executionStartedAt'] != job['executionStartedAt']
+        ? ManualRetryResult.executionDispatched
+        : ManualRetryResult.rejected;
   }
 
   Future<void> _resumeReservedAlternativeRequests() async {
@@ -6506,28 +6604,13 @@ class TransactionController {
     }
   }
 
-  /// Retry options: manually retries every transaction in the chosen
-  /// History categories between [startTime] and [endTime].
+  /// Retry options: manually retries every transaction in [categories]
+  /// between [startTime] and [endTime].
   Future<void> retrySpecific(
-    bool errors,
-    bool successful,
-    bool retrySuccPending,
-    bool failed,
-    bool paused,
-    bool okoa,
-    bool advanced,
+    Iterable<TransactionCategory> categories,
     int startTime,
     int endTime,
   ) async {
-    final categories = [
-      if (errors) TransactionCategory.error,
-      if (successful) TransactionCategory.confirmed,
-      if (retrySuccPending) TransactionCategory.successfulPending,
-      if (failed) TransactionCategory.secondAttempt,
-      if (paused) TransactionCategory.paused,
-      if (okoa) TransactionCategory.okoa,
-      if (advanced) TransactionCategory.advanced,
-    ];
     if (categories.isEmpty) return;
 
     final rows = await _sqliteService.queryCustom(
@@ -6602,6 +6685,12 @@ class TransactionController {
     if (response.length > 1 &&
         response[1] == TransactionStatuses.offerChanged) {
       return TransactionStatuses.offerChanged;
+    }
+
+    // The operator says the customer's line is inactive. A broad custom code
+    // (such as "Sorry") must not hide it.
+    if (RegExp(r'pool state', caseSensitive: false).hasMatch(responseText)) {
+      return TransactionStatuses.hasOkoa;
     }
 
     // 1) Check custom codes first

@@ -74,6 +74,11 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _maskedCount = 0,
       _pataMoreCount = 0;
 
+  /// Pata More's sub categories: its amounts on the selected date, and the one
+  /// chosen (null for all of them).
+  List<({int amount, int count})> _pataMoreAmounts = [];
+  int? _pataMoreAmount;
+
   final _pagingController = PagingController<int, dynamic>(firstPageKey: 0);
   final _searchBarController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -131,9 +136,14 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       count(TransactionCategory.pataMore),
       count(TransactionCategory.offerChanged),
     ]);
+    final pataMoreAmounts = await databaseHelper.pataMoreAmounts(dateStr);
 
     if (!mounted) return;
+    final chosenAmountIsGone = _pataMoreAmount != null &&
+        pataMoreAmounts.every((entry) => entry.amount != _pataMoreAmount);
     setState(() {
+      _pataMoreAmounts = pataMoreAmounts;
+      if (chosenAmountIsGone) _pataMoreAmount = null;
       _successfulConfirmedCount = results[0];
       _successfulPendingCount = results[1];
       _failedCount = results[2];
@@ -150,6 +160,79 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       _pataMoreCount = results[13];
       _offerChangedCount = results[14];
     });
+    if (chosenAmountIsGone) _pagingController.refresh();
+  }
+
+  /// How many transactions each category has on the selected date.
+  Map<TransactionCategory, int> get _categoryCounts => {
+        TransactionCategory.confirmed: _successfulConfirmedCount,
+        TransactionCategory.advanced: _advancedCount,
+        TransactionCategory.successfulPending: _successfulPendingCount,
+        TransactionCategory.forwarded: _forwardedCount,
+        TransactionCategory.forwardedPending: _forwardedPendingCount,
+        TransactionCategory.forwardedConfirmed: _forwardedConfirmedCount,
+        TransactionCategory.okoa: _okoaCount,
+        TransactionCategory.unavailableOffer: _unavailableOfferCount,
+        TransactionCategory.secondAttempt: _secondAttemptCount,
+        TransactionCategory.pataMore: _pataMoreCount,
+        TransactionCategory.paused: _pausedCount,
+        TransactionCategory.offerChanged: _offerChangedCount,
+        TransactionCategory.blacklisted: _blacklistedCount,
+        TransactionCategory.error: _failedCount,
+        TransactionCategory.masked: _maskedCount,
+      };
+
+  int _countOf(Iterable<TransactionCategory> categories) => categories.fold(
+      0, (total, category) => total + (_categoryCounts[category] ?? 0));
+
+  /// One checkbox per History category, for the Retry and Delete options.
+  List<Widget> _categoryCheckboxes(
+    Set<TransactionCategory> selected,
+    StateSetter setState,
+  ) {
+    return [
+      for (final category in TransactionCategory.all)
+        CheckboxListTile(
+          value: selected.contains(category),
+          onChanged: (bool? value) => setState(() {
+            if (value == true) {
+              selected.add(category);
+            } else {
+              selected.remove(category);
+            }
+          }),
+          title: Text('${category.label} (${_categoryCounts[category] ?? 0})'),
+        ),
+    ];
+  }
+
+  Widget _buildPataMoreAmounts() {
+    Widget chip(String label, int? amount) => Padding(
+          padding: const EdgeInsets.only(right: kPagePadding / 2),
+          child: ChoiceChip(
+            label: Text(label),
+            selected: _pataMoreAmount == amount,
+            onSelected: (_) {
+              setState(() => _pataMoreAmount = amount);
+              reloadForNewDate();
+            },
+          ),
+        );
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.only(
+        left: kPagePadding,
+        top: kPagePadding / 2,
+        right: kPagePadding,
+      ),
+      child: Row(
+        children: [
+          chip('All ($_pataMoreCount)', null),
+          for (final entry in _pataMoreAmounts)
+            chip('Ksh ${entry.amount} (${entry.count})', entry.amount),
+        ],
+      ),
+    );
   }
 
   Future<void> _fetchPage(int pageKey) async {
@@ -159,10 +242,17 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       if (category != null) {
         // The transactions the category's count covers: its statuses, on
         // the selected date.
+        final pataMoreAmount = category == TransactionCategory.pataMore
+            ? _pataMoreAmount
+            : null;
         newItems = await databaseHelper.queryCustom(
           'transactions',
-          '(${category.where}) AND date = ?',
-          [getNormalDate(selectedDate)],
+          '(${category.where}) AND date = ?'
+              '${pataMoreAmount == null ? '' : ' AND amount = ?'}',
+          [
+            getNormalDate(selectedDate),
+            if (pataMoreAmount != null) pataMoreAmount,
+          ],
           limit: _pageSize,
           offset: pageKey,
           orderBy: 'timeStamp DESC',
@@ -236,6 +326,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       setState(() {
         selectedDate = picked;
         date = getNormalDate(selectedDate);
+        _pataMoreAmount = null;
       });
       reloadForNewDate();
     }
@@ -353,6 +444,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         setState(() {
                           query = "";
                           _statusFilter = null;
+                          _pataMoreAmount = null;
                         });
                         reloadForNewDate();
                       }),
@@ -363,6 +455,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                     setState(() {
                       query = value;
                       _statusFilter = null;
+                      _pataMoreAmount = null;
                     });
                     reloadForNewDate();
                   });
@@ -371,6 +464,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
             ),
             // Tool Buttons (Exact original UI)
             _buildToolButtons(),
+            if (_statusFilter == TransactionStatuses.pataMore)
+              _buildPataMoreAmounts(),
             // Action Text Buttons
             _buildOptionLinks(),
             // The List (Optimized)
@@ -1153,6 +1248,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
       setState(() {
         query = q;
         _statusFilter = q;
+        _pataMoreAmount = null;
       });
       reloadForNewDate();
     }, icon, count.toString(), context,
@@ -1172,18 +1268,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         Padding(
           padding: const EdgeInsets.all(kPagePadding / 2),
           child: TextButton(
-            onPressed: () => showRetrySheet(
-                context,
-                _successfulConfirmedCount,
-                _successfulPendingCount,
-                _failedCount,
-                _secondAttemptCount,
-                _blacklistedCount,
-                _unavailableOfferCount,
-                _pausedCount,
-                _advancedCount,
-                _okoaCount,
-                0),
+            onPressed: () => showRetrySheet(context),
             child: const Text(
               'Retry options',
               style: TextStyle(color: kPrimaryColor),
@@ -1193,18 +1278,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         Padding(
           padding: const EdgeInsets.all(kPagePadding / 2),
           child: TextButton(
-            onPressed: () => _showDeleteSheet(
-                context,
-                _successfulConfirmedCount,
-                _successfulPendingCount,
-                _failedCount,
-                _secondAttemptCount,
-                _blacklistedCount,
-                _unavailableOfferCount,
-                _pausedCount,
-                _advancedCount,
-                _okoaCount,
-                0),
+            onPressed: () => _showDeleteSheet(context),
             child: const Text(
               'Delete options',
               style: TextStyle(color: kErrorColor),
@@ -1297,27 +1371,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
     reloadForNewDate();
   }
 
-  Future<dynamic> showRetrySheet(
-    BuildContext context,
-    int successfulCount,
-    int succPendingCount,
-    int errorCount,
-    int secondAttemptCount,
-    int blacklistedCount,
-    int unavailableOfferCount,
-    int pausedCount,
-    int advancedCount,
-    int okoaCount,
-    int allCount,
-  ) {
-    bool retryAll = false;
-    bool retryErrors = true;
-    bool retryFailed = false;
-    bool retrySuccessful = false;
-    bool retrySuccPending = false;
-    bool retryPaused = false;
-    bool retryOkoa = false;
-    bool retryAdvanced = false;
+  Future<dynamic> showRetrySheet(BuildContext context) {
+    final selected = <TransactionCategory>{TransactionCategory.error};
 
     DateTime startDate =
         DateTime.fromMillisecondsSinceEpoch(getTodayMidnightMillis());
@@ -1338,106 +1393,18 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                     const Text('Retry'),
                     const SizedBox(height: kPagePadding),
                     CheckboxListTile(
-                      value: retryAll,
+                      value: selected.length == TransactionCategory.all.length,
                       onChanged: (bool? value) {
                         setState(() {
-                          retryAll = value!;
-                          retryFailed = value;
-                          retryErrors = value;
-                          retrySuccessful = value;
-                          retryPaused = value;
-                          retryOkoa = value;
-                          retryAdvanced = value;
-                          retrySuccPending = value;
-                        });
-                      },
-                      title: Text(
-                          'All (${errorCount + successfulCount + secondAttemptCount + pausedCount + advancedCount + okoaCount})'),
-                    ),
-                    CheckboxListTile(
-                      value: retryErrors,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          retryErrors = value!;
-                          if (!value) {
-                            retryAll = false;
+                          selected.clear();
+                          if (value == true) {
+                            selected.addAll(TransactionCategory.all);
                           }
                         });
                       },
-                      title: Text('Errors ($errorCount)'),
+                      title: Text('All (${_countOf(TransactionCategory.all)})'),
                     ),
-                    CheckboxListTile(
-                      value: retryFailed,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          retryFailed = value!;
-                          if (!value) {
-                            retryAll = false;
-                          }
-                        });
-                      },
-                      title: Text('Failed ($secondAttemptCount)'),
-                    ),
-                    CheckboxListTile(
-                      value: retrySuccessful,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          retrySuccessful = value!;
-                          if (!value) {
-                            retryAll = false;
-                          }
-                        });
-                      },
-                      title: Text('Successful ($successfulCount)'),
-                    ),
-                    CheckboxListTile(
-                      value: retrySuccPending,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          retrySuccPending = value!;
-                          if (!value) {
-                            retryAll = false;
-                          }
-                        });
-                      },
-                      title: Text('Successful(Pending) ($succPendingCount)'),
-                    ),
-                    CheckboxListTile(
-                      value: retryPaused,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          retryPaused = value!;
-                          if (!value) {
-                            retryAll = false;
-                          }
-                        });
-                      },
-                      title: Text('Paused ($pausedCount)'),
-                    ),
-                    CheckboxListTile(
-                      value: retryOkoa,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          retryOkoa = value!;
-                          if (!value) {
-                            retryAll = false;
-                          }
-                        });
-                      },
-                      title: Text('Okoa ($okoaCount)'),
-                    ),
-                    CheckboxListTile(
-                      value: retryAdvanced,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          retryAdvanced = value!;
-                          if (!value) {
-                            retryAll = false;
-                          }
-                        });
-                      },
-                      title: Text('Advanced ($advancedCount)'),
-                    ),
+                    ..._categoryCheckboxes(selected, setState),
                     const SizedBox(height: kPagePadding),
                     const Text('From:'),
                     const SizedBox(height: kPagePadding / 2),
@@ -1536,6 +1503,22 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                         Expanded(
                           child: ElevatedButton(
                             onPressed: () async {
+                              if (selected.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          'Please select at least one category to retry.')),
+                                );
+                                return;
+                              }
+                              // Successful or forwarded rows are dialed or
+                              // forwarded again.
+                              final retry = await confirmationDialog(
+                                context,
+                                'Retry ${_countOf(selected)} items? Each one '
+                                'runs again, even if it already succeeded.',
+                              );
+                              if (!retry || !context.mounted) return;
                               tillDoneDialogue(
                                 context,
                                 const Padding(
@@ -1544,13 +1527,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                                 ),
                                 () async {
                                   await TransactionController().retrySpecific(
-                                    retryErrors,
-                                    retrySuccessful,
-                                    retrySuccPending,
-                                    retryFailed,
-                                    retryPaused,
-                                    retryOkoa,
-                                    retryAdvanced,
+                                    selected,
                                     startDate.millisecondsSinceEpoch,
                                     endDate.millisecondsSinceEpoch,
                                   );
@@ -1571,29 +1548,8 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         });
   }
 
-  Future<dynamic> _showDeleteSheet(
-    BuildContext context,
-    int successfulCount,
-    int successfulPendingCount,
-    int failedCount,
-    int secondAttemptCount,
-    int blacklistedCount,
-    int unavailableOfferCount,
-    int pausedCount,
-    int advancedCount,
-    int okoaCount,
-    int allCount,
-  ) {
-    bool deleteAll = false;
-    bool deleteErrors = false;
-    bool deleteFailed = false;
-    bool deleteSuccessful = false;
-    bool deleteSuccessfulPending = false;
-    bool deleteUnavailable = false;
-    bool deleteBlacklist = false;
-    bool deletePaused = false;
-    bool deleteOkoa = false;
-    bool deleteAdvanced = false;
+  Future<dynamic> _showDeleteSheet(BuildContext context) {
+    final selectedStatuses = <TransactionCategory>{};
 
     DateTime startDate =
         DateTime.fromMillisecondsSinceEpoch(getTodayMidnightMillis());
@@ -1617,130 +1573,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                     ),
                     const SizedBox(height: kPagePadding),
 
-                    // Select all checkbox
-                    // CheckboxListTile(
-                    //   value: deleteAll,
-                    //   onChanged: (bool? value) {
-                    //     setState(() {
-                    //       deleteAll = value!;
-                    //       deleteFailed = value;
-                    //       deleteErrors = value;
-                    //       deleteSuccessful = value;
-                    //       deleteUnavailable = value;
-                    //       deleteBlacklist = value;
-                    //       deletePaused = value;
-                    //     });
-                    //   },
-                    //   title: Text('All ($_allCount)'),
-                    // ),
-
-                    // Error checkbox
-                    CheckboxListTile(
-                      value: deleteErrors,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deleteErrors = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title: Text('Errors ($failedCount)'),
-                    ),
-
-                    // Failed checkbox
-                    CheckboxListTile(
-                      value: deleteFailed,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deleteFailed = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title: Text('Failed ($secondAttemptCount)'),
-                    ),
-
-                    // Successful checkbox
-                    CheckboxListTile(
-                      value: deleteSuccessful,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deleteSuccessful = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title: Text('Successful ($successfulCount)'),
-                    ),
-
-                    CheckboxListTile(
-                      value: deleteSuccessfulPending,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deleteSuccessfulPending = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title:
-                          Text('Successful Pending ($successfulPendingCount)'),
-                    ),
-
-                    // Unavailable checkbox
-                    CheckboxListTile(
-                      value: deleteUnavailable,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deleteUnavailable = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title:
-                          Text('Unavailable Offers ($unavailableOfferCount)'),
-                    ),
-
-                    // Blacklist checkbox
-                    CheckboxListTile(
-                      value: deleteBlacklist,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deleteBlacklist = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title: Text('Blacklisted ($blacklistedCount)'),
-                    ),
-
-                    // Paused checkbox
-                    CheckboxListTile(
-                      value: deletePaused,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deletePaused = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title: Text('Paused ($pausedCount)'),
-                    ),
-
-                    // Okoa checkbox
-                    CheckboxListTile(
-                      value: deleteOkoa,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deleteOkoa = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title: Text('Okoa ($okoaCount)'),
-                    ),
-
-                    CheckboxListTile(
-                      value: deleteAdvanced,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          deleteAdvanced = value!;
-                          if (!value) deleteAll = false;
-                        });
-                      },
-                      title: Text('Advancekd ($advancedCount)'),
-                    ),
+                    ..._categoryCheckboxes(selectedStatuses, setState),
 
                     const SizedBox(height: kPagePadding),
 
@@ -1783,55 +1616,7 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
                               backgroundColor: kErrorColor,
                             ),
                             onPressed: () async {
-                              int numberOfItems = 0;
-
-// 1. Use a Set instead of a List to prevent duplicate statuses
-// (e.g. if both Successful and SuccessfulPending map to 'done')
-                              final Set<TransactionCategory>
-                                  selectedStatuses = {};
-
-                              if (deleteErrors) {
-                                selectedStatuses.add(TransactionCategory.error);
-                                numberOfItems += failedCount;
-                              }
-                              if (deleteSuccessful) {
-                                selectedStatuses
-                                    .add(TransactionCategory.confirmed);
-                                numberOfItems += successfulCount;
-                              }
-                              if (deleteFailed) {
-                                selectedStatuses
-                                    .add(TransactionCategory.secondAttempt);
-                                numberOfItems += secondAttemptCount;
-                              }
-                              if (deleteSuccessfulPending) {
-                                selectedStatuses
-                                    .add(TransactionCategory.successfulPending);
-                                numberOfItems += successfulPendingCount;
-                              }
-                              if (deleteUnavailable) {
-                                selectedStatuses
-                                    .add(TransactionCategory.unavailableOffer);
-                                numberOfItems += unavailableOfferCount;
-                              }
-                              if (deleteBlacklist) {
-                                selectedStatuses
-                                    .add(TransactionCategory.blacklisted);
-                                numberOfItems += blacklistedCount;
-                              }
-                              if (deletePaused) {
-                                selectedStatuses.add(TransactionCategory.paused);
-                                numberOfItems += pausedCount;
-                              }
-                              if (deleteOkoa) {
-                                selectedStatuses.add(TransactionCategory.okoa);
-                                numberOfItems += okoaCount;
-                              }
-                              if (deleteAdvanced) {
-                                selectedStatuses
-                                    .add(TransactionCategory.advanced);
-                                numberOfItems += advancedCount;
-                              }
+                              final numberOfItems = _countOf(selectedStatuses);
 
 // 2. CRITICAL FIX: Prevent accidental deletion of ALL items if nothing is selected
                               if (selectedStatuses.isEmpty) {

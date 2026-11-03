@@ -774,6 +774,35 @@ class SharedPreferencesService {
     return false;
   }
 
+  Future<String?> getOffersSort() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    return prefs.getString("offers_sort");
+  }
+
+  Future<bool> setOffersSort(String sort) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.setString("offers_sort", sort);
+  }
+
+  /// Offer ids in the order the user dragged them into.
+  Future<List<int>> getOffersOrder() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    return (prefs.getStringList("offers_order") ?? [])
+        .map(int.tryParse)
+        .whereType<int>()
+        .toList();
+  }
+
+  Future<bool> setOffersOrder(List<int> offerIds) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.setStringList(
+      "offers_order",
+      offerIds.map((id) => id.toString()).toList(),
+    );
+  }
+
   Future<bool?> getDownloadOffers() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();

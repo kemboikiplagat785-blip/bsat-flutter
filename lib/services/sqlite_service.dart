@@ -7,6 +7,7 @@ import 'package:bsat/utils/logger.dart';
 import 'package:bsat/utils/forwarding_identifiers.dart';
 import 'package:bsat/utils/forwarding_delivery_retry.dart';
 import 'package:bsat/utils/safaricom_retry_failure.dart';
+import 'package:bsat/utils/transaction_categories.dart';
 import 'package:bsat/utils/transaction_reply.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
@@ -2735,17 +2736,75 @@ class SQLiteService {
 
   /// The signature recorded from [code] for this offer, if any. Each code has
   /// its own, so one code's signature never applies to another.
+  /// The signature for [code] on offer [ussdCodeId]. An offer with no recording
+  /// of its own uses the one of another offer dialing the same code.
   Future<CodeSignature?> codeSignatureFor(int ussdCodeId, String code) async {
-    final rows = await queryCustom(
-      'codeSignature',
-      'ussdCodeId = ?',
+    final rows = await rawQueryInput(
+      'SELECT * FROM codeSignature WHERE ussdCodeId = ? '
+      'OR ussdCodeId IN (SELECT id FROM ussdCodes) ORDER BY id DESC',
       [ussdCodeId],
     );
-    for (final row in rows) {
-      final signature = CodeSignature.fromMap(row);
-      if (signature.matchesCode(code)) return signature;
+    final signatures = rows
+        .map(CodeSignature.fromMap)
+        .where((signature) => signature.matchesCode(code))
+        .toList();
+    bool own(CodeSignature signature) => signature.ussdCodeId == ussdCodeId;
+    return signatures.where((s) => own(s) && s.isRecorded).firstOrNull ??
+        signatures.where((s) => s.isRecorded).firstOrNull ??
+        signatures.where(own).firstOrNull;
+  }
+
+  /// Gives every other offer dialing [signature]'s code the same signature.
+  Future<void> shareCodeSignature(CodeSignature signature) async {
+    if (!signature.isRecorded) return;
+    final variantRows = await queryAll(
+      'ussdCodeVariants',
+      columns: ['ussdCodeId', 'code'],
+    );
+    final offerIds = {
+      for (final row in variantRows)
+        if (signature.matchesCode(row['code']?.toString() ?? ''))
+          row['ussdCodeId'] as int,
+    }..remove(signature.ussdCodeId);
+
+    for (final offerId in offerIds) {
+      final existing = (await queryCustom(
+        'codeSignature',
+        'ussdCodeId = ?',
+        [offerId],
+      ))
+          .map(CodeSignature.fromMap)
+          .where((row) => row.matchesCode(signature.usdCode))
+          .firstOrNull;
+      final copy = signature.forOffer(offerId, rowId: existing?.id);
+      if (existing == null) {
+        await insertStuff(copy.sqlSavableForm(), 'codeSignature');
+      } else {
+        await updateStuff(
+          copy.sqlSavableForm(),
+          'id = ?',
+          [existing.id],
+          'codeSignature',
+        );
+      }
     }
-    return null;
+  }
+
+  /// The amounts in Pata More on [date], with how many transactions each has.
+  Future<List<({int amount, int count})>> pataMoreAmounts(String date) async {
+    final rows = await rawQueryInput(
+      'SELECT amount, COUNT(*) AS total FROM transactions '
+      'WHERE ${TransactionCategory.pataMore.onDate(date)} '
+      'GROUP BY amount ORDER BY amount',
+      [],
+    );
+    return [
+      for (final row in rows)
+        (
+          amount: int.tryParse(row['amount']?.toString() ?? '') ?? 0,
+          count: row['total'] as int,
+        ),
+    ];
   }
 
   Future<int> updateTransactionUnlessSafaricomSuccess(

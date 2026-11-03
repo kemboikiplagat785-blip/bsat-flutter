@@ -7,6 +7,7 @@ import 'package:bsat/components/header.dart';
 import 'package:bsat/screens/offers/edit_offer.dart';
 import 'package:bsat/screens/offers/download_offers_page.dart';
 import 'package:bsat/services/file_service.dart';
+import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:bsat/services/sqlite_service.dart';
 import 'package:bsat/controllers/transaction_controller.dart';
 import 'package:flutter/cupertino.dart';
@@ -15,6 +16,7 @@ import 'package:another_telephony/telephony.dart';
 
 import '../../components/dialogs/make_offer_tutorial_dialog.dart';
 import '../../utils/constants.dart';
+import '../../utils/offer_list_order.dart';
 
 class OffersPage extends StatefulWidget {
   const OffersPage({super.key});
@@ -37,10 +39,22 @@ class _OffersPageState extends State<OffersPage> {
   final Set<int> _selectedTransactionIds = {};
   final Set<String> _expandedCodes = {};
 
+  final _preferences = SharedPreferencesService();
+  final _searchController = TextEditingController();
+  OfferSort _sort = OfferSort.amountAscending;
+  List<int> _customOrder = [];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
 
+    _loadListOrder();
     getAllUSSDCodes();
     getAndProcessCards();
 
@@ -51,6 +65,163 @@ class _OffersPageState extends State<OffersPage> {
       'enabled',
       'INTEGER',
       defaultValue: 1,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // SEARCH, SORT AND DRAG
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadListOrder() async {
+    final sort = OfferSort.fromName(await _preferences.getOffersSort());
+    final customOrder = await _preferences.getOffersOrder();
+    if (!mounted) return;
+    setState(() {
+      _sort = sort;
+      _customOrder = customOrder;
+    });
+  }
+
+  void _changeSort(OfferSort sort) {
+    setState(() => _sort = sort);
+    _preferences.setOffersSort(sort.name);
+  }
+
+  /// The list's cards in the current sort order, limited to the search. Offers
+  /// can share a card, so a card moves as a whole.
+  List<({String key, List<int> offerIds, Widget card})> _offerCards() {
+    final rows = sortOfferRows(ussdCodes, _sort, _customOrder);
+    final query = _searchController.text;
+
+    // Same offer ID with multiple USSD variants.
+    final Map<int, List<Map<String, dynamic>>> byId = {};
+    for (final item in rows) {
+      byId.putIfAbsent(item['id'] as int, () => []).add(item);
+    }
+
+    // Single-variant offers sharing the same USSD code but representing
+    // different amounts/tiers.
+    final Map<String, List<Map<String, dynamic>>> codeGroups = {};
+    for (final item in rows) {
+      if (byId[item['id'] as int]!.length == 1) {
+        codeGroups
+            .putIfAbsent((item['code'] ?? '').toString(), () => [])
+            .add(item);
+      }
+    }
+
+    final cards = <({String key, List<int> offerIds, Widget card})>[];
+    final Set<int> seenIds = {};
+    final Set<String> seenCodes = {};
+
+    for (final item in rows) {
+      final int id = item['id'] as int;
+      final String code = (item['code'] ?? '').toString();
+      final variants = byId[id]!;
+      final isVariantCard = variants.length > 1;
+      if (!(isVariantCard ? seenIds.add(id) : seenCodes.add(code))) continue;
+
+      final items = isVariantCard ? variants : codeGroups[code]!;
+      if (!items.any((row) => offerRowMatches(row, query))) continue;
+
+      cards.add((
+        key: isVariantCard ? 'offer-$id' : 'code-$code',
+        offerIds: items.map((row) => row['id'] as int).toSet().toList(),
+        card: isVariantCard
+            ? _buildOfferCardWithVariants(items)
+            : items.length == 1
+                ? _buildOfferCard(items.first)
+                : _buildOfferGroupCard(code, items),
+      ));
+    }
+    return cards;
+  }
+
+  void _moveCard(
+    List<({String key, List<int> offerIds, Widget card})> cards,
+    int from,
+    int to,
+  ) {
+    final reordered = [...cards];
+    final moved = reordered.removeAt(from);
+    reordered.insert(to, moved);
+    final customOrder = [
+      for (final card in reordered) ...card.offerIds,
+    ];
+    setState(() {
+      _customOrder = customOrder;
+      _sort = OfferSort.custom;
+    });
+    _preferences.setOffersOrder(customOrder);
+    _preferences.setOffersSort(OfferSort.custom.name);
+  }
+
+  Widget _searchBar() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: kPagePadding),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          hintText: 'Search amount, name or code',
+          isDense: true,
+          prefixIcon: const Icon(CupertinoIcons.search, size: 18),
+          suffixIcon: _searchController.text.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  icon: const Icon(CupertinoIcons.xmark_circle_fill, size: 18),
+                  onPressed: () => setState(_searchController.clear),
+                ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(kBorderRadius / 1.5),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The offer cards. Dragging is off while searching: the cards in between
+  /// are hidden, so where a card ends up would not be what the user sees.
+  Widget _offerListSliver() {
+    final cards = _offerCards();
+    if (cards.isEmpty) {
+      return const SliverPadding(
+        padding: kPagePaddingInsets,
+        sliver: SliverToBoxAdapter(
+          child: Text('No offers match your search.'),
+        ),
+      );
+    }
+    final canDrag = _searchController.text.trim().isEmpty;
+    return SliverPadding(
+      padding: kPagePaddingInsets,
+      sliver: SliverReorderableList(
+        itemCount: cards.length,
+        onReorderItem: (from, to) => _moveCard(cards, from, to),
+        proxyDecorator: (child, index, animation) => Material(
+          color: Colors.transparent,
+          elevation: 4,
+          child: child,
+        ),
+        itemBuilder: (context, index) => Padding(
+          key: ValueKey(cards[index].key),
+          padding: const EdgeInsets.only(bottom: kPagePadding / 2),
+          child: Row(
+            children: [
+              Expanded(child: cards[index].card),
+              if (canDrag)
+                ReorderableDragStartListener(
+                  index: index,
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: kPagePadding / 4),
+                    child: Icon(Icons.drag_handle, semanticLabel: 'Move offer'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -365,136 +536,142 @@ class _OffersPageState extends State<OffersPage> {
       },
       child: Scaffold(
         body: SafeArea(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // -------------------------------------------------------------
-                // SELECTION BAR
-                // -------------------------------------------------------------
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // -------------------------------------------------------------
+                    // SELECTION BAR
+                    // -------------------------------------------------------------
 
-                if (_selectionMode)
-                  Container(
-                    padding: kPagePaddingInsets,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.only(
-                        bottomLeft: Radius.circular(
-                          kBorderRadius,
+                    if (_selectionMode)
+                      Container(
+                        padding: kPagePaddingInsets,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.only(
+                            bottomLeft: Radius.circular(
+                              kBorderRadius,
+                            ),
+                            bottomRight: Radius.circular(
+                              kBorderRadius,
+                            ),
+                          ),
+                          color: Theme.of(context).cardColor,
                         ),
-                        bottomRight: Radius.circular(
-                          kBorderRadius,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Select all
+                            IconButton(
+                              icon: Icon(
+                                _selectedTransactionIds.length ==
+                                        ussdCodes
+                                            .map((e) => e['id'])
+                                            .toSet()
+                                            .length
+                                    ? Icons.check_box
+                                    : Icons.check_box_outline_blank,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  final ids = ussdCodes
+                                      .map(
+                                        (code) => code['id'] as int,
+                                      )
+                                      .toSet();
+
+                                  if (_selectedTransactionIds.length ==
+                                      ids.length) {
+                                    _selectedTransactionIds.clear();
+                                    _selectionMode = false;
+                                  } else {
+                                    _selectedTransactionIds
+                                      ..clear()
+                                      ..addAll(ids);
+                                  }
+                                });
+                              },
+                            ),
+
+                            // Delete selected
+                            IconButton(
+                              icon: const Icon(
+                                CupertinoIcons.delete,
+                              ),
+                              onPressed: () async {
+                                final bool isConfirmed =
+                                    await showConfirmDeleteDialog(
+                                          context,
+                                          title: "Delete",
+                                          message:
+                                              "Are you sure you want to delete the selected offers?",
+                                        ) ??
+                                        false;
+
+                                if (!isConfirmed) return;
+
+                                final ids =
+                                    Set<int>.from(_selectedTransactionIds);
+
+                                for (final id in ids) {
+                                  await _sqliteService.deleteWhere(
+                                    'ussdCodeVariants',
+                                    'ussdCodeId = ?',
+                                    [id],
+                                  );
+
+                                  await _sqliteService.deleteStuff(
+                                    id,
+                                    'ussdCodes',
+                                  );
+                                }
+
+                                if (mounted) {
+                                  showSuccessDialog(
+                                    context,
+                                    text: 'Deleted offers successfully',
+                                  );
+
+                                  setState(() {
+                                    _selectionMode = false;
+                                    _selectedTransactionIds.clear();
+                                  });
+                                }
+
+                                await getAllUSSDCodes();
+                              },
+                            ),
+                          ],
                         ),
+                      )
+                    else
+                      header(
+                        context,
+                        'My Offers',
                       ),
-                      color: Theme.of(context).cardColor,
+
+                    const SizedBox(
+                      height: kPagePadding / 2,
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Select all
-                        IconButton(
-                          icon: Icon(
-                            _selectedTransactionIds.length ==
-                                    ussdCodes.map((e) => e['id']).toSet().length
-                                ? Icons.check_box
-                                : Icons.check_box_outline_blank,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              final ids = ussdCodes
-                                  .map(
-                                    (code) => code['id'] as int,
-                                  )
-                                  .toSet();
 
-                              if (_selectedTransactionIds.length ==
-                                  ids.length) {
-                                _selectedTransactionIds.clear();
-                                _selectionMode = false;
-                              } else {
-                                _selectedTransactionIds
-                                  ..clear()
-                                  ..addAll(ids);
-                              }
-                            });
-                          },
-                        ),
+                    // -------------------------------------------------------------
+                    // TOP BAR
+                    // -------------------------------------------------------------
 
-                        // Delete selected
-                        IconButton(
-                          icon: const Icon(
-                            CupertinoIcons.delete,
-                          ),
-                          onPressed: () async {
-                            final bool isConfirmed =
-                                await showConfirmDeleteDialog(
-                                      context,
-                                      title: "Delete",
-                                      message:
-                                          "Are you sure you want to delete the selected offers?",
-                                    ) ??
-                                    false;
-
-                            if (!isConfirmed) return;
-
-                            final ids = Set<int>.from(_selectedTransactionIds);
-
-                            for (final id in ids) {
-                              await _sqliteService.deleteWhere(
-                                'ussdCodeVariants',
-                                'ussdCodeId = ?',
-                                [id],
-                              );
-
-                              await _sqliteService.deleteStuff(
-                                id,
-                                'ussdCodes',
-                              );
-                            }
-
-                            if (mounted) {
-                              showSuccessDialog(
-                                context,
-                                text: 'Deleted offers successfully',
-                              );
-
-                              setState(() {
-                                _selectionMode = false;
-                                _selectedTransactionIds.clear();
-                              });
-                            }
-
-                            await getAllUSSDCodes();
-                          },
-                        ),
-                      ],
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: _topBar(),
                     ),
-                  )
-                else
-                  header(
-                    context,
-                    'My Offers',
-                  ),
 
-                const SizedBox(
-                  height: kPagePadding / 2,
-                ),
+                    // -------------------------------------------------------------
+                    // EMPTY / SEARCH
+                    // -------------------------------------------------------------
 
-                // -------------------------------------------------------------
-                // TOP BAR
-                // -------------------------------------------------------------
-
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: _topBar(),
-                ),
-
-                // -------------------------------------------------------------
-                // EMPTY / OFFER LIST
-                // -------------------------------------------------------------
-
-                ussdCodes.isEmpty
-                    ? Padding(
+                    if (ussdCodes.isEmpty)
+                      Padding(
                         padding: kPagePaddingInsets,
                         child: GestureDetector(
                           onTap: () {
@@ -522,115 +699,24 @@ class _OffersPageState extends State<OffersPage> {
                           ),
                         ),
                       )
-                    : Padding(
-                        padding: kPagePaddingInsets,
-                        child: Builder(
-                          builder: (context) {
-                            // -------------------------------------------------
-                            // GROUP 1:
-                            // Same offer ID with multiple USSD variants.
-                            // -------------------------------------------------
+                    else
+                      _searchBar(),
+                  ],
+                ),
+              ),
 
-                            final Map<int, List<Map<String, dynamic>>> byId =
-                                {};
+              // ---------------------------------------------------------------
+              // OFFER LIST
+              // ---------------------------------------------------------------
 
-                            for (final item in ussdCodes) {
-                              final int id = item['id'] as int;
+              if (ussdCodes.isNotEmpty) _offerListSliver(),
 
-                              byId.putIfAbsent(id, () => []).add(item);
-                            }
-
-                            // -------------------------------------------------
-                            // GROUP 2:
-                            // Single-variant offers sharing the same USSD
-                            // code but representing different amounts/tiers.
-                            // -------------------------------------------------
-
-                            final Map<String, List<Map<String, dynamic>>>
-                                codeGroups = {};
-
-                            for (final item in ussdCodes) {
-                              final int id = item['id'] as int;
-
-                              if (byId[id]!.length == 1) {
-                                final String code =
-                                    (item['code'] ?? '').toString();
-
-                                codeGroups
-                                    .putIfAbsent(
-                                      code,
-                                      () => [],
-                                    )
-                                    .add(item);
-                              }
-                            }
-
-                            // -------------------------------------------------
-                            // Preserve original amount/code ordering.
-                            // -------------------------------------------------
-
-                            final List<Widget> tiles = [];
-
-                            final Set<int> seenIds = {};
-                            final Set<String> seenCodes = {};
-
-                            for (final item in ussdCodes) {
-                              final int id = item['id'] as int;
-
-                              // Multiple variants under one offer ID.
-                              if (byId[id]!.length > 1) {
-                                if (seenIds.add(id)) {
-                                  tiles.add(
-                                    _buildOfferCardWithVariants(
-                                      byId[id]!,
-                                    ),
-                                  );
-                                }
-
-                                continue;
-                              }
-
-                              // Different tiers sharing the same code.
-                              final String code =
-                                  (item['code'] ?? '').toString();
-
-                              if (seenCodes.add(code)) {
-                                final items = codeGroups[code]!;
-
-                                tiles.add(
-                                  items.length == 1
-                                      ? _buildOfferCard(
-                                          items.first,
-                                        )
-                                      : _buildOfferGroupCard(
-                                          code,
-                                          items,
-                                        ),
-                                );
-                              }
-                            }
-
-                            return Column(
-                              children: tiles
-                                  .map(
-                                    (tile) => Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: kPagePadding / 2,
-                                      ),
-                                      child: tile,
-                                    ),
-                                  )
-                                  .toList(),
-                            );
-                          },
-                        ),
-                      ),
-
-                const SizedBox(
+              const SliverToBoxAdapter(
+                child: SizedBox(
                   height: kPagePadding * 2,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
 
@@ -1546,6 +1632,19 @@ class _OffersPageState extends State<OffersPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
+        PopupMenuButton<OfferSort>(
+          tooltip: 'Sort offers',
+          icon: const Icon(Icons.sort),
+          onSelected: _changeSort,
+          itemBuilder: (BuildContext context) => [
+            for (final sort in OfferSort.values)
+              CheckedPopupMenuItem(
+                value: sort,
+                checked: sort == _sort,
+                child: Text(sort.label),
+              ),
+          ],
+        ),
         PopupMenuButton<String>(
           icon: const Icon(
             CupertinoIcons.gear,

@@ -207,7 +207,7 @@ void main() {
       });
 
       await controller.retrySpecific(
-          false, false, true, false, false, false, false, now - 1000, now + 1);
+          [TransactionCategory.successfulPending], now - 1000, now + 1);
 
       expect(phone.calls, hasLength(1),
           reason: 'only the Successful(Pending) row was chosen');

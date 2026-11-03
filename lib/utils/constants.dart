@@ -78,6 +78,10 @@ class TransactionStatuses {
       "transaction-alternative-delivery-pending";
   static const successfulPending = 'successful-pending';
 
+  /// Phone C to Phone B only, never a row's status: the alternative failed and
+  /// stays on Phone C, so Phone B's queue to it can move on.
+  static const alternativeRetrying = 'transaction-alternative-retrying';
+
   /// A forwarded Second Attempt that the customer topped up and that was
   /// then completed by another paired device (the combined amount).
   static const pataMore = 'transaction-pata-more';

@@ -7,11 +7,16 @@ import 'phone_service.dart';
 
 const String _alternativeUssdRequestEvent = 'executeAlternativeUssd';
 const String _alternativeUssdResultEvent = 'alternativeUssdResult';
+const String _mainEnginePingEvent = 'mainEnginePing';
+const String _mainEnginePongEvent = 'mainEnginePong';
 
 /// Register in the UI isolate. MainActivity owns the `runUssdSequence`
 /// MethodChannel, so background service requests must be executed here.
 void registerMainEngineAlternativeUssdBridge() {
   final service = FlutterBackgroundService();
+  service.on(_mainEnginePingEvent).listen((event) {
+    service.invoke(_mainEnginePongEvent, {'requestId': event?['requestId']});
+  });
   service.on(_alternativeUssdRequestEvent).listen((event) async {
     if (event == null) return;
 
@@ -48,6 +53,22 @@ void registerMainEngineAlternativeUssdBridge() {
       });
     }
   });
+}
+
+/// Called from the background isolate. False when the main Flutter engine is
+/// not running (the app was closed), so nothing can dial an Advanced code.
+Future<bool> isMainEngineRunning(ServiceInstance service) async {
+  final requestId = DateTime.now().microsecondsSinceEpoch.toString();
+  final pong = service
+      .on(_mainEnginePongEvent)
+      .firstWhere((event) => event?['requestId'] == requestId);
+  service.invoke(_mainEnginePingEvent, {'requestId': requestId});
+  try {
+    await pong.timeout(const Duration(seconds: 3));
+    return true;
+  } on TimeoutException {
+    return false;
+  }
 }
 
 /// Called from the background isolate. Waits for the main Flutter engine to

@@ -2572,6 +2572,36 @@ class SQLiteService {
     );
   }
 
+  /// Today's Offer Changed transactions with automatic retries left. Whether
+  /// their signature allows switching is for the caller to check.
+  Future<List<Map<String, dynamic>>> getOfferChangedRetryCandidates({
+    required int retryLimit,
+    required String today,
+  }) async {
+    return queryCustom(
+      'transactions',
+      '''
+        status = ? AND date = ? AND canRetry < ?
+        AND COALESCE(retryState, 'ready') = 'ready'
+        AND NOT EXISTS (
+          SELECT 1 FROM alternativeJobs j
+          WHERE COALESCE(transactions.forwardingJobId, '') != ''
+            AND j.forwardingJobId = transactions.forwardingJobId
+        )
+      ''',
+      [TransactionStatuses.offerChanged, today, retryLimit],
+      columns: [
+        'id',
+        'ussdDialed',
+        'simSubId',
+        'canRetry',
+        'ussdReply',
+        'amount',
+        'targetOfferId',
+      ],
+    );
+  }
+
   /// Whether the offer for [amount] dialing [rawCode] (with `n` for the number)
   /// runs its code in one call through the phone's USSD dialog.
   Future<bool> isOneCallCode(int amount, String rawCode) async {

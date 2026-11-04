@@ -469,16 +469,11 @@ Future<void> handleRemoteMessage(
       if (!await subscribedToOnline("Online")) {
         // If not subscribed to Online,
         if (!(await PaymentOps().deductSingleToken())) {
-          final transactionId = await transactionController.dontProcess(
+          final transactionId =
+              await transactionController.recordForwardedSmsWithoutSubscription(
             body,
-            "00",
-            0,
-            "",
-            0,
-            -1,
-            reply:
-                "You received a forwarded message but it seems you are not subscribed to the Online tier. Please subscribe to Online to process forwarded messages.",
-            status: TransactionStatuses.paused,
+            forwardingJobId: forwardingJobId,
+            forwardingSenderDeviceName: forwardingSenderDeviceName,
           );
           if (forwardingJobClaim != null && forwardingJobId != null) {
             await SQLiteService().completeForwardedSmsJob(

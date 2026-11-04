@@ -4448,11 +4448,6 @@ class TransactionController {
     // //print("is adv ${ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]}");
 
     if (ussdToDial1Sim2CanRetry3DoesExist4IsAdvanced5IsActive[4]) {
-      bool isActive =
-          await _sharedPreferencesService.getAppIsActiveState() ?? false;
-
-      if (!isActive) return;
-
       Map<String, dynamic> thisCode = {};
       final variantMatches = await _sqliteService.queryCustom(
         'ussdCodeVariants',
@@ -4467,10 +4462,14 @@ class TransactionController {
         thisCode = variantMatches.first;
       }
 
-      codeSignature ??= await _sqliteService.codeSignatureFor(
-        thisCode['ussdCodeId'] ?? thisCode['id'] ?? -1,
-        ussdCode,
-      );
+      // The offer's active code may differ from the one last dialed, and a
+      // signature for another code would leave this dial unprotected.
+      if (codeSignature == null || !codeSignature.matchesCode(ussdCode)) {
+        codeSignature = await _sqliteService.codeSignatureFor(
+          thisCode['ussdCodeId'] ?? thisCode['id'] ?? -1,
+          ussdCode,
+        );
+      }
 
       if (kDebugMode) {
         debugPrint("so far so good");
@@ -5345,6 +5344,50 @@ class TransactionController {
     return insertedId;
   }
 
+  /// Whether a purchase may be dialed: an active subscription, a delivery
+  /// token (spent by the caller if the dial goes through), or a successful
+  /// auto-renewal.
+  Future<({bool allowed, bool usingToken})> _purchaseAllowance() async {
+    if (await _paymentOps.hasActiveSubscription()) {
+      return (allowed: true, usingToken: false);
+    }
+    if ((await _sharedPreferencesService.getDeliveryTokens() ?? 0) > 0) {
+      return (allowed: true, usingToken: true);
+    }
+    if (await _sharedPreferencesService.getAutoRenew() ?? false) {
+      final reply = await _paymentOps.autoRenewSubscription();
+      return (allowed: reply[1] == TransactionStatuses.done, usingToken: false);
+    }
+    return (allowed: false, usingToken: false);
+  }
+
+  /// Keeps a forwarded payment this phone may not run, with the customer's
+  /// name, number and amount, so the owner can see it and retry it after
+  /// subscribing.
+  Future<int?> recordForwardedSmsWithoutSubscription(
+    String body, {
+    String? forwardingJobId,
+    String? forwardingSenderDeviceName,
+  }) {
+    final code = getMpesaCode(body);
+    final name = getName(body).trim();
+    return dontProcess(
+      body,
+      code.isEmpty ? '00' : code,
+      extract9DigitNumber(body),
+      '',
+      getAmount(body),
+      -1,
+      reply: 'You received a forwarded message but it seems you are not '
+          'subscribed to the Online tier. Please subscribe to Online to '
+          'process forwarded messages.',
+      status: TransactionStatuses.paused,
+      source: name.isEmpty ? null : name,
+      forwardingJobId: forwardingJobId,
+      forwardingSenderDeviceName: forwardingSenderDeviceName,
+    );
+  }
+
   Future<void> _checkDelayedAlternativeForwards() async {
     final pending = await _sqliteService.queryCustom(
       'transactions',
@@ -5449,6 +5492,9 @@ class TransactionController {
       );
 
       if (target == null || target.trim().isEmpty) {
+        // Left in its state, so it runs once there is a subscription.
+        final allowance = await _purchaseAllowance();
+        if (!allowance.allowed) continue;
         // Leave the retryable state before dialing to avoid duplicate runs.
         final alternativeClaimed = await _sqliteService.updateStuff(
           {
@@ -5485,6 +5531,11 @@ class TransactionController {
         final executionStatus = altResponse.length > 1
             ? altResponse[1]?.toString()
             : TransactionStatuses.error;
+        if (allowance.usingToken &&
+            (executionStatus == TransactionStatuses.done ||
+                executionStatus == TransactionStatuses.advancedUssd)) {
+          await _paymentOps.deductSingleToken();
+        }
         final classifiedStatus = await transactionStatus(altResponse);
         if (classifiedStatus == TransactionStatuses.hasOkoa) {
           altResponse[1] = TransactionStatuses.hasOkoa;
@@ -5861,11 +5912,14 @@ class TransactionController {
 
     // print("Retrying. all: ${await _sqliteService.queryAll('transactions')}");
 
-    final rawStuff = await _sqliteService.getAutomaticRetryCandidates(
-      isAutoRetrying: isAutoRetrying,
-      retryLimit: retryTimes,
-      today: getNormalDate(DateTime.now()),
-    );
+    final rawStuff = [
+      ...await _sqliteService.getAutomaticRetryCandidates(
+        isAutoRetrying: isAutoRetrying,
+        retryLimit: retryTimes,
+        today: getNormalDate(DateTime.now()),
+      ),
+      ...await _autoSwitchOfferChangedRetries(retryTimes),
+    ];
 
     //print('Retrying all: ${rawStuff.length}');
 
@@ -5905,6 +5959,36 @@ class TransactionController {
         codeSignature: signature,
       );
     }
+  }
+
+  /// Offer Changed transactions whose signature may switch to the package's
+  /// new position. The signature stopped them before the last step, so nothing
+  /// was bought, and the retry still buys only the recorded package.
+  Future<List<Map<String, dynamic>>> _autoSwitchOfferChangedRetries(
+    int retryLimit,
+  ) async {
+    if (!(await _sharedPreferencesService.getCanAutoSwitch() ?? true)) {
+      return [];
+    }
+    final candidates = await _sqliteService.getOfferChangedRetryCandidates(
+      retryLimit: retryLimit,
+      today: getNormalDate(DateTime.now()),
+    );
+    final retries = <Map<String, dynamic>>[];
+    for (final row in candidates) {
+      final dialed = row['ussdDialed']?.toString() ?? '';
+      final offerId = int.tryParse(row['targetOfferId']?.toString() ?? '') ??
+          await _resolveOfferIdByCode(
+            int.tryParse(row['amount']?.toString() ?? '') ?? 0,
+            dialed,
+          );
+      if (offerId == null) continue;
+      final signature = await _sqliteService.codeSignatureFor(offerId, dialed);
+      if (signature?.autoSwitch == true && signature?.isActive == true) {
+        retries.add(row);
+      }
+    }
+    return retries;
   }
 
   /// When the setting is on, a transaction Safaricom never answered is moved

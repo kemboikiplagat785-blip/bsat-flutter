@@ -34,8 +34,6 @@ class _DashBoardPageState extends State<DashBoardPage>
     with WidgetsBindingObserver {
   late final DashboardViewModel _viewModel;
   final ScrollController _chipsScrollController = ScrollController();
-  bool _canScrollLeft = false;
-  bool _canScrollRight = true;
 
   @override
   void initState() {
@@ -44,21 +42,6 @@ class _DashBoardPageState extends State<DashBoardPage>
     _viewModel = DashboardViewModel();
     WidgetsBinding.instance.addObserver(this);
     unawaited(_viewModel.initialize());
-
-    _chipsScrollController.addListener(_scrollListener);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollListener();
-    });
-  }
-
-  void _scrollListener() {
-    if (_chipsScrollController.hasClients) {
-      setState(() {
-        _canScrollLeft = _chipsScrollController.position.pixels > 0;
-        _canScrollRight = _chipsScrollController.position.pixels <
-            _chipsScrollController.position.maxScrollExtent;
-      });
-    }
   }
 
   @override
@@ -82,20 +65,6 @@ class _DashBoardPageState extends State<DashBoardPage>
     WidgetsBinding.instance.removeObserver(this);
     _viewModel.dispose();
     super.dispose();
-  }
-
-  void _scrollChips({bool goRight = true}) {
-    // get postion of scroll position to hide buttons when at the end or beginning
-
-    if (_chipsScrollController.hasClients) {
-      _chipsScrollController.animateTo(
-        goRight
-            ? _chipsScrollController.offset + 200
-            : _chipsScrollController.offset - 200,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
   }
 
   @override

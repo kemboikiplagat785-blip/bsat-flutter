@@ -119,8 +119,7 @@ class _OnlineManagementScreenState extends State<OnlineManagementScreen> {
 
       name = await sharedPreferencesService.getUserName() ?? "Bingwa";
       webLink =
-          "https://bingwa.$kBaseAppUrl/${await sharedPreferencesService.getLinkExtension()}" ??
-              "bingwa";
+          "https://bingwa.$kBaseAppUrl/${await sharedPreferencesService.getLinkExtension()}";
       email = await sharedPreferencesService.getUserEmail() ?? "";
       setState(() {});
     }

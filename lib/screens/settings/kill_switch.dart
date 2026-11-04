@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:ota_update/ota_update.dart';
 
 import '../../services/admin_management_service.dart';
 import 'updater.dart';
@@ -23,42 +22,6 @@ class KillswitchScreen extends StatefulWidget {
 }
 
 class _KillswitchScreenState extends State<KillswitchScreen> {
-  OtaEvent? currentEvent;
-  bool isDownloading = false;
-
-  Future<void> _startInAppUpdate() async {
-    if (widget.config.updateUrl.isEmpty) return;
-
-    setState(() {
-      isDownloading = true;
-    });
-
-    try {
-      OtaUpdate()
-          .execute(
-        widget.config.updateUrl,
-        destinationFilename: 'bsat-update.apk',
-      )
-          .listen(
-        (OtaEvent event) {
-          setState(() {
-            currentEvent = event;
-            if (event.status == OtaStatus.ALREADY_RUNNING_ERROR ||
-                event.status == OtaStatus.PERMISSION_NOT_GRANTED_ERROR ||
-                event.status == OtaStatus.INTERNAL_ERROR) {
-              isDownloading = false;
-            }
-          });
-        },
-      );
-    } catch (e) {
-      // print('Failed to make OTA update. Details: $e');
-      setState(() {
-        isDownloading = false;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     bool isOfflineLockout =
@@ -133,48 +96,29 @@ class _KillswitchScreenState extends State<KillswitchScreen> {
                   style: const TextStyle(fontSize: 16),
                 ),
                 const SizedBox(height: 40),
-                if (isDownloading) ...[
-                  LinearProgressIndicator(
-                    value: currentEvent?.value != null &&
-                            double.tryParse(currentEvent!.value!) != null
-                        ? double.parse(currentEvent!.value!) / 100
-                        : null,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    currentEvent?.status == OtaStatus.DOWNLOADING
-                        ? 'Downloading: ${currentEvent?.value}%'
-                        : currentEvent?.status == OtaStatus.INSTALLING
-                            ? 'Installing...'
-                            : (currentEvent?.value ?? 'Preparing...'),
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
-                ] else
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: isOfflineLockout
-                          ? widget.onRetry
-                          : () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) => ApkDownloaderPage(),
-                                ),
-                              );
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isOfflineLockout
-                            ? Colors.grey.shade800
-                            : Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
-                      child: Text(
-                          isOfflineLockout ? "Retry Connection" : "Update Now",
-                          style: const TextStyle(fontSize: 18)),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: isOfflineLockout
+                        ? widget.onRetry
+                        : () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => ApkDownloaderPage(),
+                              ),
+                            );
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor:
+                          isOfflineLockout ? Colors.grey.shade800 : Colors.blue,
+                      foregroundColor: Colors.white,
                     ),
+                    child: Text(
+                        isOfflineLockout ? "Retry Connection" : "Update Now",
+                        style: const TextStyle(fontSize: 18)),
                   ),
+                ),
                 if (widget.isDismissible &&
                     !isOfflineLockout &&
                     widget.onSkip != null) ...[

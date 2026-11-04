@@ -206,17 +206,6 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row(
-          //   children: [
-          //     Expanded(
-          //       child: _buildChoiceChip('Lipa na Mpesa', true),
-          //     ),
-          //     const SizedBox(width: 8),
-          //     Expanded(
-          //       child: _buildChoiceChip('Send Money', true),
-          //     ),
-          //   ],
-          // ),
           const Text('Mobile number to receive payments'),
           const SizedBox(height: 16),
           TextField(
@@ -234,31 +223,6 @@ class _MyOnlinePresencePageState extends State<MyOnlinePresencePage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildChoiceChip(String label, bool selected) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        color: selected
-            ? kPrimaryColor.withValues(alpha: 0.1)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(kBorderRadius),
-        border: Border.all(
-            color:
-                selected ? kPrimaryColor : kGrayColor.withValues(alpha: 0.2)),
-      ),
-      child: Center(
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? kPrimaryColor : kGrayColor,
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-          ),
-        ),
       ),
     );
   }

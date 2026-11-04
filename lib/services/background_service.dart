@@ -51,10 +51,8 @@ void onStart(ServiceInstance serviceInstance) async {
 
   final log = BsatLogger(tag: 'BackgroundService');
   const int retryAfter = 20;
-  const Duration maskedCallLogDelay = Duration(minutes: 5);
   bool isTickRunning = false;
   bool hasRunMidnightBatchUpload = false;
-  Timer? pendingMaskedCheckTimer;
   StreamSubscription<PhoneState>? phoneStateSubscription;
 
   // Initialize the singleton
@@ -78,7 +76,6 @@ void onStart(ServiceInstance serviceInstance) async {
   }
 
   serviceInstance.on('stopService').listen((event) async {
-    pendingMaskedCheckTimer?.cancel();
     await phoneStateSubscription?.cancel();
     serviceInstance.stopSelf();
   });

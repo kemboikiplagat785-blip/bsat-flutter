@@ -61,12 +61,9 @@ class _CommissionGraphState extends State<CommissionGraph> {
   Future<List<Map<String, dynamic>>> getCommissionPerDay(int days) async {
     final now = DateTime.now();
     final startDate = now.subtract(Duration(days: days - 1));
-    final startDateStr = getNormalDate(startDate);
     final startTimestamp =
         DateTime(startDate.year, startDate.month, startDate.day)
             .millisecondsSinceEpoch;
-    final endTimestamp = DateTime(now.year, now.month, now.day, 23, 59, 59)
-        .millisecondsSinceEpoch;
 
     // Prepare the list of allowed amounts for SQL IN clause
     final allowedAmounts =
@@ -329,8 +326,7 @@ class _CommissionGraphState extends State<CommissionGraph> {
       text = Text(
         Numbers.formatNumber(
                 (commissionPerDay[value.toInt()]['total'] as num).toInt(),
-                leastK: 1000) ??
-            '',
+                leastK: 1000),
         style: style,
       );
     } else {

@@ -228,7 +228,7 @@ class PaymentOps {
   }
 
   static void start1DayOnlinePlusFreeTrial() async {
-    int id = await SQLiteService().insertStuff(
+    await SQLiteService().insertStuff(
       {
         'sim': -1,
         'till': DateTime.now().millisecondsSinceEpoch + (24 * 60 * 60 * 1000),

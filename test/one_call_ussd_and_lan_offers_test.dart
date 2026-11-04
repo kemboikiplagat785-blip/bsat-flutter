@@ -4,7 +4,6 @@
 import 'dart:convert';
 
 import 'package:bsat/controllers/transaction_controller.dart';
-import 'package:bsat/services/lan/lan_forwarding_service.dart';
 import 'package:bsat/services/lan/lan_messages.dart';
 import 'package:bsat/services/lan/lan_offers_transfer.dart';
 import 'package:bsat/services/offers_transfer_service.dart';

@@ -273,8 +273,6 @@ class AuthService {
 
     String? fcmToken = await FirebaseMessaging.instance.getToken();
 
-    final userInfo = await getUserInfo();
-
     final response = await http.post(
       Uri.parse('$baseUrl/api/device/register'),
       headers: {
@@ -766,7 +764,7 @@ class AuthService {
 
   Future<void> logout() async {
     String deviceName = await _prefs.getDeviceName() ?? "Unknown Device";
-    final response = await http.post(
+    await http.post(
       Uri.parse('$baseUrl/api/auth/logout'),
       headers: {
         'Content-Type': 'application/json',

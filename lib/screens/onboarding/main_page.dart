@@ -15,7 +15,6 @@ class OnboardingPage extends StatefulWidget {
 class OnboardingPageState extends State<OnboardingPage> {
   @override
   Widget build(BuildContext context) {
-    var size = MediaQuery.of(context).size;
     var textTheme = Theme.of(context).textTheme;
     return Scaffold(
       body: Column(

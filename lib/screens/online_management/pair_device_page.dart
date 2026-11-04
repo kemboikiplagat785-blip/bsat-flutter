@@ -21,7 +21,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
   String myDeviceName = "Loading...";
 
   // bool _isLoading = false;
-  List<dynamic> _pairedDevices = [];
 
   @override
   void initState() {
@@ -111,21 +110,6 @@ class _PairDevicePageState extends State<PairDevicePage> {
         Navigator.pop(context); // Hide loading
         showErrorDialog(context, "Error", "An error occurred: $e");
       }
-    }
-  }
-
-  Future<void> getPairedDevices() async {
-    try {
-      final backendService = BackendService();
-      final response = await backendService
-          .get('/api/devices/paired-devices?myDeviceName=$myDeviceName');
-      if (response['success'] && mounted) {
-        _pairedDevices = response['data']['pairedDevices'] ?? [];
-        // You can set this to state and display in the UI if needed
-        setState(() {});
-      }
-    } catch (e) {
-      debugPrint("Error loading paired devices: $e");
     }
   }
 

@@ -55,9 +55,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
   String _errorAmount = '';
   String _errorUSSDCode = '';
-  String _errorUSSDSyntax = '';
-  String _errorDialSim = '';
-  String _errorFromSim = '';
 
   bool _hasChanges = false;
 
@@ -371,6 +368,15 @@ class _EditOfferPageState extends State<EditOfferPage> {
     return null;
   }
 
+  static const _invalidCodeMessage =
+      'USSD code can only contain digits, *, # and n.';
+
+  void _showFormError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   Future<bool> checkForErrorsAndProceed() async {
     final int? parsedAmount = _parseAmount(_amountTextController.text);
 
@@ -387,14 +393,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
       });
     }
     if (_fromSim < 0 && !_fromBothSims) {
-      setState(() {
-        _errorFromSim = " *Select one";
-      });
+      _showFormError('Select a SIM under "Received On".');
       return false;
-    } else {
-      setState(() {
-        _errorFromSim = "";
-      });
     }
     // Validate code entries
     if (_codeEntries.isEmpty) {
@@ -413,18 +413,14 @@ class _EditOfferPageState extends State<EditOfferPage> {
         return false;
       }
       if (RegExp(r'[^0-9*n#]').hasMatch(codeText)) {
-        setState(() {
-          _errorUSSDSyntax = " Code has error";
-        });
+        _showFormError(_invalidCodeMessage);
         return false;
       }
 
       if (entry['hasAlternativeCode'] == true) {
         final altCode = _entryController(entry, 'alternativeUssdCode').text;
         if (altCode.isNotEmpty && RegExp(r'[^0-9*n#]').hasMatch(altCode)) {
-          setState(() {
-            _errorUSSDSyntax = " Code has error";
-          });
+          _showFormError('Alternative: $_invalidCodeMessage');
           return false;
         }
 
@@ -446,7 +442,6 @@ class _EditOfferPageState extends State<EditOfferPage> {
 
     setState(() {
       _errorUSSDCode = '';
-      _errorUSSDSyntax = '';
     });
 
     // Ensure no overlapping timeframes among codes for this offer
@@ -460,14 +455,8 @@ class _EditOfferPageState extends State<EditOfferPage> {
     }
 
     if (_dialSim < 0) {
-      setState(() {
-        _errorDialSim = " *Select one";
-      });
+      _showFormError('Select a SIM under "Dial Using".');
       return false;
-    } else {
-      setState(() {
-        _errorDialSim = "";
-      });
     }
     if (usesBongaPoints) {
       if (_balanceCheckCodeTextController.text == '') {

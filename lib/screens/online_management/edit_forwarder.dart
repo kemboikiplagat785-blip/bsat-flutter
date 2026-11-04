@@ -54,8 +54,6 @@ class _EditForwarderState extends State<EditForwarder> {
   Future<void> postData() async {
     showLoadingDialog(context, text: "Saving...");
 
-    final backendService = BackendService();
-
     try {
       final backendService = BackendService();
 
@@ -115,7 +113,7 @@ class _EditForwarderState extends State<EditForwarder> {
         updatedData['forwarding_transport'] = null;
       }
 
-      int updatedId = await SQLiteService().updateStuff(
+      await SQLiteService().updateStuff(
         updatedData,
         'id = ?',
         [widget.dbId],
@@ -130,12 +128,10 @@ class _EditForwarderState extends State<EditForwarder> {
         'amounts_to_forward': jsonEncode(amountsToForward),
       };
 
-      int newId = await SQLiteService().insertStuff(
+      await SQLiteService().insertStuff(
         newData,
         'forwardingDevices',
       );
-
-      //print("New Forwarded Device ID: $newId");
     }
     Navigator.of(context).pop(); // Close loading dialog
   }
@@ -273,12 +269,11 @@ class _EditForwarderState extends State<EditForwarder> {
                                 false;
 
                             if (!delete) return;
-                            int deletedId = await SQLiteService().deleteWhere(
+                            await SQLiteService().deleteWhere(
                               'forwardingDevices',
                               'id = ?',
                               [widget.dbId],
                             );
-                            //print("Deleted Forwarded Device ID: $deletedId");
                             Navigator.of(context).pop();
                           },
                           style: OutlinedButton.styleFrom(

@@ -15,7 +15,6 @@ class AutomatePageSplash extends StatefulWidget {
 class AutomatePageSplashState extends State<AutomatePageSplash> {
   @override
   Widget build(BuildContext context) {
-    var size = MediaQuery.of(context).size;
     var textTheme = Theme.of(context).textTheme;
     return Scaffold(
       body: Column(

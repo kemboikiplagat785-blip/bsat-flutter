@@ -21,8 +21,6 @@ class TaskManagerPage extends StatefulWidget {
 class _TaskManagerPageState extends State<TaskManagerPage> {
   final _sqliteService = SQLiteService();
 
-  final _searchController = TextEditingController();
-
   List tasks = [];
 
   void _getAllTasks() async {

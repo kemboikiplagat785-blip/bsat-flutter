@@ -1,4 +1,3 @@
-import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -385,26 +384,6 @@ class _SettingsPageState extends State<SettingsPage> {
               trailing: const Icon(CupertinoIcons.refresh,
                   color: kPrimaryColor, size: 20),
               onTap: () {
-                String arch = 'unknown';
-                DeviceInfoPlugin().androidInfo.then((info) {
-                  switch (info.supportedAbis.first) {
-                    case 'arm64-v8a':
-                      arch = 'arm64';
-                      break;
-                    case 'armeabi-v7a':
-                      arch = 'armeabi';
-                      break;
-                    case 'x86_64':
-                      arch = 'x86_64';
-                      break;
-                    case 'x86':
-                      arch = 'x86';
-                      break;
-                    default:
-                      return 'unknown';
-                  }
-                });
-
                 Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) =>

@@ -88,7 +88,6 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
   String? _statusFilter;
   Timer? _debounce; // Performance Fix: For search
   var databaseHelper = SQLiteService();
-  final bool _isScrollingDown = false;
 
   @override
   void initState() {

@@ -24,7 +24,6 @@ class _ApkDownloaderPageState extends State<ApkDownloaderPage> {
   bool _isLoadingConfig = true;
   String? _latestVersion;
   String? _killMessage;
-  String? _iosStoreUrl;
 
   @override
   void initState() {
@@ -42,7 +41,6 @@ class _ApkDownloaderPageState extends State<ApkDownloaderPage> {
         setState(() {
           _latestVersion = data['latest_version'];
           _killMessage = data['kill_message'];
-          _iosStoreUrl = data['ios_store_url'];
           _isLoadingConfig = false;
         });
       }

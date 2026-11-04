@@ -350,7 +350,7 @@ int getAmount(String? smsBody) {
   amount ??= double.parse(amountMatch).toInt();
 
   //print("Amount: -> $amount, $amountMatch");
-  return amount ?? 0;
+  return amount;
 }
 
 String getName(String messageBody) {

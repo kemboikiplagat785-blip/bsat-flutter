@@ -2391,11 +2391,7 @@ class FirebaseMessagingService {
     }
 
     // Get the token for this device
-    final fCMToken = await _firebaseMessaging.getToken();
-
-    if (kDebugMode) {
-      // print('FCM Token: $fCMToken');
-    }
+    await _firebaseMessaging.getToken();
 
     // Initialize Local Notifications
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =

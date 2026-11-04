@@ -16,7 +16,6 @@ class UpdatedToolkitPageSplash extends StatefulWidget {
 class UpdatedToolkitPageSplashState extends State<UpdatedToolkitPageSplash> {
   @override
   Widget build(BuildContext context) {
-    var size = MediaQuery.of(context).size;
     var textTheme = Theme.of(context).textTheme;
     return Scaffold(
       body: Column(

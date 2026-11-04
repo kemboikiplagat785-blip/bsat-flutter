@@ -44,12 +44,9 @@ class _ValuePerformanceOverTimeState extends State<ValuePerformanceOverTime> {
   Future<List<Map<String, dynamic>>> getSalesPerDay(int days) async {
     final now = DateTime.now();
     final startDate = now.subtract(Duration(days: days - 1));
-    final startDateStr = getNormalDate(startDate);
     final startTimestamp =
         DateTime(startDate.year, startDate.month, startDate.day)
             .millisecondsSinceEpoch;
-    final endTimestamp = DateTime(now.year, now.month, now.day, 23, 59, 59)
-        .millisecondsSinceEpoch;
 
     List<String> dateList = List.generate(
       days,

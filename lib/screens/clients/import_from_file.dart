@@ -108,7 +108,6 @@ class _ImportFromFilePageState extends State<ImportFromFilePage> {
 
     try {
       totalToProcess = csvTable.length - 1; // excluding header
-      int nameIndices = 0;
       List<int> nameIndexes = [];
       int phoneIndex = -1;
 

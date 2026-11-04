@@ -297,15 +297,11 @@ class _SubscriptionPageState extends State<SubscriptionPage> {
                                   chosenSubId = plan['plan_id'];
                                 });
 
-                                Map<String, dynamic> selectedPlan;
-                                try {
-                                  selectedPlan = kSubscriptionTiers
-                                      .expand((tier) => tier['plans'] as List)
-                                      .firstWhere((plan) =>
-                                          plan['plan_id'] == chosenSubId);
-                                } catch (e) {
-                                  return; // No plan selected
-                                }
+                                final planExists = kSubscriptionTiers
+                                    .expand((tier) => tier['plans'] as List)
+                                    .any((plan) =>
+                                        plan['plan_id'] == chosenSubId);
+                                if (!planExists) return;
 
                                 // await choosePaymentCardDialog(
                                 //   context,

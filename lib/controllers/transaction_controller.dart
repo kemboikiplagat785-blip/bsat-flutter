@@ -30,7 +30,6 @@ import '../services/client_service.dart';
 import '../services/shared_preferences_service.dart';
 import '../utils/forwarding_job_id.dart';
 import '../utils/forwarding_delivery_retry.dart';
-import '../utils/logger.dart';
 import '../utils/top_up.dart';
 import '../utils/inactive_line_failure.dart';
 import '../utils/transaction_categories.dart';

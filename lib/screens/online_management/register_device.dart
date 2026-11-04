@@ -167,8 +167,7 @@ class _RegisterDevicePageState extends State<RegisterDevicePage> {
                                 await SharedPreferencesService()
                                     .setDeviceId(device['device_id']);
 
-                                String? fcmToken =
-                                    await FirebaseMessaging.instance.getToken();
+                                await FirebaseMessaging.instance.getToken();
 
 
                                 Navigator.of(context).pushReplacement(

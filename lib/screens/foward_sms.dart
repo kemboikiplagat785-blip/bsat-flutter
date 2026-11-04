@@ -34,13 +34,11 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
 
   int _dialSim = -1;
 
-  final List<String> _chips = [];
 
   List<Map<String, dynamic>> _forwards = [];
 
   String _error = "";
 
-  int _editingId = -1;
 
   // void _processWhitelist() {
   //   // if (text.length >= 9 && text.length <= 13) {
@@ -75,12 +73,6 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
     } catch (e) {
       debugPrint("Error getting SIM subscriptions: $e");
     }
-  }
-
-  void _removeChip(String chip) {
-    setState(() {
-      _chips.remove(chip);
-    });
   }
 
   Future<void> _addToForwardedDB() async {
@@ -492,12 +484,10 @@ class _ForwardSmsPageState extends State<ForwardSmsPage> {
       _numberToForwardToTextController.text =
           editing['numberToReceive'].toString();
       _dialSim = editing['dialSim'];
-      _editingId = id;
     } else {
       _amountsToForward = [];
       _numberToForwardToTextController.text = "";
       _dialSim = -1;
-      _editingId = -1;
     }
 
     return showDialog(

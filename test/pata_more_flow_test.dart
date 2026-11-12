@@ -12,6 +12,7 @@ import 'package:bsat/services/lan/lan_messages.dart';
 import 'package:bsat/utils/constants.dart';
 import 'package:bsat/utils/transaction_categories.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/stage0_harness.dart';
@@ -96,8 +97,9 @@ class _NoCustomerSmsController extends TransactionController {
     String transactionStatus,
     String firstName,
     String lastName,
-    int amount,
-  ) async {}
+    int amount, {
+    String? transactionKey,
+  }) async {}
 }
 
 const _jobAlt = 'fwd_SJK1ALT123_1761650200000';
@@ -168,16 +170,23 @@ void main() {
       final id = await seedOriginal();
 
       // Phone A goes on to send the customer its Second Attempt reply, which
-      // reaches Telephony; that is Android-only and asserts in tests.
-      await expectLater(
-        h.capture(() => handleRemoteMessage(_confirmation(
+      // reaches Telephony; that is Android-only, so the send fails and logs.
+      final logs = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logs.add(message ?? '');
+      try {
+        await h.capture(() => handleRemoteMessage(_confirmation(
               from: 'Phone B',
               jobId: _jobB,
               transactionId: 'SJK1ABCD23',
               resultStatus: TransactionStatuses.secondAttempt,
-            ))),
-        throwsA(isA<AssertionError>()
-            .having((e) => '${e.message}', 'message', contains('Android'))),
+            )));
+      } finally {
+        debugPrint = originalDebugPrint;
+      }
+      expect(
+        logs,
+        contains(allOf(contains('SMS sending error'), contains('Android'))),
       );
 
       final original = await row(id);

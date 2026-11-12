@@ -308,8 +308,9 @@ class _NoRepliesController extends TransactionController {
     String transactionStatus,
     String firstName,
     String lastName,
-    int amount,
-  ) async {}
+    int amount, {
+    String? transactionKey,
+  }) async {}
 }
 
 class _Paid extends PaymentOps {

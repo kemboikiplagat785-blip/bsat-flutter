@@ -2710,6 +2710,47 @@ class SQLiteService {
     );
   }
 
+  static const _customerReplyRetention = Duration(days: 30);
+
+  Future<void> _ensureSentCustomerRepliesTable(DatabaseExecutor db) =>
+      db.execute('''
+        CREATE TABLE IF NOT EXISTS sentCustomerReplies (
+          replyKey TEXT PRIMARY KEY,
+          sentAt INTEGER NOT NULL
+        )
+      ''');
+
+  /// Claims the customer reply identified by [replyKey] (transaction,
+  /// category and number). False when it was already claimed, so retries,
+  /// repeated confirmations and other isolates never send it twice.
+  Future<bool> claimCustomerReply(String replyKey) async {
+    final db = await database;
+    await _ensureSentCustomerRepliesTable(db);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.delete(
+      'sentCustomerReplies',
+      where: 'sentAt < ?',
+      whereArgs: [now - _customerReplyRetention.inMilliseconds],
+    );
+    final inserted = await db.rawUpdate(
+      'INSERT OR IGNORE INTO sentCustomerReplies (replyKey, sentAt) '
+      'VALUES (?, ?)',
+      [replyKey, now],
+    );
+    return inserted == 1;
+  }
+
+  /// Gives back a claim whose SMS failed to send, so it can be sent later.
+  Future<void> releaseCustomerReply(String replyKey) async {
+    final db = await database;
+    await _ensureSentCustomerRepliesTable(db);
+    await db.delete(
+      'sentCustomerReplies',
+      where: 'replyKey = ?',
+      whereArgs: [replyKey],
+    );
+  }
+
   /// The row of [table] with [id], or an empty map when it no longer exists
   /// (deleted or merged while a screen still pointed at it).
   Future<Map<String, dynamic>> queryOne(String table, int id) async {

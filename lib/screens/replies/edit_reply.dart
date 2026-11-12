@@ -329,6 +329,27 @@ class _EditReplyPageState extends State<EditReplyPage> {
                             },
                           ),
                           RadioListTile(
+                            title: const Text('Timed out'),
+                            value: TransactionStatuses.timedOutMap.keys.first,
+                            groupValue: _selectedOption,
+                            onChanged: (int? value) {
+                              setState(() {
+                                _selectedOption = value!;
+                              });
+                            },
+                          ),
+                          RadioListTile(
+                            title: const Text('In queue (Advanced USSD)'),
+                            value:
+                                TransactionStatuses.advancedQueueMap.keys.first,
+                            groupValue: _selectedOption,
+                            onChanged: (int? value) {
+                              setState(() {
+                                _selectedOption = value!;
+                              });
+                            },
+                          ),
+                          RadioListTile(
                             title: const Text('Forwarded'),
                             // leading: Radio<int>(
                             value: TransactionStatuses.forwardedMap.keys.first,

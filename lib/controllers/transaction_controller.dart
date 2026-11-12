@@ -540,6 +540,7 @@ class TransactionController {
           sourceParts.first,
           sourceParts.skip(1).join(' '),
           amount,
+          transactionKey: original['transactionId']?.toString(),
         );
       }
     }
@@ -1360,6 +1361,7 @@ class TransactionController {
             ? name.trim().split(RegExp(r'\s+'))[1]
             : '',
         amount,
+        transactionKey: mpesaCode,
       );
 
       if (autoSaveContacts) {
@@ -1682,6 +1684,7 @@ class TransactionController {
               ? name.trim().split(RegExp(r'\s+'))[1]
               : '',
           amount,
+          transactionKey: mpesaCode,
         );
 
         final pausedCode = await selectBongaUssdCode(offerId);
@@ -1749,6 +1752,7 @@ class TransactionController {
             ? name.trim().split(RegExp(r'\s+'))[1]
             : '',
         amount,
+        transactionKey: mpesaCode,
       );
 
       return await dontProcess(
@@ -1779,6 +1783,7 @@ class TransactionController {
               ? name.trim().split(RegExp(r'\s+'))[1]
               : '',
           amount,
+          transactionKey: mpesaCode,
         );
       }
 
@@ -1925,6 +1930,7 @@ class TransactionController {
                 ? name.trim().split(RegExp(r'\s+'))[1]
                 : '',
             amount,
+            transactionKey: mpesaCode,
           );
         }
         return unavailableTransactionId;
@@ -1942,6 +1948,7 @@ class TransactionController {
             ? name.trim().split(RegExp(r'\s+'))[1]
             : '',
         amount,
+        transactionKey: mpesaCode,
       );
 
       if (autoSaveContacts) {
@@ -2166,6 +2173,7 @@ class TransactionController {
             ? name.trim().split(RegExp(r'\s+'))[1]
             : '',
         amount,
+        transactionKey: mpesaCode,
       );
       return await dontProcess(
         smsMessage.body ?? "",
@@ -2288,6 +2296,7 @@ class TransactionController {
             ? name.trim().split(RegExp(r'\s+'))[1]
             : '',
         amount,
+        transactionKey: mpesaCode,
       );
     }
 
@@ -2431,6 +2440,7 @@ class TransactionController {
               ? name.trim().split(RegExp(r'\s+'))[1]
               : '',
           amount,
+          transactionKey: mpesaCode,
         );
 
         if (autoSaveContacts) {
@@ -3033,6 +3043,7 @@ class TransactionController {
                   ? name.trim().split(RegExp(r'\s+'))[1]
                   : '',
               amount,
+              transactionKey: mpesaCode,
             );
 
             debugPrint(
@@ -4797,6 +4808,7 @@ class TransactionController {
           ? getName(transaction.initialMessage).trim().split(RegExp(r'\s+'))[1]
           : '',
       amount,
+      transactionKey: transaction.transactionId,
     );
   }
 
@@ -6754,8 +6766,9 @@ class TransactionController {
     String transactionStatus,
     String firstName,
     String lastName,
-    int amount,
-  ) async {
+    int amount, {
+    String? transactionKey,
+  }) async {
     // A stopped offer is waiting on the owner, so without a reply of its own
     // the customer gets the Paused reply.
     final reply = await _findReplyFor(transactionStatus, amount) ??
@@ -6773,19 +6786,44 @@ class TransactionController {
       );
     }
 
-    List similar = await searchSentSms(
+    if (message.trim().isEmpty) return;
+
+    // Each category's reply is sent once per transaction. Matching identical
+    // text instead (as before) dropped the reply to a customer's second
+    // same-amount purchase of the day.
+    final key = transactionKey?.trim() ?? '';
+    if (key.isNotEmpty && key != '00' && key != 'null') {
+      final replyKey = '$key|$transactionStatus|$number';
+      if (!await _sqliteService.claimCustomerReply(replyKey)) return;
+      final result = await sendEvenInBackground(
+        '254$number',
+        message,
+        checkIfSimilar: false,
+      );
+      if (result == 'Failed') {
+        await _sqliteService.releaseCustomerReply(replyKey);
+      }
+      return;
+    }
+
+    // No transaction to tie it to: only an identical reply sent moments ago
+    // (the same event handled twice) is skipped.
+    final similar = await searchSentSms(
       '254$number',
       message.substring(
         0,
         message.length > 160 ? 160 : message.length,
       ),
-      getTodayMidnightMillis(),
+      DateTime.now()
+          .subtract(_untrackedReplyDedupeWindow)
+          .millisecondsSinceEpoch,
     );
-
     if (similar.isNotEmpty) return;
 
-    sendEvenInBackground('254$number', message);
+    await sendEvenInBackground('254$number', message, checkIfSimilar: false);
   }
+
+  static const _untrackedReplyDedupeWindow = Duration(minutes: 10);
 
   Future<String> transactionStatus(List response) async {
     debugPrint("Response: ${response[0]}");
@@ -7782,6 +7820,7 @@ class TransactionController {
             ? (candidate['source'] ?? 'unknown').toString().split(' ')[1]
             : '',
         amount,
+        transactionKey: candidate['transactionId']?.toString(),
       );
     }
   }

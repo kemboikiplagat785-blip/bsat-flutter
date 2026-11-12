@@ -48,6 +48,7 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
   bool showFullReply = false;
   bool _isBlacklisted = false;
   Client? _client;
+  bool _notFound = false;
 
   List toForward = [];
 
@@ -64,6 +65,11 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
     final details =
         await _sqliteService.queryOne('transactions', _currentTransactionId);
     if (!mounted) return;
+    if (details.isEmpty) {
+      // Deleted or merged since the list was drawn.
+      setState(() => _notFound = true);
+      return;
+    }
 
     final previous = await _sqliteService.queryCustom(
       'transactions',
@@ -128,6 +134,18 @@ class _SingleTransactionPageState extends State<SingleTransactionPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Every action below reads _details; until the row is loaded they would
+    // pass nulls where ints are required.
+    if (_details.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: Center(
+          child: _notFound
+              ? const Text('This transaction no longer exists.')
+              : const CircularProgressIndicator(),
+        ),
+      );
+    }
     return SafeArea(
       child: Scaffold(
         body: Stack(

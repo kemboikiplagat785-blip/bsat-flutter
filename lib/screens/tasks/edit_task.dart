@@ -1,3 +1,4 @@
+import 'package:bsat/utils/permission_request.dart';
 import 'package:bsat/components/dialogs/delete_ussd_dialog.dart';
 import 'package:bsat/components/dialogs/show_error_dialog.dart';
 import 'package:bsat/components/dialogs/success_dialog.dart';
@@ -275,7 +276,7 @@ class _EditTaskPageState extends State<EditTaskPage> {
 
     _getMyOffers();
 
-    Permission.scheduleExactAlarm.request();
+    Permission.scheduleExactAlarm.requestSafely();
   }
 
   @override

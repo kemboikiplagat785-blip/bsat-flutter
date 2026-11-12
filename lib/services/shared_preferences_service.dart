@@ -129,6 +129,24 @@ class SharedPreferencesService {
     return autoRenew;
   }
 
+  /// The plan and SIM of the last subscription bought, which auto-renewal
+  /// buys again. Kept here because expired rows are pruned from `payments`
+  /// before renewal ever looks at them.
+  Future<({int planId, int sim})?> getAutoRenewPlan() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final planId = prefs.getInt("auto_renew_plan_id");
+    if (planId == null) return null;
+    return (planId: planId, sim: prefs.getInt("auto_renew_sim") ?? -1);
+  }
+
+  Future<void> setAutoRenewPlan(int planId, int sim) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    await prefs.setInt("auto_renew_plan_id", planId);
+    await prefs.setInt("auto_renew_sim", sim);
+  }
+
   Future<bool> setAutoRenew(bool autoRenew) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.reload();

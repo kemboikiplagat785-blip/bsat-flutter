@@ -148,6 +148,13 @@ class _AccessibilityTutorialScreenState
   bool _isLoading = false;
   bool _isSuccess = false;
 
+  // Each step waits for the user to come back from system settings; they may
+  // close this screen meanwhile, so late updates are dropped.
+  @override
+  void setState(VoidCallback fn) {
+    if (mounted) super.setState(fn);
+  }
+
   @override
   void initState() {
     super.initState();

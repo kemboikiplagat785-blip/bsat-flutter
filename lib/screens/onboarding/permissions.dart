@@ -1,3 +1,4 @@
+import 'package:bsat/utils/permission_request.dart';
 import 'package:another_telephony/telephony.dart';
 import 'package:bsat/services/background_service.dart';
 import 'package:bsat/services/shared_preferences_service.dart';
@@ -54,7 +55,7 @@ class _PermissionsPageState extends State<PermissionsPage> {
     // await Permission.notification.isDenied.then((value) {
     //   if (value) return;
     // });
-    await Permission.notification.request();
+    await Permission.notification.requestSafely();
     if ((await _requestPhoneAndSmsPermissions()) &&
         (await Permission.notification.isGranted)) {
       await askForDefaultSms();

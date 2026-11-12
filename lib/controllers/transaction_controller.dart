@@ -8487,16 +8487,16 @@ class TransactionController {
   }
 
   Future<void> purgeAndMerge(int toPurgeId, int toMergeId) async {
-    print("PUEREGGEGEGEG");
-
     // Read the original transaction before deleting it.
     final originalTransaction =
         await _sqliteService.queryOne('transactions', toMergeId);
+    final purgeRowBefore =
+        await _sqliteService.queryOne('transactions', toPurgeId);
+    // Either side may already be gone (merged or deleted meanwhile).
+    if (originalTransaction.isEmpty || purgeRowBefore.isEmpty) return;
 
     // Read the newly created transaction.
-    final purgeTransaction = MyTransaction.fromMap(
-      await _sqliteService.queryOne('transactions', toPurgeId),
-    );
+    final purgeTransaction = MyTransaction.fromMap(purgeRowBefore);
 
     // The original transaction may contain the forwardingJobId.
     // Preserve it when replacing the original transaction with

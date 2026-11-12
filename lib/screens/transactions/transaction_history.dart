@@ -1296,13 +1296,18 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         message: 'Retry these ${_selectedTransactionIds.length} transactions?');
     if (val == true) {
       final selectedCount = _selectedTransactionIds.length;
+      // Captured before the retries run: they dial USSD and can outlast the
+      // page, after which [context] can no longer find them.
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
       showLoadingDialog(context);
       final result = await TransactionController()
           .retryTransactionsGivenIds(_selectedTransactionIds.toList());
+      navigator.pop();
+      if (!mounted) return;
       _resetSelectionState();
       reloadForNewDate();
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text('Execution retries dispatched: ${result.dispatched}; '
               'ambiguous outcomes: ${result.ambiguous}; forwarding requests '
@@ -1318,12 +1323,14 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         message:
             'Delete these ${_selectedTransactionIds.length} transactions?');
     if (val == true) {
+      final navigator = Navigator.of(context);
       showLoadingDialog(context);
       await databaseHelper.deleteWhere(
           'transactions', 'id IN (${_selectedTransactionIds.join(',')})', []);
+      navigator.pop();
+      if (!mounted) return;
       _resetSelectionState();
       reloadForNewDate();
-      Navigator.pop(context);
     }
   }
 
@@ -1333,11 +1340,13 @@ class _TransactionHistoryPageState extends State<TransactionHistoryPage> {
         message: 'Add ${_selectedTransactionIds.length} to automated?',
         btnText: 'Add');
     if (val == true) {
+      final navigator = Navigator.of(context);
       showLoadingDialog(context);
       await TransactionController()
           .addAllToAutomated(_selectedTransactionIds.toList());
+      navigator.pop();
+      if (!mounted) return;
       reloadForNewDate();
-      Navigator.pop(context);
     }
   }
 

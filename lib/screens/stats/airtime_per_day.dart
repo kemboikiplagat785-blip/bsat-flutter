@@ -17,6 +17,13 @@ class AirtimePerDay extends StatefulWidget {
 }
 
 class _AirtimePerDayState extends State<AirtimePerDay> {
+  // Balances come back from USSD after seconds; the user may have left by
+  // then, and setState on a disposed state is a null-check crash in release.
+  @override
+  void setState(VoidCallback fn) {
+    if (mounted) super.setState(fn);
+  }
+
   SQLiteService sqLiteService = SQLiteService();
 
   final List<Map<String, dynamic>> offerVolumes = [];
@@ -219,7 +226,9 @@ class _AirtimePerDayState extends State<AirtimePerDay> {
     super.initState();
     _loadDataForTimeframe();
     Telephony.instance.getSubscriptionList().then((value) async {
-      defaultSimSubId = (await PhoneService().getAllDialSims()).first;
+      final dialSims = (await PhoneService().getAllDialSims()).whereType<int>();
+      defaultSimSubId = dialSims.isEmpty ? -1 : dialSims.first;
+      if (!mounted) return;
       setState(() {
         simCards = value;
       });

@@ -1,5 +1,6 @@
 // stateful widget called RepliesPage
 
+import 'package:bsat/utils/permission_request.dart';
 import 'dart:convert';
 
 import 'package:bsat/components/dialogs/confirm_delete_dialog.dart';
@@ -40,7 +41,7 @@ class _RepliesPageState extends State<RepliesPage> {
   }
 
   Future<void> requestSmsPermission() async {
-    PermissionStatus status = await Permission.sms.request();
+    PermissionStatus status = await Permission.sms.requestSafely();
 
     if (status.isGranted) {
       // Proceed with sending SMS

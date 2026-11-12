@@ -1,3 +1,4 @@
+import 'package:bsat/utils/permission_request.dart';
 import 'package:bsat/components/dialogs/loading_dialog.dart';
 import 'package:bsat/components/header.dart';
 import 'package:bsat/components/task_list_item.dart';
@@ -58,7 +59,7 @@ class _TaskManagerPageState extends State<TaskManagerPage> {
 
   void checkPermission(BuildContext context) async {
     if (!(await Permission.scheduleExactAlarm.isGranted)) {
-      await Permission.scheduleExactAlarm.request();
+      await Permission.scheduleExactAlarm.requestSafely();
     }
   }
 

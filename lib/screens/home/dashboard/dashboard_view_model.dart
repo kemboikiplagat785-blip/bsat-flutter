@@ -1,3 +1,4 @@
+import 'package:bsat/utils/permission_request.dart';
 import 'dart:async';
 
 import 'package:bsat/controllers/transaction_controller.dart';
@@ -212,7 +213,7 @@ class DashboardViewModel extends ChangeNotifier {
   Future<void> setAppActive(bool isActive) async {
     await _sharedPreferencesService.setAppIsActiveState(isActive);
     // Battery optimisation can stop the service that dials in the background.
-    if (isActive) await Permission.ignoreBatteryOptimizations.request();
+    if (isActive) await Permission.ignoreBatteryOptimizations.requestSafely();
   }
 
   @override

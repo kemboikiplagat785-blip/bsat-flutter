@@ -60,6 +60,11 @@ Future<void> main() async {
   // Firebase crashlytics is already partly integrated via captureLogs, but we can keep these
   // or let logger.dart handle it if we want to forward it there instead.
   // We'll leave them as is for now.
+  // Debug runs report assert-only framework checks (e.g. "Zone mismatch")
+  // that cannot happen in release; keep them out of the production dashboard.
+  await FirebaseCrashlytics.instance
+      .setCrashlyticsCollectionEnabled(!kDebugMode);
+
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
   PlatformDispatcher.instance.onError = (error, stack) {

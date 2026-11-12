@@ -55,7 +55,7 @@ class _ScanInvitationPageState extends State<ScanInvitationPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _stopCamera();
+    _stopCamera(disposing: true);
     super.dispose();
   }
 
@@ -123,10 +123,18 @@ class _ScanInvitationPageState extends State<ScanInvitationPage>
     if (mounted) setState(() => _state = state);
   }
 
-  Future<void> _stopCamera() async {
+  Future<void> _stopCamera({bool disposing = false}) async {
     final camera = _camera;
-    _camera = null;
     if (camera == null) return;
+    if (disposing || !mounted) {
+      _camera = null;
+    } else {
+      // Take the preview out of the tree and let that frame render before
+      // disposing: a CameraPreview still showing a disposed controller
+      // throws "Disposed CameraController" on its next build.
+      setState(() => _camera = null);
+      await WidgetsBinding.instance.endOfFrame;
+    }
     try {
       if (camera.value.isStreamingImages) await camera.stopImageStream();
     } catch (_) {}

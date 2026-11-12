@@ -275,6 +275,7 @@ class PhoneService {
     // 1. Map to store counts: { number: frequency }
     Map<int, int> counts = {};
     for (var n in numbers) {
+      if (n is! int) continue; // offers saved without a SIM
       counts[n] = (counts[n] ?? 0) + 1;
     }
 

@@ -47,6 +47,10 @@ class PaymentOps {
       if (!paymentIsMade(value[0])) {
         return ['Insufficient balance.\n', TransactionStatuses.error];
       }
+
+      // Remember what was bought so auto-renewal can buy it again.
+      await _sharedPreferencesService.setAutoRenewPlan(planId, subId);
+
       int usableUntil = (await Payment.getPaymentByTier(tier)).till;
       if (usableUntil > DateTime.now().millisecondsSinceEpoch) {
         usableUntil += (days * 24 * 60 * 60 * 1000);
@@ -195,36 +199,70 @@ class PaymentOps {
     return await _sharedPreferencesService.setDeliveryTokens(tokens);
   }
 
-  Future<List<String>> autoRenewSubscription() async {
-    Map? lastPlan = (await SQLiteService()
-                .queryAll('payments', limit: 1, orderBy: 'id DESC'))
-            .firstOrNull ??
-        {};
+  /// Plan bought when auto-renewal has no record of a previous purchase
+  /// (Online, 1 day), matching what older versions fell back to.
+  static const int _defaultAutoRenewPlanId = 3;
 
-    int planId;
-    int subId;
-    int amount;
+  /// Shared by every caller in this isolate, so a burst of incoming payments
+  /// after expiry pays for one renewal instead of one each.
+  static Future<List<String>>? _autoRenewInFlight;
 
-    if (lastPlan.isNotEmpty) {
-      planId = lastPlan['plan_id'] ?? -1;
-      subId = lastPlan['sim'] ?? -1;
-      amount = lastPlan['amount'] ?? -1;
-    } else {
-      // default values if no last plan found
-      planId = 3;
-      amount = 20;
+  Future<List<String>> autoRenewSubscription() {
+    return _autoRenewInFlight ??=
+        _autoRenew().whenComplete(() => _autoRenewInFlight = null);
+  }
 
-      subId = (await SQLiteService()
-          .queryAll('ussdCodes', limit: 1, orderBy: 'id DESC'))[0]['dialSim'];
+  Future<List<String>> _autoRenew() async {
+    try {
+      if (await hasActiveSubscription()) {
+        return ['Subscription already active', TransactionStatuses.done];
+      }
+
+      final saved = await _sharedPreferencesService.getAutoRenewPlan();
+      final plan = findSubscriptionPlan(saved?.planId) ??
+          findSubscriptionPlan(_defaultAutoRenewPlanId)!;
+
+      final sims = await _phoneService.getAllSimSubids();
+      int subId = saved?.sim ?? -1;
+      if (!sims.contains(subId)) {
+        subId = await _phoneService.mostCommonDialSim();
+      }
+      if (!sims.contains(subId)) {
+        subId = sims.isEmpty ? -1 : sims.first;
+      }
+      if (subId < 0) {
+        return ['No SIM card available', TransactionStatuses.error];
+      }
+
+      return await payCore(
+        plan.amount,
+        plan.days,
+        subId,
+        plan.planId,
+        plan.tier,
+      );
+    } catch (e) {
+      return ['Auto-renewal error: $e', TransactionStatuses.error];
     }
+  }
 
-    return await payCore(
-      amount,
-      1,
-      subId,
-      planId,
-      lastPlan['type'] ?? 'Online',
-    );
+  /// The paid plan with [planId] in [kSubscriptionTiers], or null.
+  static ({int planId, int amount, int days, String tier})?
+      findSubscriptionPlan(int? planId) {
+    if (planId == null) return null;
+    for (final tier in kSubscriptionTiers) {
+      for (final plan in tier['plans'] as List) {
+        if (plan['plan_id'] == planId && (plan['amount'] as int) > 0) {
+          return (
+            planId: planId,
+            amount: plan['amount'] as int,
+            days: plan['durationDays'] as int,
+            tier: tier['tier'] as String,
+          );
+        }
+      }
+    }
+    return null;
   }
 
   static void start1DayOnlinePlusFreeTrial() async {
@@ -323,28 +361,42 @@ class Payment {
     return res;
   }
 
+  /// A payment dated more than this far ahead was made while the phone's
+  /// clock ran ahead (a little slack for drift and time-zone changes).
+  static const Duration _futurePaymentSlack = Duration(days: 1);
+
+  /// No real subscription ends further out than this: more than a year of
+  /// stacked monthly plans. Anything beyond it is a bug, not a purchase.
+  static const Duration _maxPlausibleRemaining = Duration(days: 400);
+
   static Future<Payment> getHighestTierPayment() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    // Prune before reading, so a row removed here is not still honoured.
+    await SQLiteService().deleteWhere('payments', 'till <= ?', [now]);
+
+    // Bought while the clock was set ahead: once the clock is corrected the
+    // plan would otherwise run for as long as the clock was wrong. Payments
+    // are always dated "now", so a future date is the reliable sign. (A
+    // length cap alone cannot tell this from plans legitimately stacked.)
+    await SQLiteService().deleteWhere(
+      'payments',
+      'payment_date > ?',
+      [now + _futurePaymentSlack.inMilliseconds],
+    );
+
+    await SQLiteService().deleteWhere(
+      'payments',
+      'till > ?',
+      [now + _maxPlausibleRemaining.inMilliseconds],
+    );
+
     // get tier of highestplanId that has not expired
     List<Map<String, dynamic>> payments = await SQLiteService().queryCustom(
       'payments',
       'till > ?',
-      [DateTime.now().millisecondsSinceEpoch],
+      [now],
       orderBy: 'plan_id DESC, till DESC',
-    );
-
-    // also delete any payments that have expired
-    await SQLiteService().deleteWhere(
-      'payments',
-      'till <= ?',
-      [DateTime.now().millisecondsSinceEpoch],
-    );
-
-    // also delete plans that expire more than 40 days after today
-    // as it may be a result of wrong date input by user or some bug in code logic
-    await SQLiteService().deleteWhere(
-      'payments',
-      'till > ?',
-      [DateTime.now().millisecondsSinceEpoch + 40 * 24 * 60 * 60 * 1000],
     );
 
     if (payments.isEmpty) {

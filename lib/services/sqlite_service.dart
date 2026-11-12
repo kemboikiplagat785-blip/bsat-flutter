@@ -2710,6 +2710,8 @@ class SQLiteService {
     );
   }
 
+  /// The row of [table] with [id], or an empty map when it no longer exists
+  /// (deleted or merged while a screen still pointed at it).
   Future<Map<String, dynamic>> queryOne(String table, int id) async {
     final db = await database;
     final response = await db.query(
@@ -2718,7 +2720,7 @@ class SQLiteService {
       whereArgs: [id],
       limit: 1,
     );
-    return response.first;
+    return response.firstOrNull ?? {};
   }
 
   Future<int> getCount(
@@ -2773,6 +2775,10 @@ class SQLiteService {
     String? orderBy,
   }) async {
     final db = await database;
+    // SQLite rejects long LIKE patterns ("LIKE or GLOB pattern too
+    // complex"), e.g. a whole pasted M-Pesa message; a prefix still matches.
+    searchText = searchText.trim();
+    if (searchText.length > 100) searchText = searchText.substring(0, 100);
     return db.query(
       table,
       where:

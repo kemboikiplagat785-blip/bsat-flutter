@@ -19,10 +19,20 @@ class ConfirmTransactionsPage extends StatefulWidget {
 class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
   DateTime _start = DateTime.now().subtract(const Duration(hours: 6));
   DateTime _end = DateTime.now();
+
+  /// When false, [_end] follows the current time on every reload so new
+  /// messages and freshly retried transactions are picked up.
+  bool _endPinned = false;
   bool _retryingAll = false;
 
   bool _loading = true;
+  String? _error;
   List<_MappedItem> _items = [];
+
+  /// Message keys currently being retried, to block double taps.
+  final Set<String> _retrying = {};
+
+  static const int _sqlChunkSize = 500;
 
   @override
   void initState() {
@@ -30,94 +40,125 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
     _reload();
   }
 
-  Future<void> _reload() async {
-    setState(() => _loading = true);
+  static bool _isReceivedMessage(String body) =>
+      body.toLowerCase().contains('received');
 
-    try {
-      final processRows = await SQLiteService().queryAll(
-        'processText',
-        columns: ['number'],
-      );
+  Future<Set<String>> _senderTargets() async {
+    final processRows = await SQLiteService().queryAll(
+      'processText',
+      columns: ['number'],
+    );
 
-      final senderTargets = <String>{'MPESA'};
+    final senderTargets = <String>{'MPESA'};
+    for (final row in processRows) {
+      final raw = (row['number'] ?? '').toString().trim();
+      final digits = raw.replaceAll(RegExp(r'\D'), '');
+      if (digits.isEmpty) continue;
 
-      for (final row in processRows) {
-        final raw = (row['number'] ?? '').toString().trim();
-        final digits = raw.replaceAll(RegExp(r'\D'), '');
-        if (digits.isEmpty) continue;
-
-        // Requested: add 254 prefix when searching
-        if (digits.startsWith('254') && digits.length >= 12) {
-          senderTargets.add(digits);
-          senderTargets.add('+$digits');
-        } else if (digits.startsWith('0') && digits.length >= 10) {
-          senderTargets.add('254${digits.substring(1)}');
-          senderTargets.add(digits);
-        } else if (digits.length == 9) {
-          senderTargets.add('254$digits');
-          senderTargets.add('0$digits');
-        } else {
-          senderTargets.add(digits);
-        }
+      if (digits.startsWith('254') && digits.length >= 12) {
+        senderTargets.add(digits);
+        senderTargets.add('+$digits');
+        senderTargets.add('0${digits.substring(3)}');
+      } else if (digits.startsWith('0') && digits.length >= 10) {
+        senderTargets.add('254${digits.substring(1)}');
+        senderTargets.add('+254${digits.substring(1)}');
+        senderTargets.add(digits);
+      } else if (digits.length == 9) {
+        senderTargets.add('254$digits');
+        senderTargets.add('+254$digits');
+        senderTargets.add('0$digits');
+      } else {
+        senderTargets.add(digits);
       }
+    }
+    return senderTargets;
+  }
 
-      SmsFilter smsFilter =
-          SmsFilter.where(SmsColumn.ADDRESS).equals(senderTargets.first);
-      final rest = senderTargets.skip(1).toList();
-      for (final sender in rest) {
-        smsFilter = smsFilter.or(SmsColumn.ADDRESS).equals(sender);
-      }
+  /// Queries the inbox once per sender. The telephony filter builder joins
+  /// conditions without parentheses (and its `inValues` binds the whole list
+  /// as one argument), so an OR-chain of senders followed by AND date/body
+  /// would only apply the date and body conditions to the last sender.
+  Future<List<SmsMessage>> _fetchMessages(Set<String> senders) async {
+    final startMs = _start.millisecondsSinceEpoch.toString();
+    final endMs = _end.millisecondsSinceEpoch.toString();
 
-      final sms = await telephony.getInboxSms(
+    final results = await Future.wait(senders.map(
+      (sender) => telephony.getInboxSms(
         columns: [SmsColumn.ADDRESS, SmsColumn.BODY, SmsColumn.DATE],
-        filter: smsFilter
+        filter: SmsFilter.where(SmsColumn.ADDRESS)
+            .equals(sender)
             .and(SmsColumn.DATE)
-            .greaterThanOrEqualTo(_start.millisecondsSinceEpoch.toString())
+            .greaterThanOrEqualTo(startMs)
+            .and(SmsColumn.DATE)
+            .lessThanOrEqualTo(endMs)
             .and(SmsColumn.BODY)
             .like('%received%'),
         sortOrder: [OrderBy(SmsColumn.DATE, sort: Sort.DESC)],
-      );
+      ),
+    ));
 
-      final messagesInRange = sms.where((m) {
-        final d = m.date ?? 0;
-        return d >= _start.millisecondsSinceEpoch &&
-            d <= _end.millisecondsSinceEpoch;
-      }).toList();
+    return results
+        .expand((list) => list)
+        .where((m) => _isReceivedMessage(m.body ?? ''))
+        .toList();
+  }
 
-      final txRows = await SQLiteService().queryCustom(
+  /// Looks up transactions by M-PESA code regardless of when they were
+  /// processed. Filtering transactions by `timeStamp` (processing time) while
+  /// filtering SMS by arrival time made processed messages look unprocessed.
+  Future<Map<String, Map<String, dynamic>>> _transactionsByCode(
+    Iterable<String> codes,
+  ) async {
+    final unique = codes.where((c) => c.isNotEmpty).toSet().toList();
+    final byCode = <String, Map<String, dynamic>>{};
+
+    for (var i = 0; i < unique.length; i += _sqlChunkSize) {
+      final end = (i + _sqlChunkSize) < unique.length
+          ? i + _sqlChunkSize
+          : unique.length;
+      final chunk = unique.sublist(i, end);
+      final placeholders = List.filled(chunk.length, '?').join(',');
+      final rows = await SQLiteService().queryCustom(
         'transactions',
-        'timeStamp >= ? AND timeStamp <= ?',
-        [_start.millisecondsSinceEpoch, _end.millisecondsSinceEpoch],
-        columns: [
-          'id',
-          'transactionId',
-          'number',
-          'amount',
-          'status',
-          'timeStamp',
-          'initialMessage',
-        ],
-        orderBy: 'timeStamp DESC',
+        'UPPER(TRIM(transactionId)) IN ($placeholders)',
+        chunk,
+        columns: ['id', 'transactionId', 'number', 'amount', 'status'],
+        orderBy: 'id ASC',
       );
-
-      final byTxId = <String, List<Map<String, dynamic>>>{};
-      for (final tx in txRows) {
+      for (final tx in rows) {
         final id = (tx['transactionId'] ?? '').toString().trim().toUpperCase();
         if (id.isEmpty) continue;
-        byTxId.putIfAbsent(id, () => []).add(tx);
+        byCode.putIfAbsent(id, () => tx);
       }
+    }
+    return byCode;
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      if (!_endPinned) _end = DateTime.now();
+    });
+
+    try {
+      final senders = await _senderTargets();
+      final messages = await _fetchMessages(senders);
+
+      final codes = [
+        for (final m in messages)
+          getMpesaCode(m.body ?? '').trim().toUpperCase(),
+      ];
+      final byCode = await _transactionsByCode(codes);
 
       final mapped = <_MappedItem>[];
-      for (final m in messagesInRange) {
-        if (!(m.body!.contains('received'))) {
-          continue; // only consider messages that contain 'received'
-        }
-        final code = getMpesaCode(m.body ?? '').trim().toUpperCase();
-        Map<String, dynamic>? matched;
-        if (code.isNotEmpty && byTxId.containsKey(code)) {
-          matched = byTxId[code]!.first;
-        }
-        mapped.add(_MappedItem(sms: m, code: code, transaction: matched));
+      for (var i = 0; i < messages.length; i++) {
+        final code = codes[i];
+        mapped.add(_MappedItem(
+          sms: messages[i],
+          code: code,
+          transaction: code.isEmpty ? null : byCode[code],
+        ));
       }
 
       // Red/unprocessed first, then newest first
@@ -131,52 +172,116 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
         _items = mapped;
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('Check transactions reload failed: $e\n$st');
       if (!mounted) return;
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        _error = 'Could not load messages: $e';
+      });
     }
   }
 
-  Future<void> _retryOne(_MappedItem item) async {
+  /// Re-checks the database right before dispatching so a message that was
+  /// processed in the meantime is never sent twice. The receipt-claim guard in
+  /// TransactionController only covers messages whose sender is "MPESA", not
+  /// messages from forwarding numbers.
+  Future<bool> _alreadyProcessed(_MappedItem item) async {
+    if (item.code.isEmpty) return false;
+    final existing = await _transactionsByCode([item.code]);
+    return existing.containsKey(item.code);
+  }
+
+  /// Returns true if the message was dispatched, false if it was skipped.
+  Future<bool> _dispatch(_MappedItem item) async {
     final body = item.sms.body ?? '';
-    if (body.isEmpty) return;
+    if (body.isEmpty) return false;
+    if (!_retrying.add(item.key)) return false;
+    try {
+      if (await _alreadyProcessed(item)) return false;
+      debugPrint('Retrying message: ${item.sms.address} | $body');
+      await TransactionController().makeTransactionGivenSmsBody(
+        body,
+        address: item.sms.address,
+      );
+      return true;
+    } finally {
+      _retrying.remove(item.key);
+    }
+  }
 
-    debugPrint('Retrying message: ${item.sms.address} | $body');
-
-    await TransactionController().makeTransactionGivenSmsBody(
-      body,
-      address: item.sms.address,
-    );
-
+  void _showSnack(String text) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Retried message')),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _retryOne(_MappedItem item) async {
+    if (_retrying.contains(item.key) || _retryingAll) return;
+    setState(() {}); // show the item as busy
+    try {
+      final sent = await _dispatch(item);
+      _showSnack(
+          sent ? 'Message processed' : 'Already processed, not sent again');
+    } catch (e) {
+      _showSnack('Retry failed: $e');
+    }
+    if (mounted) await _reload();
   }
 
   Future<void> _retryAllUnprocessed() async {
     final unprocessed = _items.where((e) => e.unmatched).toList();
     if (unprocessed.isEmpty || _retryingAll) return;
 
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Process unprocessed messages?'),
+        content: Text(
+          'This will process ${unprocessed.length} message(s) now and send '
+          'the purchases to the customers.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Process'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
     setState(() => _retryingAll = true);
+    var sent = 0;
+    var skipped = 0;
+    var failed = 0;
     try {
       for (final item in unprocessed) {
-        final body = item.sms.body ?? '';
-        if (body.isEmpty) continue;
-        await TransactionController().makeTransactionGivenSmsBody(
-          body,
-          address: item.sms.address,
-        );
+        try {
+          if (await _dispatch(item)) {
+            sent++;
+          } else {
+            skipped++;
+          }
+        } catch (e) {
+          failed++;
+          debugPrint('Retry failed for ${item.code}: $e');
+        }
       }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Retried ${unprocessed.length} unprocessed')),
+      _showSnack(
+        'Processed $sent'
+        '${skipped > 0 ? ', skipped $skipped already processed' : ''}'
+        '${failed > 0 ? ', $failed failed' : ''}',
       );
-      await _reload();
     } finally {
       if (mounted) setState(() => _retryingAll = false);
     }
+    if (mounted) await _reload();
   }
 
   Future<void> _pickDateTime({
@@ -189,13 +294,13 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
       firstDate: DateTime(2015, 1),
       lastDate: DateTime(2101, 1),
     );
-    if (pickedDate == null) return;
+    if (pickedDate == null || !mounted) return;
 
     final pickedTime = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(current),
     );
-    if (pickedTime == null) return;
+    if (pickedTime == null || !mounted) return;
 
     final combined = DateTime(
       pickedDate.year,
@@ -208,9 +313,13 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
     setState(() {
       if (isStart) {
         _start = combined;
-        if (_start.isAfter(_end)) _end = _start.add(const Duration(minutes: 1));
+        if (_start.isAfter(_end)) {
+          _end = _start.add(const Duration(minutes: 1));
+          _endPinned = true;
+        }
       } else {
         _end = combined;
+        _endPinned = true;
         if (_end.isBefore(_start)) {
           _start = _end.subtract(const Duration(minutes: 1));
         }
@@ -220,10 +329,17 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
     await _reload();
   }
 
+  void _unpinEnd() {
+    setState(() => _endPinned = false);
+    _reload();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final unprocessedCount = _items.where((e) => e.unmatched).length;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Confirm transactions')),
+      appBar: AppBar(title: const Text('Check transactions')),
       body: Column(
         children: [
           Padding(
@@ -231,6 +347,7 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
             child: Wrap(
               spacing: 8,
               runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 OutlinedButton(
                   onPressed: () => _pickDateTime(isStart: true),
@@ -239,13 +356,18 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
                 ),
                 OutlinedButton(
                   onPressed: () => _pickDateTime(isStart: false),
-                  child:
-                      Text('To: ${getNormalDate(_end)} ${getNormalTime(_end)}'),
+                  child: Text(_endPinned
+                      ? 'To: ${getNormalDate(_end)} ${getNormalTime(_end)}'
+                      : 'To: Now'),
                 ),
+                if (_endPinned)
+                  IconButton(
+                    tooltip: 'Set end time to now',
+                    onPressed: _loading ? null : _unpinEnd,
+                    icon: const Icon(Icons.close),
+                  ),
                 FilledButton.icon(
-                  onPressed: (_loading ||
-                          _retryingAll ||
-                          _items.where((e) => e.unmatched).isEmpty)
+                  onPressed: (_loading || _retryingAll || unprocessedCount == 0)
                       ? null
                       : _retryAllUnprocessed,
                   icon: _retryingAll
@@ -255,11 +377,10 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.refresh),
-                  label: Text(
-                      'Retry all unprocessed (${_items.where((e) => e.unmatched).length})'),
+                  label: Text('Retry all unprocessed ($unprocessedCount)'),
                 ),
                 FilledButton(
-                  onPressed: _reload,
+                  onPressed: (_loading || _retryingAll) ? null : _reload,
                   child: const Text('Refresh'),
                 ),
               ],
@@ -267,6 +388,25 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
           ),
           if (_loading)
             const Expanded(child: Center(child: CircularProgressIndicator()))
+          else if (_error != null)
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: kPagePaddingInsets,
+                  child: Text(
+                    _error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              ),
+            )
+          else if (_items.isEmpty)
+            const Expanded(
+              child: Center(
+                child: Text('No received messages in this period'),
+              ),
+            )
           else
             Expanded(
               child: ListView.separated(
@@ -275,9 +415,8 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final item = _items[i];
-                  // unmatched text must also have 'received' in body
-                  final unmatched = (item.transaction == null &&
-                      (item.sms.body ?? '').toLowerCase().contains('received'));
+                  final unmatched = item.unmatched;
+                  final busy = _retrying.contains(item.key);
 
                   return Container(
                     decoration: BoxDecoration(
@@ -301,33 +440,37 @@ class _ConfirmTransactionsPageState extends State<ConfirmTransactionsPage> {
                                     fontWeight: FontWeight.bold)),
                             Row(
                               children: [
-                                IconButton(
-                                  onPressed: () => _retryOne(item),
-                                  icon: Icon(CupertinoIcons.refresh),
-                                ),
-                                IconButton(
-                                  onPressed: () {
-                                    // copy mpesa message body to clipboard
-                                    final body = item.sms.body ?? '';
-                                    if (body.isNotEmpty) {
-                                      Clipboard.setData(
-                                          ClipboardData(text: body));
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        const SnackBar(
-                                            content: Text(
-                                                'Copied message body to clipboard')),
-                                      );
-
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text('Copied sms'),
+                                // Only unprocessed messages can be retried;
+                                // retrying a processed one would resend it.
+                                if (unmatched)
+                                  busy
+                                      ? const Padding(
+                                          padding: EdgeInsets.all(12),
+                                          child: SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          ),
+                                        )
+                                      : IconButton(
+                                          tooltip: 'Process this message',
+                                          onPressed: _retryingAll
+                                              ? null
+                                              : () => _retryOne(item),
+                                          icon: const Icon(
+                                              CupertinoIcons.refresh),
                                         ),
-                                      );
-                                    }
+                                IconButton(
+                                  tooltip: 'Copy message',
+                                  onPressed: () {
+                                    final body = item.sms.body ?? '';
+                                    if (body.isEmpty) return;
+                                    Clipboard.setData(
+                                        ClipboardData(text: body));
+                                    _showSnack('Copied message to clipboard');
                                   },
-                                  icon: Icon(CupertinoIcons.doc),
+                                  icon: const Icon(CupertinoIcons.doc),
                                 ),
                               ],
                             ),
@@ -359,6 +502,10 @@ class _MappedItem {
   final Map<String, dynamic>? transaction;
 
   bool get unmatched => transaction == null;
+
+  /// Identifies the message for in-flight retry tracking.
+  String get key =>
+      code.isNotEmpty ? code : '${sms.address}|${sms.date}|${sms.body}';
 
   _MappedItem({
     required this.sms,

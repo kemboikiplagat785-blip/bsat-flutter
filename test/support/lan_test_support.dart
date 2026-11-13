@@ -5,6 +5,7 @@
 import 'dart:io';
 
 import 'package:bsat/services/lan/lan_device_identity.dart';
+import 'package:bsat/services/lan/lan_discovery.dart';
 import 'package:bsat/services/lan/lan_forwarding_service.dart';
 import 'package:bsat/services/lan/lan_key_wrapper.dart';
 import 'package:bsat/services/lan/lan_pairing.dart';
@@ -82,6 +83,7 @@ class LanTestPhone {
     LanReplyProcessor? replyProcessor,
     Duration replyTimeout = const Duration(seconds: 5),
     int preferredPort = 0,
+    LanDiscovery? discovery,
   }) async {
     final store = sqlite ?? SQLiteService(databaseOverride: await openPhoneDatabase());
     final peers = LanPeerStore(store);
@@ -99,6 +101,8 @@ class LanTestPhone {
       probeTimeout: const Duration(seconds: 2),
       inboundHandler: inboundHandler,
       replyProcessor: replyProcessor,
+      discovery: discovery,
+      discoveryVerifyCooldown: Duration.zero,
     );
     return LanTestPhone._(name, id, store, peers, service, directory);
   }

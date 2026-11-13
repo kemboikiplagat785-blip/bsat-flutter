@@ -6,8 +6,10 @@ import 'package:bsat/services/shared_preferences_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 
+import 'lan_discovery.dart';
 import 'lan_forwarding_service.dart';
 import 'lan_local_identity.dart';
+import 'lan_network_locks.dart';
 import 'lan_messages.dart';
 import 'lan_offers_transfer.dart';
 import 'lan_peer_store.dart';
@@ -63,6 +65,8 @@ Future<void> startLanForwardingInMainIsolate() async {
           (await SharedPreferencesService().getDeviceId() ?? '').trim(),
       inboundHandler: handleLanForwardingRequest,
       replyProcessor: handleLanForwardingReply,
+      discovery: LanDiscovery(),
+      networkLocks: setLanNetworkLocks,
     );
   } catch (error) {
     debugPrint('LAN FORWARDING: unavailable on this device ($error)');
@@ -75,12 +79,20 @@ Future<void> startLanForwardingInMainIsolate() async {
   Timer.periodic(const Duration(seconds: 30), (_) => refreshLanForwarding());
 }
 
-/// Loads the identity and (re)binds the listener when a pairing exists.
+/// Loads the identity and (re)binds the listener when a pairing exists, and
+/// announces this phone so paired phones find it after an address change.
+/// With no pairing left (and none in progress) the listener, discovery and
+/// network locks are released.
 Future<void> refreshLanForwarding() async {
   final service = LanForwardingService.instance;
   if (service == null) return;
   try {
-    if (await service.peers.isEmpty) return;
+    if (await service.peers.isEmpty) {
+      if (service.isListening && !service.isPairingActive) {
+        await service.stopListening(reason: 'no pairings');
+      }
+      return;
+    }
     await service.loadIdentity();
     await service.startListening();
   } catch (error) {

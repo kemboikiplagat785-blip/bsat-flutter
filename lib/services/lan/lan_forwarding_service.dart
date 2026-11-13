@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'lan_device_identity.dart';
+import 'lan_discovery.dart';
 import 'lan_frame_connection.dart';
 import 'lan_framing.dart';
 import 'lan_key_wrapper.dart';
@@ -142,6 +143,20 @@ class LanForwardingService extends ChangeNotifier
   /// Default processor for replies received by [exchange].
   LanReplyProcessor? replyProcessor;
 
+  /// Finds paired devices again after their address changes. Null (tests,
+  /// or discovery unavailable): only addresses on record are used.
+  final LanDiscovery? discovery;
+
+  /// Holds (true) or releases (false) the Wi-Fi and multicast locks that keep
+  /// incoming LAN traffic flowing with the screen off. Null in tests.
+  final Future<void> Function(bool held)? networkLocks;
+
+  /// Minimum time between verifications of the same announced address.
+  final Duration discoveryVerifyCooldown;
+  final Map<String, DateTime> _verifyAttempts = {};
+  final Set<String> _verifying = {};
+  bool _locksHeld = false;
+
   DeviceIdentity? _identity;
   IdentityStatus identityStatus = IdentityStatus.absent;
   String? identityProblem;
@@ -173,6 +188,9 @@ class LanForwardingService extends ChangeNotifier
     DeviceIdentity? identity,
     this.inboundHandler,
     this.replyProcessor,
+    this.discovery,
+    this.networkLocks,
+    this.discoveryVerifyCooldown = const Duration(seconds: 20),
   })  : listenAddresses = listenAddresses ?? _privateAddresses,
         clock = clock ?? DateTime.now,
         invitations = InvitationHost(clock: clock) {
@@ -259,6 +277,9 @@ class LanForwardingService extends ChangeNotifier
     }
     if (_servers.isNotEmpty &&
         setEquals(_servers.keys.toSet(), wanted.keys.toSet())) {
+      // Already listening: this is the periodic refresh. Announce again so a
+      // paired phone whose records are stale finds this one.
+      await _startDiscovery();
       return;
     }
     if (_servers.isNotEmpty) await stopListening(reason: 'network changed');
@@ -294,6 +315,8 @@ class LanForwardingService extends ChangeNotifier
       }
       listenerFailure = null;
       _log('Listening on ${wanted.keys.join(', ')} port $_listenPort');
+      await _setNetworkLocks(true);
+      await _startDiscovery();
       notifyListeners();
       return;
     }
@@ -324,8 +347,98 @@ class LanForwardingService extends ChangeNotifier
     for (final server in servers) {
       await server.close();
     }
+    discovery?.stop();
+    await _setNetworkLocks(false);
     if (servers.isNotEmpty) _log('Listener stopped ($reason)');
     notifyListeners();
+  }
+
+  /// True while an invitation is shown or a pairing is in progress. The
+  /// listener must stay up then even though no pairing exists yet.
+  bool get isPairingActive =>
+      invitations.state == InvitationState.active ||
+      _inviteTarget != null ||
+      (pairing != null && !pairing!.isFinished);
+
+  Future<void> _setNetworkLocks(bool held) async {
+    final locks = networkLocks;
+    if (locks == null || _locksHeld == held) return;
+    _locksHeld = held;
+    try {
+      await locks(held);
+    } catch (error) {
+      _log('Network locks ${held ? 'acquire' : 'release'} failed '
+          '(${error.runtimeType})');
+    }
+  }
+
+  // --------------------------------------------------------------- discovery
+
+  /// Binds discovery if needed and announces this phone on every listening
+  /// address.
+  Future<void> _startDiscovery() async {
+    final finder = discovery;
+    final own = _identity;
+    final port = _listenPort;
+    if (finder == null || own == null || port == null || _servers.isEmpty) {
+      return;
+    }
+    await finder.start(_onAnnouncement);
+    finder.announce(
+      fingerprint: own.fingerprint,
+      listenPort: port,
+      ownAddresses: boundAddresses,
+    );
+  }
+
+  /// Verifies an announced address of a trusted peer with an authenticated
+  /// probe; only then is it saved. The probe also tells the announcer this
+  /// phone's current address, so both records are fixed by one exchange.
+  void _onAnnouncement(LanAnnouncement announcement) {
+    unawaited(_verifyAnnouncement(announcement));
+  }
+
+  Future<void> _verifyAnnouncement(LanAnnouncement announcement) async {
+    final own = _identity;
+    if (own == null || announcement.fingerprint == own.fingerprint) return;
+    final address = announcement.address;
+    final key = '${announcement.fingerprint}|${address.address}|'
+        '${announcement.port}';
+    if (_verifying.contains(key)) return;
+    final last = _verifyAttempts[key];
+    final now = clock();
+    if (last != null && now.difference(last) < discoveryVerifyCooldown) return;
+
+    final LanPeer? peer;
+    try {
+      peer = await peers.byFingerprint(announcement.fingerprint);
+    } catch (_) {
+      return;
+    }
+    if (peer == null || !peer.isTrusted) return;
+    if (peer.lastAddress == address.address &&
+        peer.lastPort == announcement.port) {
+      return; // Already on record.
+    }
+
+    _verifying.add(key);
+    _verifyAttempts[key] = now;
+    if (_verifyAttempts.length > 64) {
+      _verifyAttempts.removeWhere(
+          (_, at) => now.difference(at) >= discoveryVerifyCooldown);
+    }
+    try {
+      final reachability = await _probeAt(peer, address, announcement.port)
+          .timeout(probeTimeout + handshakeTimeout,
+              onTimeout: () => LanReachability.unreachable);
+      if (reachability == LanReachability.reachable) {
+        _log('${peer.deviceName} found at ${address.address}:'
+            '${announcement.port}');
+        notifyListeners();
+      }
+    } finally {
+      _verifying.remove(key);
+    }
   }
 
   void _accept(Socket socket) {
@@ -584,6 +697,29 @@ class LanForwardingService extends ChangeNotifier
         ),
       );
     }
+    return _connect(own, peer, address, port);
+  }
+
+  /// Connects to [address]:[port] and authenticates the server as [peer]'s
+  /// pinned key. The address is only a routing hint: a different device there
+  /// fails the handshake.
+  Future<({SecureSession? session, LanPeer? peer, LanExchangeResult? failure})>
+      _connect(
+    DeviceIdentity own,
+    LanPeer peer,
+    InternetAddress address,
+    int port,
+  ) async {
+    if (!isAllowedLanAddress(address)) {
+      return (
+        session: null,
+        peer: peer,
+        failure: const LanExchangeResult(
+          LanExchangeOutcome.unreachable,
+          reason: 'address not allowed',
+        ),
+      );
+    }
     final Socket socket;
     try {
       socket = await Socket.connect(address, port, timeout: connectTimeout);
@@ -763,8 +899,27 @@ class LanForwardingService extends ChangeNotifier
     return result;
   }
 
-  Future<LanReachability> _probe(String deviceName) async {
-    final opened = await _open(deviceName);
+  /// Probes [peer] at an announced address instead of the one on record.
+  Future<LanReachability> _probeAt(
+    LanPeer peer,
+    InternetAddress address,
+    int port,
+  ) async {
+    final own = _identity;
+    if (own == null) return LanReachability.notConfigured;
+    return _probeOpened(await _connect(own, peer, address, port));
+  }
+
+  Future<LanReachability> _probe(String deviceName) async =>
+      _probeOpened(await _open(deviceName));
+
+  Future<LanReachability> _probeOpened(
+    ({
+      SecureSession? session,
+      LanPeer? peer,
+      LanExchangeResult? failure
+    }) opened,
+  ) async {
     final failure = opened.failure;
     if (failure != null) {
       return switch (failure.outcome) {

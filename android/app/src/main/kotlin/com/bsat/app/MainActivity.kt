@@ -16,6 +16,7 @@ class MainActivity : FlutterActivity() {
 
         // LAN forwarding identity: Keystore-wrapped Ed25519 seed (main engine).
         LanIdentityKeyWrapper.register(flutterEngine.dartExecutor.binaryMessenger, applicationContext)
+        LanNetworkLocks.register(flutterEngine.dartExecutor.binaryMessenger, applicationContext)
 
         NativeLogger.loggerMethodChannel =
             MethodChannel(flutterEngine.dartExecutor.binaryMessenger, LOGGER_CHANNEL)
@@ -27,6 +28,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        // The LAN listener lives in this engine; it is gone with it.
+        LanNetworkLocks.release()
         NativeLogger.loggerMethodChannel = null
         UssdRunner.requestPermissions = null
         super.cleanUpFlutterEngine(flutterEngine)

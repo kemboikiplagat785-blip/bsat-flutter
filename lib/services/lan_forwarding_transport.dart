@@ -99,6 +99,9 @@ class LanServiceRegistry {
   /// Covers the main isolate's own probe bound (probe reply plus a whole
   /// 30 s handshake) with some margin.
   static const Duration probeTimeout = Duration(seconds: 45);
+
+  /// How long a live main isolate may take to answer a ping.
+  static const Duration pingTimeout = Duration(seconds: 5);
   static ReceivePort? _port;
 
   /// Main isolate only.
@@ -114,6 +117,8 @@ class LanServiceRegistry {
       if (reply is! SendPort) return;
       try {
         switch (message['op']) {
+          case 'ping':
+            reply.send('pong');
           case 'submit':
             final request = message['request'];
             if (request is! Map) throw ArgumentError('request');
@@ -142,6 +147,24 @@ class LanServiceRegistry {
   ) async {
     final port = IsolateNameServer.lookupPortByName(portName);
     if (port == null) return null;
+    // When the app's screen is closed, the main engine and its isolate are
+    // destroyed but the port name stays registered: a message to it is
+    // silently dropped. Ping first so that case fails at once instead of
+    // after the whole [timeout], and clear the stale registration.
+    if (await _send(port, const {'op': 'ping'}, pingTimeout) != 'pong') {
+      if (IsolateNameServer.lookupPortByName(portName) == port) {
+        IsolateNameServer.removePortNameMapping(portName);
+      }
+      return null;
+    }
+    return _send(port, message, timeout);
+  }
+
+  static Future<Object?> _send(
+    SendPort port,
+    Map<String, Object?> message,
+    Duration timeout,
+  ) async {
     final response = ReceivePort();
     try {
       port.send({...message, 'reply': response.sendPort});
